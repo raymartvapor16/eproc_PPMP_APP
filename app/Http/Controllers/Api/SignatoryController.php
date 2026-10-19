@@ -25,12 +25,12 @@ class SignatoryController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->isSuperAdmin()) {
-            return response()->json(['message' => 'Only Super Administrators can configure official signatories.'], 403);
+        if (!$user->isAdmin()) {
+            return response()->json(['message' => 'Only Administrators can configure official signatories.'], 403);
         }
 
         $validated = $request->validate([
-            'signatory_type' => 'required|in:budget_requirement,pacco_requirement,bac_secretariat,approved_by',
+            'signatory_type' => 'required|in:budget_requirement,pacco_requirement,bac_secretariat,approved_by,app_prepared_by,app_reviewed_by,app_recommending,app_approved_by',
             'name' => 'required|string|max:255',
             'position' => 'required|string|max:255',
             'is_active' => 'nullable|boolean',
@@ -38,7 +38,7 @@ class SignatoryController extends Controller
 
         $isActive = $request->boolean('is_active', true);
 
-        // If this new one is active, we can set others of the same type to inactive if desired, or allow multiple
+        // If this new one is active, deactivate others of the exact same type
         if ($isActive) {
             PpmpSignatory::where('signatory_type', $validated['signatory_type'])->update(['is_active' => false]);
         }
@@ -64,22 +64,24 @@ class SignatoryController extends Controller
     public function update(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        if (!$user->isSuperAdmin()) {
-            return response()->json(['message' => 'Only Super Administrators can configure official signatories.'], 403);
+        if (!$user->isAdmin()) {
+            return response()->json(['message' => 'Only Administrators can configure official signatories.'], 403);
         }
 
         $signatory = PpmpSignatory::findOrFail($id);
 
         $validated = $request->validate([
+            'signatory_type' => 'nullable|in:budget_requirement,pacco_requirement,bac_secretariat,approved_by,app_prepared_by,app_reviewed_by,app_recommending,app_approved_by',
             'name' => 'required|string|max:255',
             'position' => 'required|string|max:255',
             'is_active' => 'nullable|boolean',
         ]);
 
         $old = $signatory->toArray();
+        $targetType = $validated['signatory_type'] ?? $signatory->signatory_type;
 
         if ($request->has('is_active') && $request->boolean('is_active')) {
-            PpmpSignatory::where('signatory_type', $signatory->signatory_type)
+            PpmpSignatory::where('signatory_type', $targetType)
                 ->where('id', '!=', $signatory->id)
                 ->update(['is_active' => false]);
         }
@@ -100,8 +102,8 @@ class SignatoryController extends Controller
     public function destroy(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        if (!$user->isSuperAdmin()) {
-            return response()->json(['message' => 'Only Super Administrators can remove signatories.'], 403);
+        if (!$user->isAdmin()) {
+            return response()->json(['message' => 'Only Administrators can remove signatories.'], 403);
         }
 
         $signatory = PpmpSignatory::findOrFail($id);

@@ -297,12 +297,13 @@ class PaccoRoleTest extends TestCase
             'uploaded_by' => $this->endUser->id,
         ]);
 
+        // End User attempting to save APP Data is rejected with 403
         $this->actingAs($this->endUser)->postJson("/api/ppmps/{$uuid}/app-data", [
             'prepared_by_name' => 'NORJANNA M. CAMAGUIN, MPA',
             'rows' => [
                 ['code' => 'APP-001', 'procurement_program' => 'Medical Equipment', 'total' => 300000.00]
             ]
-        ])->assertOk();
+        ])->assertStatus(403);
 
         $this->actingAs($this->endUser)->postJson("/api/ppmps/{$uuid}/attachment-list", [
             'prepared_by_name' => 'End User Test',
@@ -334,12 +335,22 @@ class PaccoRoleTest extends TestCase
         $oppmoApproveRes->assertOk();
         $this->assertEquals('TWG_REVIEW', $oppmoApproveRes->json('ppmp.status'));
 
-        // 7. TWG approves -> routes to Office Head for approval (HEAD_PENDING)
+        // 7. TWG approves -> routes back to OPPMO for APP generation (OPPMO_REVIEW)
         $twgApproveRes = $this->actingAs($twgUser)->postJson("/api/ppmps/{$uuid}/twg/approve");
         $twgApproveRes->assertOk();
-        $this->assertEquals('HEAD_PENDING', $twgApproveRes->json('ppmp.status'));
+        $this->assertEquals('OPPMO_REVIEW', $twgApproveRes->json('ppmp.status'));
 
-        // 8. Office Head receives & approves -> routes to READY_TO_PRINT
+        // 8. OPPMO generates APP data & approves -> routes to Office Head for approval (HEAD_PENDING)
+        $this->actingAs($oppmoUser)->postJson("/api/ppmps/{$uuid}/app-data", [
+            'prepared_by_name' => 'OPPMO Officer',
+            'rows' => [['code' => 'APP-TF-01', 'total' => 500000.00]],
+        ])->assertOk();
+
+        $oppmoFinalApproveRes = $this->actingAs($oppmoUser)->postJson("/api/ppmps/{$uuid}/oppmo/approve");
+        $oppmoFinalApproveRes->assertOk();
+        $this->assertEquals('HEAD_PENDING', $oppmoFinalApproveRes->json('ppmp.status'));
+
+        // 9. Office Head receives & approves -> routes to READY_TO_PRINT
         $headApproveRes = $this->actingAs($headUser)->postJson("/api/ppmps/{$uuid}/head/approve");
         $headApproveRes->assertOk();
         $this->assertEquals('READY_TO_PRINT', $headApproveRes->json('ppmp.status'));
@@ -425,12 +436,13 @@ class PaccoRoleTest extends TestCase
             'uploaded_by' => $this->endUser->id,
         ]);
 
+        // End User attempting to save APP Data is rejected with 403
         $this->actingAs($this->endUser)->postJson("/api/ppmps/{$uuid}/app-data", [
             'prepared_by_name' => 'NORJANNA M. CAMAGUIN, MPA',
             'rows' => [
                 ['code' => 'APP-002', 'procurement_program' => 'General Fund Items', 'total' => 50000.00]
             ]
-        ])->assertOk();
+        ])->assertStatus(403);
 
         $this->actingAs($this->endUser)->postJson("/api/ppmps/{$uuid}/attachment-list", [
             'prepared_by_name' => 'End User Test',
@@ -454,12 +466,22 @@ class PaccoRoleTest extends TestCase
         $oppmoApproveRes->assertOk();
         $this->assertEquals('TWG_REVIEW', $oppmoApproveRes->json('ppmp.status'));
 
-        // 6. TWG approves -> routes to Office Head for approval (HEAD_PENDING)
+        // 6. TWG approves -> routes back to OPPMO for APP generation (OPPMO_REVIEW)
         $twgApproveRes = $this->actingAs($twgUser)->postJson("/api/ppmps/{$uuid}/twg/approve");
         $twgApproveRes->assertOk();
-        $this->assertEquals('HEAD_PENDING', $twgApproveRes->json('ppmp.status'));
+        $this->assertEquals('OPPMO_REVIEW', $twgApproveRes->json('ppmp.status'));
 
-        // 7. Office Head approves -> routes to READY_TO_PRINT
+        // 7. OPPMO generates APP data & approves -> routes to Office Head for approval (HEAD_PENDING)
+        $this->actingAs($oppmoUser)->postJson("/api/ppmps/{$uuid}/app-data", [
+            'prepared_by_name' => 'OPPMO Officer',
+            'rows' => [['code' => 'APP-GF-01', 'total' => 250000.00]],
+        ])->assertOk();
+
+        $oppmoFinalApproveRes = $this->actingAs($oppmoUser)->postJson("/api/ppmps/{$uuid}/oppmo/approve");
+        $oppmoFinalApproveRes->assertOk();
+        $this->assertEquals('HEAD_PENDING', $oppmoFinalApproveRes->json('ppmp.status'));
+
+        // 8. Office Head approves -> routes to READY_TO_PRINT
         $headApproveRes = $this->actingAs($headUser)->postJson("/api/ppmps/{$uuid}/head/approve");
         $headApproveRes->assertOk();
         $this->assertEquals('READY_TO_PRINT', $headApproveRes->json('ppmp.status'));
@@ -508,12 +530,13 @@ class PaccoRoleTest extends TestCase
             'uploaded_by' => $this->endUser->id,
         ]);
 
+        // End User attempting to save APP Data is rejected with 403
         $this->actingAs($this->endUser)->postJson("/api/ppmps/{$uuid}/app-data", [
             'prepared_by_name' => 'NORJANNA M. CAMAGUIN, MPA',
             'rows' => [
                 ['code' => 'APP-TF', 'procurement_program' => 'Trust Fund Items', 'total' => 100000.00]
             ]
-        ])->assertOk();
+        ])->assertStatus(403);
 
         $this->actingAs($this->endUser)->postJson("/api/ppmps/{$uuid}/attachment-list", [
             'prepared_by_name' => 'End User Test',

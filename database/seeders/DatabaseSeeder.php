@@ -52,6 +52,19 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
+        // Create or update default OPPMO Monitoring Officer account
+        User::updateOrCreate(
+            ['email' => 'monitor@system16.com'],
+            [
+                'name'         => 'OPPMO Monitoring Officer',
+                'password'     => Hash::make('++admin@2026.davsur++'),
+                'role'         => 'monitor',
+                'designation'  => 'Procurement Monitoring Officer',
+                'is_active'    => true,
+                'approval_status' => 'approved',
+            ]
+        );
+
         // Create or update default official PPMP signatories
         \App\Models\PpmpSignatory::updateOrCreate(
             ['signatory_type' => 'pacco_requirement'],
@@ -82,6 +95,43 @@ class DatabaseSeeder extends Seeder
 
         \App\Models\PpmpSignatory::firstOrCreate(
             ['signatory_type' => 'approved_by'],
+            [
+                'name' => 'HON. YVONNE R. CAGAS',
+                'position' => 'Provincial Governor',
+                'is_active' => true,
+            ]
+        );
+
+        // Official APP (Annual Procurement Plan) Signatories
+        \App\Models\PpmpSignatory::updateOrCreate(
+            ['signatory_type' => 'app_prepared_by'],
+            [
+                'name' => 'GINA MAE B. CARBAQUEL',
+                'position' => 'ADAS II',
+                'is_active' => true,
+            ]
+        );
+
+        \App\Models\PpmpSignatory::firstOrCreate(
+            ['signatory_type' => 'app_reviewed_by'],
+            [
+                'name' => 'NORJANNA M. CAMAGUIN, MPA',
+                'position' => 'PGDH - OPPMO',
+                'is_active' => true,
+            ]
+        );
+
+        \App\Models\PpmpSignatory::firstOrCreate(
+            ['signatory_type' => 'app_recommending'],
+            [
+                'name' => 'DESSAMIE BUAT-SANCHEZ, CPA, JD',
+                'position' => 'PGDH - PBO / BAC - Chairman',
+                'is_active' => true,
+            ]
+        );
+
+        \App\Models\PpmpSignatory::firstOrCreate(
+            ['signatory_type' => 'app_approved_by'],
             [
                 'name' => 'HON. YVONNE R. CAGAS',
                 'position' => 'Provincial Governor',

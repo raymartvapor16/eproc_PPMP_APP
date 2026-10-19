@@ -100,7 +100,6 @@ class PpmpWorkflowTest extends TestCase
         $prematureRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmpUuid}/submit-for-review");
         $prematureRes->assertStatus(422)
             ->assertJsonPath('checks.is_ready', false)
-            ->assertJsonPath('checks.app_generated', false)
             ->assertJsonPath('checks.attachment_list_generated', false)
             ->assertJsonPath('checks.market_scoping_attached', false);
 
@@ -120,8 +119,8 @@ class PpmpWorkflowTest extends TestCase
         $downloadRes = $this->actingAs($this->endUser)->get("/api/ppmps/{$ppmpUuid}/attachments/{$attachmentUuid}/download");
         $downloadRes->assertStatus(200);
 
-        // 4. Generate/Save APP Data and PPMP List of Attachment Data
-        $appSaveRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmpUuid}/app-data", [
+        // 4. End user attempting to save APP Data is rejected with 403 (only OPPMO after TWG can generate APP)
+        $unauthAppRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmpUuid}/app-data", [
             'prepared_by_name' => 'NORJANNA M. CAMAGUIN, MPA',
             'rows' => [
                 [
@@ -132,8 +131,9 @@ class PpmpWorkflowTest extends TestCase
                 ]
             ]
         ]);
-        $appSaveRes->assertStatus(200);
+        $unauthAppRes->assertStatus(403);
 
+        // End User generates PPMP List of Attachment Data
         $attListSaveRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmpUuid}/attachment-list", [
             'prepared_by_name' => 'Test End User',
             'rows' => [
@@ -175,13 +175,50 @@ class PpmpWorkflowTest extends TestCase
         // 8. TWG receives before approving
         $this->actingAs($this->twgUser)->postJson("/api/ppmps/{$ppmpUuid}/receive")->assertStatus(200);
 
-        // TWG Approves -> routes to Office Head for approval (HEAD_PENDING)
+        // TWG Approves -> routes back to OPPMO for APP generation (OPPMO_REVIEW)
         $twgApproveRes = $this->actingAs($this->twgUser)->postJson("/api/ppmps/{$ppmpUuid}/twg/approve");
         $twgApproveRes->assertStatus(200);
-        $this->assertEquals('HEAD_PENDING', $twgApproveRes->json('ppmp.status'));
+        $this->assertEquals('OPPMO_REVIEW', $twgApproveRes->json('ppmp.status'));
         $this->assertTrue($ppmp->fresh()->signatures()->where('role', 'twg')->exists());
 
-        // 9. Office Head receives before approving
+        // TWG can view PPMP in show and index after approving (when status is OPPMO_REVIEW)
+        $twgShowRes = $this->actingAs($this->twgUser)->getJson("/api/ppmps/{$ppmpUuid}");
+        $twgShowRes->assertStatus(200);
+        $this->assertEquals('OPPMO_REVIEW', $twgShowRes->json('ppmp.status'));
+
+        $twgIndexRes = $this->actingAs($this->twgUser)->getJson("/api/ppmps");
+        $twgIndexRes->assertStatus(200);
+        $indexUuids = array_column($twgIndexRes->json('data'), 'uuid');
+        $this->assertContains($ppmpUuid, $indexUuids);
+
+        // 9. OPPMO receives document in post-TWG review
+        $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$ppmpUuid}/receive")->assertStatus(200);
+
+        // Attempting to approve without generating APP must fail with 422
+        $prematureOppmoRes = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$ppmpUuid}/oppmo/approve");
+        $prematureOppmoRes->assertStatus(422)
+            ->assertJsonPath('message', 'Please generate the Annual Procurement Plan (APP) before forwarding to the Office Head.');
+
+        // OPPMO generates/saves APP Data
+        $appSaveRes = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$ppmpUuid}/app-data", [
+            'prepared_by_name' => 'NORJANNA M. CAMAGUIN, MPA',
+            'rows' => [
+                [
+                    'code' => 'APP-001',
+                    'procurement_program' => 'Workstation Procurement',
+                    'pmo_end_user' => 'TEST-OFFICE',
+                    'total' => 250000.00,
+                ]
+            ]
+        ]);
+        $appSaveRes->assertStatus(200);
+
+        // OPPMO Approves -> routes to Office Head for approval (HEAD_PENDING)
+        $oppmoFinalApproveRes = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$ppmpUuid}/oppmo/approve");
+        $oppmoFinalApproveRes->assertStatus(200);
+        $this->assertEquals('HEAD_PENDING', $oppmoFinalApproveRes->json('ppmp.status'));
+
+        // 10. Office Head receives before approving
         $this->actingAs($this->headUser)->postJson("/api/ppmps/{$ppmpUuid}/receive")->assertStatus(200);
 
         // Office Head Approves -> marks READY_TO_PRINT

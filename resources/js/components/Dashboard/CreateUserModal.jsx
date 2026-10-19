@@ -11,6 +11,7 @@ const ROLES_LIST = [
     { value: 'twg', label: 'BAC - Technical Working Group (TWG)', desc: 'Conducts technical reviews and product evaluations' },
     { value: 'pacco', label: 'PACCO Reviewer (Provincial Accountant)', desc: 'Audits trust funds and special accounting requirements' },
     { value: 'authorized_staff', label: 'Authorize Staff (Acting Head)', desc: 'Endorses procurement documents with authorization letter' },
+    { value: 'monitor', label: 'OPPMO Monitoring Officer', desc: 'Monitors timeline and processes across all OPPMO divisions' },
     { value: 'admin', label: 'System Administrator', desc: 'User credential control, security, and master data' },
     { value: 'super_admin', label: 'Super Administrator', desc: 'Full executive oversight, analytics, and dev controls' },
 ];

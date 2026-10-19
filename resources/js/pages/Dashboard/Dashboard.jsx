@@ -12,6 +12,7 @@ import { FundSourcesManagement } from '../../components/Dashboard/FundSourcesMan
 import { ProcurementConditionsManagement } from '../../components/Dashboard/ProcurementConditionsManagement';
 import { OtherTermsManagement } from '../../components/Dashboard/OtherTermsManagement';
 import { SystemSettingsManagement } from '../../components/Dashboard/SystemSettingsManagement';
+import { SignatoriesManagement } from '../../components/Dashboard/SignatoriesManagement';
 import { isDeveloperModeActive } from '../../utils/devToolsGuard';
 import { AdminDashboard } from './AdminDashboard';
 import { CreateUserModal } from '../../components/Dashboard/CreateUserModal';
@@ -208,9 +209,11 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 } else if (ppmpTab === 'ENDORSED_APPROVED') {
                     if (['DRAFT', 'HEAD_PENDING', 'HEAD_RETURNED'].includes(ppmp.status)) return false;
                 } else if (ppmpTab === 'BUDGET_APPROVED') {
-                    if (!['OPPMO_REVIEW', 'OPPMO_RETURNED', 'TWG_REVIEW', 'TWG_RETURNED', 'READY_TO_PRINT'].includes(ppmp.status)) return false;
+                    if (!['OPPMO_REVIEW', 'OPPMO_RETURNED', 'TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp.status)) return false;
                 } else if (ppmpTab === 'OPPMO_APPROVED') {
-                    if (!['TWG_REVIEW', 'TWG_RETURNED', 'READY_TO_PRINT'].includes(ppmp.status)) return false;
+                    if (!['TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp.status)) return false;
+                } else if (ppmpTab === 'TWG_APPROVED') {
+                    if (!['HEAD_PENDING', 'HEAD_RETURNED'].includes(ppmp.status)) return false;
                 } else if (ppmp.status !== ppmpTab) {
                     return false;
                 }
@@ -652,127 +655,18 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
 
     // ─── SUPER ADMIN EARLY RETURN (Full Executive Analytics, Reports, Offices, Signatories) ───
     if (user?.role === 'super_admin') {
-        // Shared: Signatories panel JSX
+        // Shared: Signatories panel JSX (Full APP + PPMP management)
         const SignatoriesPanel = (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-                <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                        <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide flex items-center gap-2">
-                            <Shield className="w-4 h-4 text-blue-600" />
-                            Official Signatories Configuration
-                        </h2>
-                        <span className="text-xs text-slate-500">
-                            Configure the official names &amp; designations for <strong>Reviewed as to Budgetary Requirement</strong>, <strong>Reviewed by BAC-Secretariat</strong>, and <strong>Approved by: (Governor)</strong>
-                        </span>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={() => openSignatoryModal()}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition shadow-2xs self-start sm:self-auto cursor-pointer"
-                    >
-                        <Plus className="w-4 h-4" />
-                        Add Signatory
-                    </button>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-50 text-slate-700 uppercase font-semibold border-b border-slate-200">
-                            <tr>
-                                <th className="p-3">Signatory Role / Box</th>
-                                <th className="p-3">Full Official Name</th>
-                                <th className="p-3">Position / Designation</th>
-                                <th className="p-3">Status</th>
-                                <th className="p-3 text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {signatoriesList.length === 0 ? (
-                                <tr>
-                                    <td colSpan={5} className="p-6 text-center text-slate-400 italic">
-                                        No signatories configured yet. Click "Add Signatory" to set up official signatories.
-                                    </td>
-                                </tr>
-                            ) : (
-                                (() => {
-                                    const totalPages = Math.ceil(signatoriesList.length / signatoryPerPage) || 1;
-                                    const safePage = Math.min(signatoryPage, totalPages);
-                                    const startIndex = (safePage - 1) * signatoryPerPage;
-                                    const paginated = signatoriesList.slice(startIndex, startIndex + signatoryPerPage);
-                                    return paginated.map((sig) => (
-                                        <tr key={sig.id} className="hover:bg-slate-50 transition">
-                                            <td className="p-3">
-                                                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold ${
-                                                    sig.signatory_type === 'budget_requirement'
-                                                        ? 'bg-indigo-100 text-indigo-800'
-                                                        : sig.signatory_type === 'pacco_requirement'
-                                                        ? 'bg-teal-100 text-teal-800'
-                                                        : sig.signatory_type === 'bac_secretariat'
-                                                        ? 'bg-purple-100 text-purple-800'
-                                                        : 'bg-emerald-100 text-emerald-800'
-                                                }`}>
-                                                    {sig.signatory_type === 'budget_requirement'
-                                                        ? 'Reviewed as to Budgetary Requirement (PBO)'
-                                                        : sig.signatory_type === 'pacco_requirement'
-                                                        ? 'Reviewed as to Budgetary Requirement (PACCO)'
-                                                        : sig.signatory_type === 'bac_secretariat'
-                                                        ? 'Reviewed by BAC-Secretariat'
-                                                        : 'Approved by: (Governor)'}
-                                                </span>
-                                            </td>
-                                            <td className="p-3 font-bold text-slate-900">{sig.name}</td>
-                                            <td className="p-3 text-slate-600">{sig.position}</td>
-                                            <td className="p-3">
-                                                {sig.is_active ? (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-medium text-[11px]">
-                                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Active Official
-                                                    </span>
-                                                ) : (
-                                                    <span className="inline-flex items-center px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[11px]">Inactive</span>
-                                                )}
-                                            </td>
-                                            <td className="p-3 text-right">
-                                                <div className="flex items-center justify-end gap-1.5">
-                                                    <button onClick={() => openSignatoryModal(sig)} className="px-2.5 py-1 text-blue-600 hover:bg-blue-50 rounded text-xs font-semibold transition">Edit</button>
-                                                    <button onClick={() => handleDeleteSignatory(sig.id)} className="p-1 text-rose-600 hover:bg-rose-50 rounded transition" title="Delete signatory">
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ));
-                                })()
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-                {signatoriesList.length > 0 && (() => {
-                    const totalItems = signatoriesList.length;
-                    const totalPages = Math.ceil(totalItems / signatoryPerPage) || 1;
-                    const safePage = Math.min(signatoryPage, totalPages);
-                    const startIndex = (safePage - 1) * signatoryPerPage;
-                    const endIndex = safePage * signatoryPerPage;
-                    return (
-                        <div className="px-5 py-3 border-t border-slate-200 bg-slate-50/70">
-                            <PaginationControl
-                                currentPage={safePage}
-                                totalPages={totalPages}
-                                onPageChange={setSignatoryPage}
-                                perPage={signatoryPerPage}
-                                onPerPageChange={setSignatoryPerPage}
-                                totalEntries={totalItems}
-                                startIndex={startIndex}
-                                endIndex={endIndex}
-                            />
-                        </div>
-                    );
-                })()}
-            </div>
+            <SignatoriesManagement
+                initialSignatories={data?.signatories}
+                onReload={onReload}
+            />
         );
 
         // Shared: Users panel JSX (rendered inline in the admin layout)
         const renderAdminContent = () => {
             if (adminSection === 'analytics') {
-                return <AdminVisualAnalytics analytics={analytics} metrics={metrics} />;
+                return <AdminVisualAnalytics analytics={analytics} metrics={metrics} recentPpmps={recentPpmps} onSelectPpmp={onSelectPpmp} />;
             }
             if (adminSection === 'reports') {
                 return <AdminReportsView data={data} user={user} />;
@@ -2831,7 +2725,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'BUDGET_APPROVED',
                                 label: 'Reviewed / Forwarded',
-                                count: recentPpmps.filter(p => ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'TWG_REVIEW', 'TWG_RETURNED', 'READY_TO_PRINT'].includes(p.status)).length,
+                                count: recentPpmps.filter(p => ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(p.status)).length,
                                 activeClass: 'bg-emerald-600 text-white border-emerald-600 shadow-sm',
                                 inactiveClass: 'bg-emerald-50/70 text-emerald-900 border-emerald-200 hover:bg-emerald-100',
                                 activeBadge: 'bg-emerald-800 text-emerald-100',
@@ -2875,7 +2769,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'OPPMO_APPROVED',
                                 label: 'Cleared / Routed to TWG',
-                                count: recentPpmps.filter(p => ['TWG_REVIEW', 'TWG_RETURNED', 'READY_TO_PRINT'].includes(p.status)).length,
+                                count: recentPpmps.filter(p => ['TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(p.status)).length,
                                 activeClass: 'bg-emerald-600 text-white border-emerald-600 shadow-sm',
                                 inactiveClass: 'bg-emerald-50/70 text-emerald-900 border-emerald-200 hover:bg-emerald-100',
                                 activeBadge: 'bg-emerald-800 text-emerald-100',
@@ -2894,7 +2788,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             },
                         ];
                     } else if (role === 'twg') {
-                        // TWG: All, Pending TWG Review (actionable), Ready to Print (Completed), Returned with Remarks
+                        // TWG: All, Pending TWG Review (actionable), Forwarded to Office Head, Ready to Print (Completed), Returned with Remarks
                         tabs = [
                             {
                                 key: 'all',
@@ -2915,6 +2809,16 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 activeBadge: 'bg-cyan-800 text-cyan-100',
                                 inactiveBadge: 'bg-cyan-100 text-cyan-800 border border-cyan-300',
                                 dot: 'bg-cyan-500',
+                            },
+                            {
+                                key: 'TWG_APPROVED',
+                                label: 'Forwarded to Office Head',
+                                count: recentPpmps.filter(p => ['HEAD_PENDING', 'HEAD_RETURNED'].includes(p.status)).length,
+                                activeClass: 'bg-amber-600 text-white border-amber-600 shadow-sm',
+                                inactiveClass: 'bg-amber-50/70 text-amber-900 border-amber-200 hover:bg-amber-100',
+                                activeBadge: 'bg-amber-800 text-amber-100',
+                                inactiveBadge: 'bg-amber-100 text-amber-800 border border-amber-300',
+                                dot: 'bg-amber-500',
                             },
                             {
                                 key: 'READY_TO_PRINT',

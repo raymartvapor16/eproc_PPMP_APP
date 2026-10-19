@@ -93,24 +93,33 @@ class SuperAdminAndAdminRoleTest extends TestCase
         $response->assertOk();
     }
 
-    public function test_admin_role_cannot_modify_offices_or_signatories(): void
+    public function test_admin_role_cannot_modify_offices_but_can_manage_signatories(): void
     {
         $this->actingAs($this->adminUser);
 
-        // Forbidden to create office
+        // Forbidden to create office (Super Admin only)
         $response = $this->postJson('/api/offices', [
             'office_name' => 'Provincial Legal Office',
             'abbreviation' => 'PLO',
         ]);
         $response->assertStatus(403);
 
-        // Forbidden to configure signatories
+        // Admin can configure official signatories (PPMP & APP)
         $response = $this->postJson('/api/signatories', [
-            'signatory_type' => 'approved_by',
-            'name' => 'Illegal Signatory',
-            'position' => 'Hacker',
+            'signatory_type' => 'app_prepared_by',
+            'name' => 'GINA MAE B. CARBAQUEL',
+            'position' => 'ADAS II',
         ]);
-        $response->assertStatus(403);
+        $response->assertStatus(201);
+
+        // Non-admin (end_user) is forbidden to configure signatories
+        $this->actingAs($this->endUser);
+        $unauth = $this->postJson('/api/signatories', [
+            'signatory_type' => 'app_prepared_by',
+            'name' => 'Unauthorized User',
+            'position' => 'Staff',
+        ]);
+        $unauth->assertStatus(403);
     }
 
     public function test_admin_role_can_manage_users_except_super_admin(): void
@@ -254,5 +263,75 @@ class SuperAdminAndAdminRoleTest extends TestCase
             'signature_data' => $fakePngDataUrl,
         ]);
         $response2->assertOk();
+    }
+
+    public function test_super_admin_can_toggle_signature_insertion_settings(): void
+    {
+        // 1. Initial state defaults to all true
+        $res = $this->getJson('/api/system-settings/signatures');
+        $res->assertOk();
+        $res->assertJson([
+            'settings' => [
+                'ppmp' => true,
+                'app' => true,
+                'attachment_list' => true,
+            ],
+        ]);
+
+        // 2. Super Admin toggles PPMP to false, APP to false
+        $this->actingAs($this->superAdmin);
+        $updateRes = $this->putJson('/api/system-settings/signatures', [
+            'ppmp' => false,
+            'app' => false,
+            'attachment_list' => true,
+        ]);
+        $updateRes->assertOk();
+        $updateRes->assertJson([
+            'settings' => [
+                'ppmp' => false,
+                'app' => false,
+                'attachment_list' => true,
+            ],
+        ]);
+
+        $this->assertFalse(\App\Models\SystemSetting::isSignatureInsertionEnabled('ppmp'));
+        $this->assertFalse(\App\Models\SystemSetting::isSignatureInsertionEnabled('app'));
+        $this->assertTrue(\App\Models\SystemSetting::isSignatureInsertionEnabled('attachment_list'));
+
+        // Verify audit log
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'SIGNATURE_CONTROLLER_UPDATED',
+            'user_id' => $this->superAdmin->id,
+        ]);
+    }
+
+    public function test_admin_and_end_user_cannot_update_signature_insertion_settings(): void
+    {
+        // Admin gets 403
+        $this->actingAs($this->adminUser);
+        $resAdmin = $this->putJson('/api/system-settings/signatures', [
+            'ppmp' => false,
+            'app' => false,
+            'attachment_list' => false,
+        ]);
+        $resAdmin->assertStatus(403);
+
+        // End user gets 403
+        $this->actingAs($this->endUser);
+        $resEndUser = $this->putJson('/api/system-settings/signatures', [
+            'ppmp' => false,
+            'app' => false,
+            'attachment_list' => false,
+        ]);
+        $resEndUser->assertStatus(403);
+
+        // Unauthenticated gets 401
+        auth()->logout();
+        $resGuest = $this->putJson('/api/system-settings/signatures', [
+            'ppmp' => false,
+            'app' => false,
+            'attachment_list' => false,
+        ]);
+        $resGuest->assertStatus(401);
     }
 }

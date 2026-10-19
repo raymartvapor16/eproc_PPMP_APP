@@ -42,7 +42,7 @@ class UserController extends Controller
             return response()->json(['message' => 'Unauthorized. Only Super Admin can assign the Super Admin role.'], 403);
         }
 
-        $allowedRoles = ['end_user', 'head', 'budget_officer', 'oppmo', 'twg', 'authorized_staff', 'pacco', 'admin'];
+        $allowedRoles = ['end_user', 'head', 'budget_officer', 'oppmo', 'twg', 'authorized_staff', 'pacco', 'monitor', 'admin'];
         if ($admin->isSuperAdmin()) {
             $allowedRoles[] = 'super_admin';
         }
@@ -398,7 +398,7 @@ class UserController extends Controller
             return response()->json(['message' => 'Unauthorized. Only Super Administrators can manage Super Administrator accounts.'], 403);
         }
 
-        $allowedRoles = ['end_user', 'head', 'budget_officer', 'oppmo', 'twg', 'authorized_staff', 'pacco', 'admin'];
+        $allowedRoles = ['end_user', 'head', 'budget_officer', 'oppmo', 'twg', 'authorized_staff', 'pacco', 'monitor', 'admin'];
         if ($admin->isSuperAdmin()) {
             $allowedRoles[] = 'super_admin';
         }
@@ -445,7 +445,7 @@ class UserController extends Controller
                     if ($currentUser->isHead()) {
                         $q->where('office_id', $currentUser->office_id);
                     } elseif ($currentUser->isBudgetOfficer() || $currentUser->isOppmo() || $currentUser->isTwg() || $currentUser->isPacco()) {
-                        $q->whereNotIn('status', ['DRAFT', 'HEAD_PENDING', 'HEAD_RETURNED']);
+                        $q->where('status', '!=', 'DRAFT');
                     } else {
                         $q->where('created_by', $currentUser->id);
                     }

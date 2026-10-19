@@ -51,6 +51,11 @@ export const ReviewPanel = ({
         )
     );
 
+    const isPostTwg = Boolean(ppmp?.twg_approved_at || ppmp?.signatures?.some(s => s.role === 'twg'));
+    const isOppmoReviewer = effectiveRole === 'oppmo';
+    const hasApp = Boolean(ppmp?.app_data || ppmp?.pre_submission_checks?.app_generated || localStorage.getItem(`ppmp_app_generated_${ppmp?.uuid}`));
+    const needsAppGeneration = isOppmoReviewer && isPostTwg && !hasApp;
+
     const handleApprove = async () => {
         let confirmText = 'Are you sure you want to APPROVE this PPMP?';
         if (effectiveRole === 'head') {
@@ -60,11 +65,19 @@ export const ReviewPanel = ({
         } else if (effectiveRole === 'pacco') {
             confirmText = 'Are you sure you want to certify trust fund requirements? Initial indicator will be affixed and this PPMP will automatically route to OPPMO.';
         } else if (effectiveRole === 'oppmo') {
-            confirmText = ppmp?.amendment_scope === 'PPMP_APP'
-                ? 'Are you sure you want to approve this PPMP? Initial indicator will be affixed and this PPMP will be finalized and marked READY TO PRINT.'
-                : 'Are you sure you want to approve this PPMP? Initial indicator will be affixed and this PPMP will automatically route to TWG.';
+            if (isPostTwg) {
+                if (!hasApp) {
+                    alert('Annual Procurement Plan (APP) Required:\n\nPlease generate the Annual Procurement Plan (APP) using the "Create APP" button before forwarding this PPMP to the Office Head.');
+                    return;
+                }
+                confirmText = 'Are you sure you want to approve this PPMP? The generated Annual Procurement Plan (APP) will be forwarded to the Office Head for final approval.';
+            } else {
+                confirmText = ppmp?.amendment_scope === 'PPMP_APP'
+                    ? 'Are you sure you want to approve this PPMP? Initial indicator will be affixed and this PPMP will be finalized and marked READY TO PRINT.'
+                    : 'Are you sure you want to approve this PPMP? Initial indicator will be affixed and this PPMP will automatically route to BAC-TWG for technical review.';
+            }
         } else if (effectiveRole === 'twg') {
-            confirmText = 'Are you sure you want to approve this PPMP? Technical review will be certified and this PPMP will automatically route to the Office Head for final approval.';
+            confirmText = 'Are you sure you want to approve this PPMP? BAC-TWG technical review will be certified and this PPMP will route back to OPPMO to generate the Annual Procurement Plan (APP).';
         }
 
         if (!window.confirm(confirmText)) return;
@@ -192,7 +205,19 @@ export const ReviewPanel = ({
                     )}
                 </div>
             ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                <>
+                    {needsAppGeneration && (
+                        <div className="mb-3 p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-xs">
+                            <p className="font-bold flex items-center gap-1.5 text-amber-800">
+                                <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                                Annual Procurement Plan (APP) Generation Required
+                            </p>
+                            <p className="mt-1 text-[11px] text-amber-700 leading-relaxed">
+                                BAC-TWG technical review is complete. As OPPMO Reviewer, you must generate the official APP using the <strong>Create APP</strong> button on this page before granting approval to the Office Head.
+                            </p>
+                        </div>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                     <button
                         type="button"
                         disabled={actionLoading}
@@ -222,6 +247,7 @@ export const ReviewPanel = ({
                         Suspend / REMARKS
                     </button>
                 </div>
+                </>
             )}
 
             <div className="space-y-2">

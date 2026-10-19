@@ -41,11 +41,12 @@ import {
 import { FundSourcesManagement } from '../../components/Dashboard/FundSourcesManagement';
 import { ProcurementConditionsManagement } from '../../components/Dashboard/ProcurementConditionsManagement';
 import { OtherTermsManagement } from '../../components/Dashboard/OtherTermsManagement';
+import { SignatoriesManagement } from '../../components/Dashboard/SignatoriesManagement';
 import { CreateUserModal } from '../../components/Dashboard/CreateUserModal';
 import { UserSignatureModal } from '../../components/Dashboard/UserSignatureModal';
 
 export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) => {
-    // Current Active Tab: 'users' | 'amendments' | 'logs' | 'ppmps' | 'fund_sources' | 'conditions' | 'other_terms'
+    // Current Active Tab: 'users' | 'amendments' | 'logs' | 'ppmps' | 'fund_sources' | 'conditions' | 'other_terms' | 'signatories'
     const [activeTab, setActiveTab] = useState('users');
 
     useEffect(() => {
@@ -456,6 +457,8 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-teal-100 text-teal-800 border border-teal-300">Authorize Staff</span>;
             case 'pacco':
                 return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-100 text-emerald-800 border border-emerald-300">PACCO Reviewer</span>;
+            case 'monitor':
+                return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-cyan-100 text-cyan-800 border border-cyan-200">Monitoring Officer</span>;
             default:
                 return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700">End User</span>;
         }
@@ -701,6 +704,19 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 >
                     <Leaf className="w-4 h-4" />
                     <span>Other Terms &amp; Green Specs</span>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('signatories')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
+                        activeTab === 'signatories'
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                >
+                    <PenTool className="w-4 h-4" />
+                    <span>Official Signatories (APP / PPMP)</span>
                 </button>
             </div>
 
@@ -1497,6 +1513,13 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
             )}
 
             {/* ══════════════════════════════════════════════════════════════════ */}
+            {/* TAB 8: OFFICIAL SIGNATORIES MANAGEMENT (APP & PPMP)               */}
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            {activeTab === 'signatories' && (
+                <SignatoriesManagement initialSignatories={data?.signatories} onReload={onReload} />
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════════ */}
             {/* MODALS                                                           */}
             {/* ══════════════════════════════════════════════════════════════════ */}
 
@@ -1656,6 +1679,7 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                     <option value="oppmo">OPPMO / BAC Secretariat</option>
                                     <option value="twg">BAC-TWG Evaluator</option>
                                     <option value="pacco">PACCO Reviewer (Provincial Accounting)</option>
+                                    <option value="monitor">OPPMO Monitoring Officer</option>
                                     <option value="admin">Administrator</option>
                                     {user?.role === 'super_admin' && (
                                         <option value="super_admin">Super Administrator</option>

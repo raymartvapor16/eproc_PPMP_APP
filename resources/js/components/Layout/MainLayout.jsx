@@ -33,6 +33,7 @@ import {
     Trash2,
     Info,
     RefreshCw,
+    Layers,
 } from 'lucide-react';
 import { SignaturePadModal } from '../UI/SignaturePadModal';
 
@@ -400,6 +401,7 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
             case 'oppmo': return 'OPPMO / BAC Secretariat';
             case 'twg': return 'BAC-TWG Evaluator';
             case 'pacco': return 'PACCO Reviewer';
+            case 'monitor': return 'OPPMO Monitoring Officer';
             case 'super_admin': return 'Super Administrator';
             case 'admin': return 'Administrator';
             default: return role;

@@ -110,4 +110,9 @@ class User extends Authenticatable
     {
         return $this->role === 'admin';
     }
+
+    public function isMonitor(): bool
+    {
+        return $this->role === 'monitor';
+    }
 }

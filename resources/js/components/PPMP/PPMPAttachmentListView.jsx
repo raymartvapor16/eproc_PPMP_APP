@@ -3,6 +3,7 @@ import { formatCurrency, formatDate } from '../UI/StatusBadge';
 import { Printer, ArrowLeft, Plus, Trash2, Edit3, Loader2, Sparkles, ShieldCheck, Truck, Lock, Leaf, CheckCircle2, ChevronRight, ChevronLeft, Eye, Layers, Copy, Check, Save } from 'lucide-react';
 import { ppmpService, procurementConditionService, otherTermService } from '../../services/api';
 import { GreenSpecDropdown } from './GreenSpecDropdown';
+import { useSignatureSettings } from '../../utils/signatureController';
 import {
     BASE_DELIVERY_PERIODS,
     BASE_PLACES_OF_DELIVERY,
@@ -263,7 +264,12 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
         return deduplicateOptions(pool, canonicalizePaymentMethod);
     }, [conditions]);
 
-    // Signatories
+    // Signatories & Electronic Signature Controller
+    const { isEnabled } = useSignatureSettings();
+    const isAttachmentSignatureEnabled = ppmp?.signature_settings?.attachment_list !== undefined
+        ? Boolean(ppmp.signature_settings.attachment_list)
+        : isEnabled('attachment_list');
+
     const isAttachmentAmended = ppmp?.amendment_scope === 'ATTACHMENT_LIST' || ppmp?.amendment_scope === 'ALL';
     const isScopePpmpAppOnly = ppmp?.amendment_scope === 'PPMP_APP';
 
@@ -731,7 +737,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                         <div>
                             <div className="font-bold text-[10px] mb-1">Prepared By:</div>
                             <div className="text-center flex flex-col items-center justify-end">
-                                {preparedSig?.user?.signature_path ? (
+                                {isAttachmentSignatureEnabled && preparedSig?.user?.signature_path ? (
                                     <div className="h-8 flex items-center justify-center">
                                         <img
                                             src={`/api/users/${preparedSig.user.id}/signature`}
@@ -739,7 +745,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                             className="max-h-8 max-w-[120px] object-contain"
                                         />
                                     </div>
-                                ) : preparedSig?.signature_indicator ? (
+                                ) : (isAttachmentSignatureEnabled && preparedSig?.signature_indicator) ? (
                                     <div className="inline-flex flex-col items-center mb-1">
                                         <div className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-50 border border-emerald-300 rounded text-emerald-800 text-[10px] font-mono">
                                             <ShieldCheck className="w-3 h-3 text-emerald-600" />
@@ -755,7 +761,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                 <div className="text-[10px] text-slate-600">
                                     {endUserPosition}
                                 </div>
-                                {preparedSig?.signed_at && (
+                                {isAttachmentSignatureEnabled && preparedSig?.signed_at && (
                                     <div className="text-[9px] text-slate-500">
                                         Date/Time: {formatDate(preparedSig.signed_at)}
                                     </div>
@@ -766,7 +772,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                         <div>
                             <div className="font-bold text-[10px] mb-1">Submitted By:</div>
                             <div className="text-center flex flex-col items-center justify-end">
-                                {headSig?.user?.signature_path ? (
+                                {isAttachmentSignatureEnabled && headSig?.user?.signature_path ? (
                                     <div className="h-8 flex items-center justify-center">
                                         <img
                                             src={`/api/users/${headSig.user.id}/signature`}
@@ -774,7 +780,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                             className="max-h-8 max-w-[120px] object-contain"
                                         />
                                     </div>
-                                ) : headSig?.signature_indicator ? (
+                                ) : (isAttachmentSignatureEnabled && headSig?.signature_indicator) ? (
                                     <div className="inline-flex flex-col items-center mb-1">
                                         <div className="flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 border border-blue-300 rounded text-blue-800 text-[10px] font-mono">
                                             <ShieldCheck className="w-3 h-3 text-blue-600" />
@@ -790,7 +796,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                 <div className="text-[10px] text-slate-600">
                                     {headPosition && headPosition !== 'Head of Office' ? headPosition : (resolvedOfficeHeadPosition || 'Head of Office')}
                                 </div>
-                                {headSig?.signed_at && (
+                                {isAttachmentSignatureEnabled && headSig?.signed_at && (
                                     <div className="text-[9px] text-slate-500">
                                         Date/Time: {formatDate(headSig.signed_at)}
                                     </div>
@@ -802,7 +808,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                     <div className="pt-2">
                         <div className="text-center flex flex-col items-center justify-end">
                             <div className="font-bold text-[10px] uppercase mb-1">REVIEWED BY TWG:</div>
-                            {twgSig?.user?.signature_path ? (
+                            {isAttachmentSignatureEnabled && twgSig?.user?.signature_path ? (
                                 <div className="h-8 flex items-center justify-center">
                                     <img
                                         src={`/api/users/${twgSig.user.id}/signature`}
@@ -810,7 +816,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                         className="max-h-8 max-w-[120px] object-contain"
                                     />
                                 </div>
-                            ) : twgSig?.signature_indicator ? (
+                            ) : (isAttachmentSignatureEnabled && twgSig?.signature_indicator) ? (
                                 <div className="inline-flex flex-col items-center mb-1">
                                     <div className="flex items-center gap-1.5 px-2 py-0.5 bg-cyan-50 border border-cyan-300 rounded text-cyan-800 text-[10px] font-mono">
                                         <ShieldCheck className="w-3 h-3 text-cyan-600" />
@@ -826,7 +832,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                             <div className="text-[10px] text-slate-600">
                                 {twgSig?.signer_designation || twgSig?.user?.designation || 'BAC TWG'}
                             </div>
-                            {twgSig?.signed_at && (
+                            {isAttachmentSignatureEnabled && twgSig?.signed_at && (
                                 <div className="text-[9px] text-slate-500">
                                     Date/Time: {formatDate(twgSig.signed_at)}
                                 </div>
@@ -834,11 +840,14 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                         </div>
                     </div>
 
-                    <div className="mt-4 pt-2 border-t border-dotted border-slate-300 text-center">
-                        <p className="text-[8px] italic text-slate-600 font-sans tracking-wide">
-                            * This is an electronically generated and certified document under the Electronic Procurement Management System. Valid even without a physical or handwritten signature.
-                        </p>
-                    </div>
+                    {/* System Generated / E-Signature Validity Notice */}
+                    {isAttachmentSignatureEnabled && (
+                        <div className="mt-4 pt-2 border-t border-dotted border-slate-300 text-center">
+                            <p className="text-[8px] italic text-slate-600 font-sans tracking-wide">
+                                * This is an electronically generated and certified document under the Electronic Procurement Management System. Valid even without a physical or handwritten signature.
+                            </p>
+                        </div>
+                    )}
                 </div>
             </div>
         );

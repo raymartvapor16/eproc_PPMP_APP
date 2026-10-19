@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     Bell,
     AlertTriangle,
@@ -15,6 +15,7 @@ import {
     FileSpreadsheet,
 } from 'lucide-react';
 import { StatusBadge, formatCurrency } from '../UI/StatusBadge';
+import { PimsPublishModal } from '../Monitoring/PimsPublishModal';
 
 const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -220,24 +221,43 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
 
     const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'urgent' | 'published'
     const [isCollapsed, setIsCollapsed] = useState(false);
+    const [selectedPpmpForPublish, setSelectedPpmpForPublish] = useState(null);
+    const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
 
-    const togglePublish = (uuid) => {
-        setPublishedMap((prev) => {
-            const next = { ...prev };
-            if (next[uuid]) {
-                delete next[uuid];
-            } else {
-                next[uuid] = {
-                    publishedAt: new Date().toISOString(),
-                };
-            }
+    // Sync published map across events
+    useEffect(() => {
+        const handleSync = () => {
             try {
-                localStorage.setItem('pims_published_ppmps', JSON.stringify(next));
-            } catch (err) {
-                console.error('Failed to save to localStorage', err);
-            }
-            return next;
-        });
+                const stored = localStorage.getItem('pims_published_ppmps');
+                if (stored) setPublishedMap(JSON.parse(stored));
+            } catch (e) {}
+        };
+        window.addEventListener('pims:published', handleSync);
+        window.addEventListener('monitoring:updated', handleSync);
+        return () => {
+            window.removeEventListener('pims:published', handleSync);
+            window.removeEventListener('monitoring:updated', handleSync);
+        };
+    }, []);
+
+    const handlePublishClick = (ppmp) => {
+        if (publishedMap[ppmp.uuid]) {
+            // Unmark published PPMP
+            setPublishedMap((prev) => {
+                const next = { ...prev };
+                delete next[ppmp.uuid];
+                try {
+                    localStorage.setItem('pims_published_ppmps', JSON.stringify(next));
+                } catch (err) {
+                    console.error('Failed to save to localStorage', err);
+                }
+                return next;
+            });
+        } else {
+            // Prompt modal to capture what enduser is procuring and start monitoring
+            setSelectedPpmpForPublish(ppmp);
+            setIsPublishModalOpen(true);
+        }
     };
 
     // Calculate reminders for all PPMPs with a Start of Procurement Activity in any workflow status
@@ -558,7 +578,7 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
 
                                                 <button
                                                     type="button"
-                                                    onClick={() => togglePublish(ppmp.uuid)}
+                                                    onClick={() => handlePublishClick(ppmp)}
                                                     className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer shadow-2xs ${
                                                         isPublished
                                                             ? 'bg-slate-200 hover:bg-slate-300 text-slate-700'
@@ -591,6 +611,18 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
                     </div>
                 </>
             )}
+
+            <PimsPublishModal
+                isOpen={isPublishModalOpen}
+                onClose={() => setIsPublishModalOpen(false)}
+                ppmp={selectedPpmpForPublish}
+                onSuccess={() => {
+                    try {
+                        const stored = localStorage.getItem('pims_published_ppmps');
+                        if (stored) setPublishedMap(JSON.parse(stored));
+                    } catch (e) {}
+                }}
+            />
         </div>
     );
 };

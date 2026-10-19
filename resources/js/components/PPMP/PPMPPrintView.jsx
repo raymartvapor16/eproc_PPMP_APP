@@ -2,8 +2,14 @@ import React from 'react';
 import { formatCurrency, formatDate } from '../UI/StatusBadge';
 import { Printer, ArrowLeft } from 'lucide-react';
 import { formatDescription6Words, formatMonthYear } from './ProcurementPlanTable';
+import { useSignatureSettings } from '../../utils/signatureController';
 
 export const PPMPPrintView = ({ ppmp, onBack }) => {
+    const { isEnabled } = useSignatureSettings();
+    const isSignatureEnabled = ppmp?.signature_settings?.ppmp !== undefined
+        ? Boolean(ppmp.signature_settings.ppmp)
+        : isEnabled('ppmp');
+
     const handlePrint = () => {
         window.print();
     };
@@ -137,45 +143,38 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                     Tracker No.: <span className="font-bold text-black">{ppmp?.tracking_number || ppmp?.ppmp_number || '—'}</span>
                 </div>
 
-                {/* Header Grid matching PDF */}
-                <table className="w-full border-collapse mb-1">
-                    <tbody>
-                        <tr>
-                            <td className="w-24 text-center align-middle p-1">
-                                <img
-                                    src="/images/logo.png"
-                                    alt="Province of Davao del Sur Official Seal"
-                                    className="w-20 h-20 mx-auto object-contain"
-                                />
-                            </td>
-                            <td className="text-center align-middle p-1">
-                                <div className="text-xs uppercase font-normal tracking-wide leading-tight">Republic of the Philippines</div>
-                                <div className="text-base font-bold uppercase tracking-wider leading-tight">PROVINCIAL GOVERNMENT OF DAVAO DEL SUR</div>
-                                <div className="text-sm font-normal tracking-tight mt-0.5">
-                                    Matti, Digos City
-                                </div>
-                                <div className="text-sm font-bold tracking-tight mt-0.5">
-                                    PROJECT PROCUREMENT MANAGEMENT PLAN (PPMP) NO. <span className="font-mono">{ppmp.ppmp_number}</span>
-                                </div>
-                                <div className="flex items-center justify-center gap-10 text-xs font-bold mt-1">
-                                    <label className="flex items-center gap-1.5 cursor-default">
-                                        <span className={`w-3.5 h-3.5 border border-black inline-flex items-center justify-center text-[10px] leading-none ${ppmp.plan_type === 'INDICATIVE' ? 'bg-black text-white font-black' : 'bg-white'}`}>
-                                            {ppmp.plan_type === 'INDICATIVE' ? '✓' : ''}
-                                        </span>
-                                        <span>INDICATIVE</span>
-                                    </label>
-                                    <label className="flex items-center gap-1.5 cursor-default">
-                                        <span className={`w-3.5 h-3.5 border border-black inline-flex items-center justify-center text-[10px] leading-none ${ppmp.plan_type === 'FINAL' ? 'bg-black text-white font-black' : 'bg-white'}`}>
-                                            {ppmp.plan_type === 'FINAL' ? '✓' : ''}
-                                        </span>
-                                        <span>FINAL</span>
-                                    </label>
-                                </div>
-                            </td>
-                            <td className="w-24"></td>
-                        </tr>
-                    </tbody>
-                </table>
+                {/* Header matching PDF with Logo beside the header text */}
+                <div className="flex items-center justify-center gap-4 mb-2">
+                    <img
+                        src="/images/logo.png"
+                        alt="Province of Davao del Sur Official Seal"
+                        className="w-16 h-16 object-contain flex-shrink-0"
+                    />
+                    <div className="text-center">
+                        <div className="text-xs uppercase font-normal tracking-wide leading-tight">Republic of the Philippines</div>
+                        <div className="text-base font-bold uppercase tracking-wider leading-tight">PROVINCIAL GOVERNMENT OF DAVAO DEL SUR</div>
+                        <div className="text-sm font-normal tracking-tight mt-0.5">
+                            Matti, Digos City
+                        </div>
+                        <div className="text-sm font-bold tracking-tight mt-0.5">
+                            PROJECT PROCUREMENT MANAGEMENT PLAN (PPMP) NO. <span className="font-mono">{ppmp.ppmp_number}</span>
+                        </div>
+                        <div className="flex items-center justify-center gap-10 text-xs font-bold mt-1">
+                            <label className="flex items-center gap-1.5 cursor-default">
+                                <span className={`w-3.5 h-3.5 border border-black inline-flex items-center justify-center text-[10px] leading-none ${ppmp.plan_type === 'INDICATIVE' ? 'bg-black text-white font-black' : 'bg-white'}`}>
+                                    {ppmp.plan_type === 'INDICATIVE' ? '✓' : ''}
+                                </span>
+                                <span>INDICATIVE</span>
+                            </label>
+                            <label className="flex items-center gap-1.5 cursor-default">
+                                <span className={`w-3.5 h-3.5 border border-black inline-flex items-center justify-center text-[10px] leading-none ${ppmp.plan_type === 'FINAL' ? 'bg-black text-white font-black' : 'bg-white'}`}>
+                                    {ppmp.plan_type === 'FINAL' ? '✓' : ''}
+                                </span>
+                                <span>FINAL</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
 
                 {/* Fiscal Year & End-User Subheaders */}
                 <div className="text-xs mb-1">
@@ -191,11 +190,11 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                 <table className="w-full border-collapse border border-black text-black text-[9px] leading-tight print-table">
                     <thead>
                         <tr className="text-center font-bold border-b border-black">
-                            <th className="border border-black p-1 w-[15%]">
+                            <th className="border border-black p-1 w-[22%]">
                                 General Description and Objective of the<br />
                                 Project to be Procured
                             </th>
-                            <th className="border border-black p-1 w-[8%]">
+                            <th className="border border-black p-1 w-[5%]">
                                 Type of the Project to be<br />
                                 Procured (whether Goods, Infrastructure and<br />
                                 Consulting Services)
@@ -208,7 +207,7 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                 Recommended Mode of<br />
                                 Procurement
                             </th>
-                            <th className="border border-black p-1 w-[6%]">
+                            <th className="border border-black p-1 w-[5%]">
                                 Pre-Procurement Conference, if<br />
                                 applicable (Yes/No)
                             </th>
@@ -231,11 +230,11 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                 Estimated Budget / Authorized<br />
                                 Budgetary Allocation (PhP)
                             </th>
-                            <th className="border border-black p-1 w-[10%]">
+                            <th className="border border-black p-1 w-[9%]">
                                 ATTACHED SUPPORTING<br />
                                 DOCUMENTS
                             </th>
-                            <th className="border border-black p-1 w-[10%]">
+                            <th className="border border-black p-1 w-[8%]">
                                 REMARKS
                             </th>
                         </tr>
@@ -328,7 +327,7 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                             <td className="w-1/2 p-1 align-top">
                                 <div className="font-bold text-[9px]">Prepared By:</div>
                                 <div className="text-center flex flex-col items-center justify-end">
-                                    {preparedSig?.user?.signature_path ? (
+                                    {isSignatureEnabled && preparedSig?.user?.signature_path ? (
                                         <div className="h-8 flex items-center justify-center">
                                             <img
                                                 src={`/api/users/${preparedSig.user.id}/signature`}
@@ -345,7 +344,7 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                     <div className="text-[9px] uppercase">
                                         {preparedSig?.signer_designation || 'Designation'}
                                     </div>
-                                    {preparedSig && (
+                                    {isSignatureEnabled && preparedSig && (
                                         <div className="text-[8px] font-mono text-slate-600">
                                             [{preparedSig.signature_indicator}] • {formatDate(preparedSig.signed_at)}
                                         </div>
@@ -355,7 +354,7 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                             <td className="w-1/2 p-1 align-top">
                                 <div className="font-bold text-[9px]">Submitted By:</div>
                                 <div className="text-center flex flex-col items-center justify-end">
-                                    {headSig?.user?.signature_path ? (
+                                    {isSignatureEnabled && headSig?.user?.signature_path ? (
                                         <div className="h-8 flex items-center justify-center">
                                             <img
                                                 src={`/api/users/${headSig.user.id}/signature`}
@@ -372,7 +371,7 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                     <div className="text-[9px] uppercase font-bold">
                                         {headSig?.signer_designation || ppmp?.office?.designation || ppmp?.office?.head?.designation || 'HEAD OF OFFICE'}
                                     </div>
-                                    {headSig && (
+                                    {isSignatureEnabled && headSig && (
                                         <div className="text-[8px] font-mono text-slate-600">
                                             [{headSig.signature_indicator}] • {formatDate(headSig.signed_at)}
                                         </div>
@@ -399,7 +398,7 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                                 <div className="font-bold text-xs uppercase underline text-center">
                                                     {ppmp?.default_signatories?.pacco_requirement?.name || (paccoSig?.signer_name && paccoSig.signer_name !== 'PACCO Reviewer' ? paccoSig.signer_name : 'MAY FERNANDO-UY, CPA')}
                                                 </div>
-                                                {paccoSig?.user?.signature_path && (
+                                                {isSignatureEnabled && paccoSig?.user?.signature_path && (
                                                     <img
                                                         src={`/api/users/${paccoSig.user.id}/signature`}
                                                         alt="Initial Signature"
@@ -410,14 +409,16 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                             <div className="text-[9px] uppercase mt-0.5">
                                                 {ppmp?.default_signatories?.pacco_requirement?.position || (paccoSig?.signer_designation && paccoSig.signer_designation !== 'Provincial Accounting Reviewer' ? paccoSig.signer_designation : 'Provincial Accountant')}
                                             </div>
-                                            {paccoSig ? (
-                                                <div className="text-[8px] font-mono text-slate-600">
-                                                    [{paccoSig.signature_indicator}] • {formatDate(paccoSig.signed_at)}
-                                                </div>
-                                            ) : (
-                                                <div className="text-[8px] text-slate-400 italic">
-                                                     Awaiting Certification
-                                                 </div>
+                                            {isSignatureEnabled && (
+                                                paccoSig ? (
+                                                    <div className="text-[8px] font-mono text-slate-600">
+                                                        [{paccoSig.signature_indicator}] • {formatDate(paccoSig.signed_at)}
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-[8px] text-slate-400 italic">
+                                                        Awaiting Certification
+                                                    </div>
+                                                )
                                             )}
                                         </>
                                     ) : (
@@ -426,7 +427,7 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                                 <div className="font-bold text-xs uppercase underline text-center">
                                                     {ppmp?.default_signatories?.budget_requirement?.name || 'DESSAMIE BUAT-SANCHEZ, CPA, JD'}
                                                 </div>
-                                                {budgetSig?.user?.signature_path && (
+                                                {isSignatureEnabled && budgetSig?.user?.signature_path && (
                                                     <img
                                                         src={`/api/users/${budgetSig.user.id}/signature`}
                                                         alt="Initial Signature"
@@ -437,14 +438,16 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                             <div className="text-[9px] uppercase mt-0.5">
                                                 {ppmp?.default_signatories?.budget_requirement?.position || 'PGDH - PBO / BAC - Chairman'}
                                             </div>
-                                            {budgetSig ? (
-                                                <div className="text-[8px] font-mono text-slate-600">
-                                                    [{budgetSig.signature_indicator}] • {formatDate(budgetSig.signed_at)}
-                                                </div>
-                                            ) : (
-                                                <div className="text-[8px] text-slate-400 italic">
-                                                     Awaiting Certification
-                                                 </div>
+                                            {isSignatureEnabled && (
+                                                budgetSig ? (
+                                                    <div className="text-[8px] font-mono text-slate-600">
+                                                        [{budgetSig.signature_indicator}] • {formatDate(budgetSig.signed_at)}
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-[8px] text-slate-400 italic">
+                                                        Awaiting Certification
+                                                    </div>
+                                                )
                                             )}
                                         </>
                                     )}
@@ -457,7 +460,7 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                         <div className="font-bold text-xs uppercase underline text-center">
                                             {ppmp?.default_signatories?.bac_secretariat?.name || 'NORJANNA M. CAMAGUIN, MPA'}
                                         </div>
-                                        {oppmoSig?.user?.signature_path && (
+                                        {isSignatureEnabled && oppmoSig?.user?.signature_path && (
                                             <img
                                                 src={`/api/users/${oppmoSig.user.id}/signature`}
                                                 alt="Initial Signature"
@@ -468,14 +471,16 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                     <div className="text-[9px] uppercase font-bold mt-0.5">
                                         {ppmp?.default_signatories?.bac_secretariat?.position || 'PGDH - OPPMO'}
                                     </div>
-                                    {oppmoSig ? (
-                                        <div className="text-[8px] font-mono text-slate-600">
-                                            [{oppmoSig.signature_indicator}] • {formatDate(oppmoSig.signed_at)}
-                                        </div>
-                                    ) : (
-                                        <div className="text-[8px] text-slate-400 italic">
-                                             Awaiting Verification
-                                         </div>
+                                    {isSignatureEnabled && (
+                                        oppmoSig ? (
+                                            <div className="text-[8px] font-mono text-slate-600">
+                                                [{oppmoSig.signature_indicator}] • {formatDate(oppmoSig.signed_at)}
+                                            </div>
+                                        ) : (
+                                            <div className="text-[8px] text-slate-400 italic">
+                                                Awaiting Verification
+                                            </div>
+                                        )
                                     )}
                                 </div>
                             </td>
@@ -484,11 +489,13 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                 </table>
 
                 {/* System Generated / E-Signature Validity Notice */}
-                <div className="mt-2 pt-1 border-t border-dotted border-slate-300 text-center print:mt-1 print:pt-0.5">
-                    <p className="text-[8px] italic text-slate-600 font-sans tracking-wide">
-                        * This is an electronically generated and certified document under the Electronic Procurement Management System. Valid even without a physical or handwritten signature.
-                    </p>
-                </div>
+                {isSignatureEnabled && (
+                    <div className="mt-2 pt-1 border-t border-dotted border-slate-300 text-center print:mt-1 print:pt-0.5">
+                        <p className="text-[8px] italic text-slate-600 font-sans tracking-wide">
+                            * This is an electronically generated and certified document under the Electronic Procurement Management System. Valid even without a physical or handwritten signature.
+                        </p>
+                    </div>
+                )}
             </div>
         </div>
     );

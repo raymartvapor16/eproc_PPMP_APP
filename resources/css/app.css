@@ -257,6 +257,21 @@
     background: #94a3b8;
 }
 
+/* Ensure inputs, textareas, and selects in modals always render crisp, high-contrast black text */
+.pims-modal-content input,
+.pims-modal-content textarea,
+.pims-modal-content select,
+input.text-black,
+textarea.text-black,
+select.text-black {
+    color: #000000 !important;
+}
+
+.pims-modal-content input::placeholder,
+.pims-modal-content textarea::placeholder {
+    color: #94a3b8 !important;
+}
+
 /* Custom print stylesheet for Official Government PPMP Document matching Davao del Sur template */
 @media print {
     @page {

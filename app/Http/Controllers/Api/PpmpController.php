@@ -36,16 +36,22 @@ class PpmpController extends Controller
             $query->where('office_id', $user->office_id);
         } elseif ($user->isBudgetOfficer()) {
             // Budget officer sees PPMPs that reached review or beyond
-            $query->whereNotIn('status', ['DRAFT', 'HEAD_PENDING', 'HEAD_RETURNED']);
+            $query->where('status', '!=', 'DRAFT');
         } elseif ($user->isOppmo()) {
             // OPPMO sees PPMPs past budget/pacco review or historical
-            $query->whereNotIn('status', ['DRAFT', 'HEAD_PENDING', 'HEAD_RETURNED', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED']);
+            $query->whereNotIn('status', ['DRAFT', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED']);
         } elseif ($user->isTwg()) {
-            // TWG sees PPMPs reaching TWG review or ready to print
-            $query->whereNotIn('status', ['DRAFT', 'HEAD_PENDING', 'HEAD_RETURNED', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED']);
+            // TWG sees PPMPs reaching TWG review or that they already acted on
+            $query->where(function ($q) {
+                $q->whereNotIn('status', ['DRAFT', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED'])
+                  ->orWhereNotNull('twg_approved_at')
+                  ->orWhereHas('signatures', function ($sq) {
+                      $sq->where('role', 'twg');
+                  });
+            });
         } elseif ($user->isPacco()) {
             // PACCO reviewer sees PPMPs that reached review or beyond
-            $query->whereNotIn('status', ['DRAFT', 'HEAD_PENDING', 'HEAD_RETURNED']);
+            $query->where('status', '!=', 'DRAFT');
         }
 
         // Filters
@@ -250,7 +256,7 @@ class PpmpController extends Controller
             PpmpRoute::create([
                 'ppmp_id' => $ppmp->id,
                 'from_user_id' => $user->id,
-                'to_user_id' => $office?->head_user_id,
+                'to_user_id' => $office?->getEffectiveHeadUser()?->id,
                 'from_role' => 'end_user',
                 'to_role' => 'head',
                 'action' => 'DRAFT_CREATED',
@@ -265,6 +271,13 @@ class PpmpController extends Controller
 
             return $ppmp;
         });
+
+        // Automatically sync to Monitoring System so accurate real-time data is available
+        try {
+            \App\Models\MonitoringProject::syncFromPpmp($ppmp);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('MonitoringProject sync failed: ' . $e->getMessage());
+        }
 
         return response()->json([
             'message' => 'PPMP created successfully in DRAFT status.',
@@ -303,16 +316,19 @@ class PpmpController extends Controller
             if ($user->isHead() && $ppmp->office_id !== $user->office_id) {
                 return response()->json(['message' => 'Unauthorized. You may only view PPMPs from your assigned office.'], 403);
             }
-            if ($user->isBudgetOfficer() && in_array($ppmp->status, ['DRAFT', 'HEAD_PENDING', 'HEAD_RETURNED'])) {
+            if ($user->isBudgetOfficer() && $ppmp->status === 'DRAFT') {
                 return response()->json(['message' => 'PPMP is not yet submitted for Budget review.'], 403);
             }
-            if ($user->isOppmo() && in_array($ppmp->status, ['DRAFT', 'HEAD_PENDING', 'HEAD_RETURNED', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED'])) {
+            if ($user->isOppmo() && in_array($ppmp->status, ['DRAFT', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED'])) {
                 return response()->json(['message' => 'PPMP is not yet submitted for OPPMO review.'], 403);
             }
-            if ($user->isTwg() && in_array($ppmp->status, ['DRAFT', 'HEAD_PENDING', 'HEAD_RETURNED', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED'])) {
-                return response()->json(['message' => 'PPMP is not yet submitted for BAC-TWG review.'], 403);
+            if ($user->isTwg()) {
+                $hasTwgReviewed = $ppmp->twg_approved_at !== null || $ppmp->signatures()->where('role', 'twg')->exists();
+                if (!$hasTwgReviewed && in_array($ppmp->status, ['DRAFT', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED'])) {
+                    return response()->json(['message' => 'PPMP is not yet submitted for BAC-TWG review.'], 403);
+                }
             }
-            if ($user->isPacco() && in_array($ppmp->status, ['DRAFT', 'HEAD_PENDING', 'HEAD_RETURNED'])) {
+            if ($user->isPacco() && $ppmp->status === 'DRAFT') {
                 return response()->json(['message' => 'PPMP is not yet submitted for review.'], 403);
             }
         }
@@ -370,6 +386,7 @@ class PpmpController extends Controller
                     'position' => $activeGovernor->position,
                 ] : null,
             ],
+            'signature_settings' => \App\Models\SystemSetting::getSignatureSettings(),
         ]);
     }
 
@@ -637,28 +654,12 @@ class PpmpController extends Controller
         $user = $request->user();
         $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
 
-        $isCreatorEditable = ($ppmp->created_by === $user->id) && in_array($ppmp->status, [
-            'DRAFT',
-            'HEAD_PENDING',
-            'HEAD_APPROVED',
-            'HEAD_RETURNED',
-            'BUDGET_OFFICER_RETURNED',
-            'PACCO_RETURNED',
-            'OPPMO_RETURNED',
-            'TWG_RETURNED'
-        ]);
+        $isTwgDone = $ppmp->twg_approved_at !== null || $ppmp->signatures()->where('role', 'twg')->exists();
+        $isOppmoAuthorized = ($user->isOppmo() && $isTwgDone);
 
-        $isReviewerEditable = (
-            ($user->isHead() && in_array($ppmp->status, ['HEAD_PENDING', 'HEAD_APPROVED']) && $user->office_id === $ppmp->office_id) ||
-            ($user->isBudgetOfficer() && $ppmp->status === 'BUDGET_OFFICER_REVIEW') ||
-            ($user->isPacco() && $ppmp->status === 'PACCO_REVIEW') ||
-            ($user->isOppmo() && $ppmp->status === 'OPPMO_REVIEW') ||
-            ($user->isTwg() && $ppmp->status === 'TWG_REVIEW')
-        );
-
-        if (!$isCreatorEditable && !$isReviewerEditable && !$user->isAdmin()) {
+        if (!$isOppmoAuthorized && !$user->isAdmin()) {
             return response()->json([
-                'message' => "Annual Procurement Plan (APP) is locked. Once submitted for review, only the authorized reviewer can modify it."
+                'message' => 'Only the OPPMO reviewer can generate or update the Annual Procurement Plan (APP) after BAC-TWG review is completed.'
             ], 403);
         }
 
@@ -668,6 +669,8 @@ class PpmpController extends Controller
             'updated_version_no' => 'nullable|string',
             'prepared_by_name' => 'nullable|string',
             'prepared_by_position' => 'nullable|string',
+            'reviewed_by_name' => 'nullable|string',
+            'reviewed_by_position' => 'nullable|string',
             'recommending_name' => 'nullable|string',
             'recommending_position' => 'nullable|string',
             'approved_by_name' => 'nullable|string',

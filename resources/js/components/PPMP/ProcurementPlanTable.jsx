@@ -235,11 +235,11 @@ export const ProcurementPlanTable = ({
                 <table className="w-full text-left text-xs border-collapse print-table">
                     <thead>
                         <tr className="bg-slate-100 text-slate-900 border-b border-slate-900 font-bold divide-x divide-slate-400 text-center text-[11px] leading-tight">
-                            <th className="p-2 min-w-[220px]">
+                            <th className="p-2 min-w-[320px]">
                                 General Description and Objective of the<br />
                                 Project to be Procured
                             </th>
-                            <th className="p-2 min-w-[130px]">
+                            <th className="p-2 min-w-[100px] w-28">
                                 Type of the Project to be<br />
                                 Procured (whether Goods, Infrastructure and<br />
                                 Consulting Services)

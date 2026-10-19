@@ -68,4 +68,36 @@ class SystemSetting extends Model
     {
         return (bool) static::get('developer_mode', false);
     }
+
+    /**
+     * Get signature insertion settings for PPMP, APP, and Attachment List.
+     */
+    public static function getSignatureSettings(): array
+    {
+        return [
+            'ppmp' => (bool) static::get('signature_insertion_ppmp', true),
+            'app' => (bool) static::get('signature_insertion_app', true),
+            'attachment_list' => (bool) static::get('signature_insertion_attachment_list', true),
+        ];
+    }
+
+    /**
+     * Check if signature insertion is enabled for a given document type ('ppmp', 'app', 'attachment_list').
+     */
+    public static function isSignatureInsertionEnabled(string $documentType): bool
+    {
+        $settings = static::getSignatureSettings();
+        $normalized = strtolower(trim($documentType));
+        if ($normalized === 'ppmp') {
+            return $settings['ppmp'];
+        }
+        if ($normalized === 'app') {
+            return $settings['app'];
+        }
+        if (in_array($normalized, ['attachment_list', 'attachment', 'attachments'], true)) {
+            return $settings['attachment_list'];
+        }
+        return true;
+    }
 }
+

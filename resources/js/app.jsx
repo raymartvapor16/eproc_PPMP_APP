@@ -8,6 +8,7 @@ import { PPMPListPage } from './pages/PPMP/PPMPListPage';
 import { PPMPDetailPage } from './pages/PPMP/PPMPDetailPage';
 import { PPMPFormPage } from './pages/PPMP/PPMPFormPage';
 import { PrivacyPolicyPage } from './pages/Privacy/PrivacyPolicyPage';
+import { MonitoringDashboard } from './pages/Monitoring/MonitoringDashboard';
 import { SourceOfFundModal, FUND_SOURCES } from './components/PPMP/SourceOfFundModal';
 import { initDevToolsGuard } from './utils/devToolsGuard';
 
@@ -17,8 +18,10 @@ export function App() {
     const [authErrorMessage, setAuthErrorMessage] = useState('');
     const [currentView, setCurrentView] = useState(() => {
         if (window.location.pathname === '/privacy') return 'privacy';
+        if (window.location.pathname === '/monitoringsystem' || window.location.pathname.startsWith('/monitoring')) return 'monitoring';
+        if (window.App?.user?.role === 'monitor') return 'monitoring';
         return 'dashboard';
-    }); // dashboard, ppmps, create, detail, edit, privacy
+    }); // dashboard, ppmps, create, detail, edit, privacy, monitoring
     const [selectedPpmpUuid, setSelectedPpmpUuid] = useState(null);
     const [currentPpmp, setCurrentPpmp] = useState(null);
     const [dashboardData, setDashboardData] = useState(null);
@@ -36,9 +39,19 @@ export function App() {
 
         try {
             const res = await authService.getProfile();
-            setUser(res.data.user);
+            const profileUser = res.data.user;
+            setUser(profileUser);
+            if (profileUser?.role === 'monitor') {
+                setCurrentView('monitoring');
+                if (window.location.pathname !== '/monitoringsystem') {
+                    window.history.replaceState({}, '', '/monitoringsystem');
+                }
+            }
         } catch (e) {
-            setUser(null);
+            // Only clear user on actual 401 Unauthorized
+            if (e.response?.status === 401) {
+                setUser(null);
+            }
         } finally {
             setLoading(false);
         }
@@ -71,17 +84,39 @@ export function App() {
     };
 
     const handleNavigate = (view) => {
+        if (user?.role === 'monitor') {
+            setCurrentView('monitoring');
+            window.history.replaceState({}, '', '/monitoringsystem');
+            return;
+        }
+        if (view === 'monitoring') {
+            // Strictly restricted to monitor role only
+            if (user?.role !== 'monitor') {
+                setCurrentView('dashboard');
+                window.history.replaceState({}, '', '/');
+                return;
+            }
+            window.history.pushState({}, '', '/monitoringsystem');
+            setCurrentView('monitoring');
+            return;
+        }
         if (view === 'create') {
             setIsSourceOfFundModalOpen(true);
             return;
         }
         if (view === 'users') {
+            if (window.location.pathname !== '/') {
+                window.history.pushState({}, '', '/');
+            }
             setCurrentView('dashboard');
             loadDashboard();
             setTimeout(() => {
                 window.dispatchEvent(new CustomEvent('admin:navigate_section', { detail: { section: 'users' } }));
             }, 50);
             return;
+        }
+        if (view === 'dashboard' && window.location.pathname !== '/') {
+            window.history.pushState({}, '', '/');
         }
         setCurrentView(view);
         if (view === 'dashboard') loadDashboard();
@@ -92,6 +127,11 @@ export function App() {
         setIsSourceOfFundModalOpen(false);
         setCurrentView('create');
     };
+
+    const userRef = React.useRef(user);
+    useEffect(() => {
+        userRef.current = user;
+    }, [user]);
 
     useEffect(() => {
         initDevToolsGuard();
@@ -116,10 +156,24 @@ export function App() {
         window.addEventListener('devtools:unauthorized', handleDevToolsUnauthorized);
 
         const handlePopState = () => {
+            const currentUser = userRef.current;
             if (window.location.pathname === '/privacy') {
                 setCurrentView('privacy');
+            } else if (window.location.pathname === '/monitoringsystem' || window.location.pathname.startsWith('/monitoring')) {
+                if (currentUser?.role === 'monitor') {
+                    setCurrentView('monitoring');
+                } else {
+                    // Non-monitor roles cannot access monitoring
+                    window.history.replaceState({}, '', '/');
+                    setCurrentView('dashboard');
+                }
             } else {
-                setCurrentView('dashboard');
+                if (currentUser?.role === 'monitor') {
+                    setCurrentView('monitoring');
+                    window.history.replaceState({}, '', '/monitoringsystem');
+                } else {
+                    setCurrentView('dashboard');
+                }
             }
         };
         window.addEventListener('popstate', handlePopState);
@@ -130,6 +184,21 @@ export function App() {
             window.removeEventListener('popstate', handlePopState);
         };
     }, []);
+
+    useEffect(() => {
+        if (!user) return;
+        if (user.role === 'monitor') {
+            setCurrentView('monitoring');
+            if (window.location.pathname !== '/monitoringsystem') {
+                window.history.replaceState({}, '', '/monitoringsystem');
+            }
+        } else {
+            if (window.location.pathname === '/monitoringsystem') {
+                window.history.replaceState({}, '', '/');
+                setCurrentView('dashboard');
+            }
+        }
+    }, [user?.id, user?.role]);
 
     useEffect(() => {
         if (user && currentView === 'dashboard') {
@@ -161,6 +230,10 @@ export function App() {
             setUser(null);
             setCurrentPpmp(null);
             setSelectedPpmpUuid(null);
+            if (window.App) window.App.user = null;
+            if (window.location.pathname === '/monitoringsystem') {
+                window.history.replaceState({}, '', '/');
+            }
             setCurrentView('dashboard');
         }
     };
@@ -197,7 +270,15 @@ export function App() {
                     if (window.App) {
                         window.App.user = loggedInUser;
                     }
-                    setCurrentView('dashboard');
+                    if (loggedInUser?.role === 'monitor') {
+                        window.history.pushState({}, '', '/monitoringsystem');
+                        setCurrentView('monitoring');
+                    } else {
+                        if (window.location.pathname === '/monitoringsystem') {
+                            window.history.replaceState({}, '', '/');
+                        }
+                        setCurrentView('dashboard');
+                    }
                 }}
                 onOpenPrivacy={() => {
                     window.history.pushState({}, '', '/privacy');
@@ -205,6 +286,25 @@ export function App() {
                 }}
             />
         );
+    }
+
+    // Monitor role ONLY accesses the Monitoring Dashboard
+    if (user?.role === 'monitor') {
+        return (
+            <MonitoringDashboard
+                user={user}
+                onLogout={handleLogout}
+            />
+        );
+    }
+
+    // Any other role (enduser, etc.) CANNOT access monitoring
+    if (currentView === 'monitoring') {
+        if (window.location.pathname === '/monitoringsystem') {
+            window.history.replaceState({}, '', '/');
+        }
+        setCurrentView('dashboard');
+        return null;
     }
 
     return (

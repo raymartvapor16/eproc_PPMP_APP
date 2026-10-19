@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\FundSourceController;
 use App\Http\Controllers\Api\ProcurementConditionController;
 use App\Http\Controllers\Api\OtherTermController;
 use App\Http\Controllers\Api\SystemSettingController;
+use App\Http\Controllers\Api\MonitoringController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -24,20 +25,21 @@ use Illuminate\Support\Facades\Route;
 
 // Public Authentication Endpoints (Strictly rate-limited against brute force and DDoS)
 Route::prefix('api')->group(function () {
-    Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
-    Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:10,1');
-    Route::get('/public-offices', [OfficeController::class, 'index'])->middleware('throttle:60,1');
+    Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:30,1');
+    Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:30,1');
+    Route::get('/public-offices', [OfficeController::class, 'index'])->middleware('throttle:240,1');
     Route::post('/logout', [AuthController::class, 'logout']);
-    Route::get('/csrf-token', [AuthController::class, 'csrfToken'])->middleware('throttle:60,1');
-    Route::get('/system-settings/developer-mode', [SystemSettingController::class, 'getDeveloperMode'])->middleware('throttle:60,1');
+    Route::get('/csrf-token', [AuthController::class, 'csrfToken'])->middleware('throttle:240,1');
+    Route::get('/system-settings/developer-mode', [SystemSettingController::class, 'getDeveloperMode'])->middleware('throttle:240,1');
+    Route::get('/system-settings/signatures', [SystemSettingController::class, 'getSignatureSettings'])->middleware('throttle:240,1');
 
     // Authenticated API routes (Protected by session authentication & API rate-limiting)
-    Route::middleware(['auth', 'throttle:120,1'])->group(function () {
+    Route::middleware(['auth', 'throttle:300,1'])->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
         Route::put('/profile', [AuthController::class, 'updateProfile']);
-        Route::get('/profile/signature', [AuthController::class, 'getSignature'])->middleware('throttle:60,1');
-        Route::get('/users/{id}/signature', [UserController::class, 'getSignature'])->middleware('throttle:60,1');
-        Route::get('/users/{id}/authorization-letter', [UserController::class, 'getAuthorizationLetter'])->middleware('throttle:60,1');
+        Route::get('/profile/signature', [AuthController::class, 'getSignature'])->middleware('throttle:120,1');
+        Route::get('/users/{id}/signature', [UserController::class, 'getSignature'])->middleware('throttle:120,1');
+        Route::get('/users/{id}/authorization-letter', [UserController::class, 'getAuthorizationLetter'])->middleware('throttle:120,1');
         Route::get('/dashboard', [DashboardController::class, 'index']);
 
         // Admin & Super Admin User Management
@@ -58,14 +60,15 @@ Route::prefix('api')->group(function () {
         Route::delete('/offices/{id}', [OfficeController::class, 'destroy'])->middleware('role:super_admin');
         Route::post('/offices/import', [OfficeController::class, 'import'])->middleware('role:super_admin');
 
-        // Signatories (Public list, Super Admin management)
+        // Signatories (Public list, Admin & Super Admin management)
         Route::get('/signatories', [SignatoryController::class, 'index']);
-        Route::post('/signatories', [SignatoryController::class, 'store'])->middleware('role:super_admin');
-        Route::put('/signatories/{id}', [SignatoryController::class, 'update'])->middleware('role:super_admin');
-        Route::delete('/signatories/{id}', [SignatoryController::class, 'destroy'])->middleware('role:super_admin');
+        Route::post('/signatories', [SignatoryController::class, 'store'])->middleware('role:admin,super_admin');
+        Route::put('/signatories/{id}', [SignatoryController::class, 'update'])->middleware('role:admin,super_admin');
+        Route::delete('/signatories/{id}', [SignatoryController::class, 'destroy'])->middleware('role:admin,super_admin');
 
         // System Settings (Super Admin only)
         Route::put('/system-settings/developer-mode', [SystemSettingController::class, 'updateDeveloperMode'])->middleware('role:super_admin');
+        Route::put('/system-settings/signatures', [SystemSettingController::class, 'updateSignatureSettings'])->middleware('role:super_admin');
 
         // Source of Fund Management (Public list for dropdowns, Admin & Super Admin CRUD)
         Route::get('/fund-sources', [FundSourceController::class, 'index']);
@@ -157,6 +160,26 @@ Route::prefix('api')->group(function () {
 
         // Activity Logs (Admin & Super Admin)
         Route::get('/activity-logs', [ActivityLogController::class, 'index'])->middleware('role:admin,super_admin');
+
+        // OPPMO Monitoring System API Routes (Strictly accessible by monitor role only)
+        Route::prefix('monitoring')->middleware('role:monitor')->group(function () {
+            Route::get('/stats', [MonitoringController::class, 'getStats']);
+            Route::get('/pending-pims', [MonitoringController::class, 'pendingPims']);
+            Route::get('/projects', [MonitoringController::class, 'index']);
+            Route::post('/projects', [MonitoringController::class, 'store']);
+            Route::get('/projects/{idOrUuid}', [MonitoringController::class, 'show']);
+            Route::put('/projects/{idOrUuid}', [MonitoringController::class, 'update']);
+            Route::patch('/projects/{idOrUuid}/pr-id', [MonitoringController::class, 'updatePrId']);
+            Route::delete('/projects/{idOrUuid}', [MonitoringController::class, 'destroy']);
+
+            // Dynamic Step Management (In all division can add/delete steps)
+            Route::post('/projects/{idOrUuid}/steps', [MonitoringController::class, 'addStep']);
+            Route::put('/steps/{stepId}', [MonitoringController::class, 'updateStep']);
+            Route::delete('/steps/{stepId}', [MonitoringController::class, 'deleteStep']);
+        });
+
+        // PIMS Publishing & Automatic Monitoring Link
+        Route::post('/monitoring/pims-publish', [MonitoringController::class, 'publishPims'])->middleware('role:monitor,end_user');
     });
 });
 

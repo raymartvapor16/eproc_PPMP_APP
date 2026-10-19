@@ -249,6 +249,23 @@ export const otherTermService = {
 export const systemSettingService = {
     getDeveloperMode: () => api.get('/system-settings/developer-mode'),
     updateDeveloperMode: (developer_mode) => api.put('/system-settings/developer-mode', { developer_mode }),
+    getSignatureSettings: () => api.get('/system-settings/signatures'),
+    updateSignatureSettings: (data) => api.put('/system-settings/signatures', data),
+};
+
+export const monitoringService = {
+    getStats: () => api.get('/monitoring/stats'),
+    getPendingPims: () => api.get('/monitoring/pending-pims'),
+    getProjects: (params) => api.get('/monitoring/projects', { params }),
+    getProject: (idOrUuid) => api.get(`/monitoring/projects/${idOrUuid}`),
+    createProject: (data) => api.post('/monitoring/projects', data),
+    updateProject: (idOrUuid, data) => api.put(`/monitoring/projects/${idOrUuid}`, data),
+    deleteProject: (idOrUuid) => api.delete(`/monitoring/projects/${idOrUuid}`),
+    updatePrId: (idOrUuid, prId) => api.patch(`/monitoring/projects/${idOrUuid}/pr-id`, { pims_pr_id: prId }),
+    addStep: (idOrUuid, data) => api.post(`/monitoring/projects/${idOrUuid}/steps`, data),
+    updateStep: (stepId, data) => api.put(`/monitoring/steps/${stepId}`, data),
+    deleteStep: (stepId) => api.delete(`/monitoring/steps/${stepId}`),
+    publishPims: (data) => api.post('/monitoring/pims-publish', data),
 };
 
 export default api;

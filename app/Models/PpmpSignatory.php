@@ -45,6 +45,26 @@ class PpmpSignatory extends Model
         return $query->where('signatory_type', 'approved_by');
     }
 
+    public function scopeAppPreparedBy(Builder $query): Builder
+    {
+        return $query->where('signatory_type', 'app_prepared_by');
+    }
+
+    public function scopeAppReviewedBy(Builder $query): Builder
+    {
+        return $query->where('signatory_type', 'app_reviewed_by');
+    }
+
+    public function scopeAppRecommending(Builder $query): Builder
+    {
+        return $query->where('signatory_type', 'app_recommending');
+    }
+
+    public function scopeAppApprovedBy(Builder $query): Builder
+    {
+        return $query->where('signatory_type', 'app_approved_by');
+    }
+
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);

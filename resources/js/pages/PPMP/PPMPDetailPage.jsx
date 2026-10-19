@@ -219,7 +219,10 @@ export const PPMPDetailPage = ({
         hasAttachmentList: Boolean(ppmp?.pre_submission_checks?.attachment_list_generated ?? hasAttachmentList),
         hasMarketScoping: hasMarketScoping,
     };
-    const isPreSubmissionReady = preSubmissionStatus.hasApp && preSubmissionStatus.hasAttachmentList && preSubmissionStatus.hasMarketScoping;
+    const isPreSubmissionReady = preSubmissionStatus.hasAttachmentList && preSubmissionStatus.hasMarketScoping;
+
+    const isTwgDone = Boolean(ppmp?.twg_approved_at || ppmp?.signatures?.some(s => s.role === 'twg'));
+    const canOppmoGenerateApp = (user?.role === 'oppmo' && isTwgDone) || ['admin', 'super_admin'].includes(user?.role);
 
     const isCreator = ppmp.created_by === user.id;
     const isReadyToPrint = ppmp.status === 'READY_TO_PRINT';
@@ -382,9 +385,6 @@ export const PPMPDetailPage = ({
 
         // Validate Pre-Submission Requirements before submitting to the first reviewer
         const missingRequirements = [];
-        if (!preSubmissionStatus.hasApp) {
-            missingRequirements.push('• Annual Procurement Plan (APP) must already be generated.');
-        }
         if (!preSubmissionStatus.hasAttachmentList) {
             missingRequirements.push('• PPMP List of Attachment must already be generated.');
         }
@@ -397,7 +397,7 @@ export const PPMPDetailPage = ({
                 'Submission Incomplete:\n\n' +
                 'Before submitting this PPMP to the reviewer, the following requirements must be completed:\n\n' +
                 missingRequirements.join('\n') +
-                '\n\nPlease generate the required documents and attach the Market Scoping PDF before submitting.'
+                '\n\nPlease generate the required attachment list and attach the Market Scoping PDF before submitting.'
             );
             return;
         }
@@ -721,25 +721,21 @@ export const PPMPDetailPage = ({
                                 <p className="text-xs text-slate-600 mt-0.5">
                                     {isPreSubmissionReady
                                         ? 'All mandatory forms and scoping documents are generated and attached. You may now submit for formal review.'
-                                        : 'Before submitting to the reviewer, the APP and PPMP List of Attachment must be generated, and the Market Scoping PDF must be attached.'}
+                                        : 'Before submitting to the reviewer, the PPMP List of Attachment must be generated, and the Market Scoping PDF must be attached.'}
                                 </p>
                             </div>
                         </div>
 
                         {/* Checklist items */}
                         <div className="flex flex-wrap items-center gap-2 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-200/60">
-                            {/* 1. APP */}
-                            <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${
-                                preSubmissionStatus.hasApp
-                                    ? 'bg-emerald-100/60 border-emerald-300 text-emerald-800'
-                                    : 'bg-white border-amber-300 text-amber-900'
-                            }`}>
-                                {preSubmissionStatus.hasApp ? (
-                                    <>
-                                        <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                                        <span>APP Generated</span>
-                                    </>
-                                ) : (
+                            {/* APP status indicator (shown if generated, or if authorized OPPMO can generate) */}
+                            {preSubmissionStatus.hasApp ? (
+                                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border bg-emerald-100/60 border-emerald-300 text-emerald-800">
+                                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                                    <span>APP Generated</span>
+                                </div>
+                            ) : (canOppmoGenerateApp ? (
+                                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border bg-white border-amber-300 text-amber-900">
                                     <button
                                         type="button"
                                         onClick={() => setIsAppView(true)}
@@ -749,8 +745,8 @@ export const PPMPDetailPage = ({
                                         <FileText className="w-3.5 h-3.5 text-amber-600" />
                                         <span>Generate APP</span>
                                     </button>
-                                )}
-                            </div>
+                                </div>
+                            ) : null)}
 
                             {/* 2. PPMP List of Attachment */}
                             <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${
@@ -1319,34 +1315,36 @@ export const PPMPDetailPage = ({
                     </div>
 
                     {/* Create / Generate APP (Annual Procurement Plan) Button */}
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 flex flex-col gap-2.5">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
-                                <FileText className="w-4 h-4" />
+                    {(hasApp || canOppmoGenerateApp) && (
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 flex flex-col gap-2.5">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
+                                    <FileText className="w-4 h-4" />
+                                </div>
+                                <div>
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                                        Annual Procurement Plan (APP)
+                                    </h4>
+                                    <p className="text-[11px] text-slate-500">
+                                        Official Province of Davao del Sur Annual Procurement Plan
+                                    </p>
+                                </div>
                             </div>
-                            <div>
-                                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-                                    Annual Procurement Plan (APP)
-                                </h4>
-                                <p className="text-[11px] text-slate-500">
-                                    Official Province of Davao del Sur Annual Procurement Plan
-                                </p>
-                            </div>
-                        </div>
 
-                        <button
-                            type="button"
-                            onClick={() => setIsAppView(true)}
-                            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition shadow-sm cursor-pointer ${hasApp
-                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                                    : 'bg-blue-600 hover:bg-blue-700 text-white'
-                                }`}
-                            title={isReadyToPrint ? "Generate and print official Annual Procurement Plan (APP) with Governor Approval" : "Configure and preview Annual Procurement Plan (APP)"}
-                        >
-                            <FileText className="w-4 h-4" />
-                            {hasApp ? (isReadyToPrint ? 'View / Print APP' : 'View APP Preview') : 'Create APP'}
-                        </button>
-                    </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsAppView(true)}
+                                className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition shadow-sm cursor-pointer ${hasApp
+                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                                    }`}
+                                title={isReadyToPrint ? "Generate and print official Annual Procurement Plan (APP) with Governor Approval" : (hasApp ? "View / Print official Annual Procurement Plan (APP)" : "Configure and create Annual Procurement Plan (APP)")}
+                            >
+                                <FileText className="w-4 h-4" />
+                                {hasApp ? (isReadyToPrint ? 'View / Print APP' : 'View APP Preview') : 'Create APP'}
+                            </button>
+                        </div>
+                    )}
 
                     {/* Letter of Request for Supplemental / Amendment Panel (Always on Top of Supporting Documents) */}
                     {requestLetterInfo && (

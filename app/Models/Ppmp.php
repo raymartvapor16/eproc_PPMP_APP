@@ -181,7 +181,8 @@ class Ppmp extends Model
         $app = $this->hasAppGenerated();
         $attachmentList = $this->hasAttachmentListGenerated();
         $marketScoping = $this->hasMarketScopingPdf();
-        $isReady = $app && $attachmentList && $marketScoping;
+        // APP is created exclusively by OPPMO reviewer after BAC-TWG review
+        $isReady = $attachmentList && $marketScoping;
 
         return [
             'app_generated' => $app,
@@ -202,6 +203,12 @@ class Ppmp extends Model
             $bac = $signatories->firstWhere('signatory_type', 'bac_secretariat');
             $gov = $signatories->firstWhere('signatory_type', 'approved_by');
 
+            // APP specific signatories
+            $appPrepared = $signatories->firstWhere('signatory_type', 'app_prepared_by');
+            $appReviewed = $signatories->firstWhere('signatory_type', 'app_reviewed_by');
+            $appRecommending = $signatories->firstWhere('signatory_type', 'app_recommending');
+            $appApproved = $signatories->firstWhere('signatory_type', 'app_approved_by');
+
             $cachedSignatories = [
                 'budget_requirement' => [
                     'name' => $budget ? $budget->name : 'DESSAMIE BUAT-SANCHEZ, CPA, JD',
@@ -219,9 +226,53 @@ class Ppmp extends Model
                     'name' => $gov ? $gov->name : 'HON. YVONNE R. CAGAS',
                     'position' => $gov ? $gov->position : 'Provincial Governor',
                 ],
+                'app_prepared_by' => [
+                    'name' => $appPrepared ? $appPrepared->name : 'GINA MAE B. CARBAQUEL',
+                    'position' => $appPrepared ? $appPrepared->position : 'ADAS II',
+                ],
+                'app_reviewed_by' => [
+                    'name' => $appReviewed ? $appReviewed->name : ($bac ? $bac->name : 'NORJANNA M. CAMAGUIN, MPA'),
+                    'position' => $appReviewed ? $appReviewed->position : ($bac ? $bac->position : 'PGDH - OPPMO'),
+                ],
+                'app_recommending' => [
+                    'name' => $appRecommending ? $appRecommending->name : ($budget ? $budget->name : 'DESSAMIE BUAT-SANCHEZ, CPA, JD'),
+                    'position' => $appRecommending ? $appRecommending->position : ($budget ? $budget->position : 'PGDH - PBO / BAC - Chairman'),
+                ],
+                'app_approved_by' => [
+                    'name' => $appApproved ? $appApproved->name : ($gov ? $gov->name : 'HON. YVONNE R. CAGAS'),
+                    'position' => $appApproved ? $appApproved->position : ($gov ? $gov->position : 'Provincial Governor'),
+                ],
             ];
         }
         return $cachedSignatories;
+    }
+
+    public function getAppDataAttribute($value)
+    {
+        $data = is_string($value) ? json_decode($value, true) : $value;
+        if (!is_array($data)) {
+            return $data;
+        }
+
+        $defaultSignatories = $this->default_signatories;
+        $appPrepared = $defaultSignatories['app_prepared_by'] ?? null;
+        $appReviewed = $defaultSignatories['app_reviewed_by'] ?? null;
+
+        // If legacy data had Norjanna saved under prepared_by_name before Gina Mae was introduced,
+        // automatically route Norjanna to reviewed_by and set prepared_by to active DB signatory (Gina Mae).
+        $isLegacyNorjanna = !empty($data['prepared_by_name']) && (
+            $data['prepared_by_name'] === 'NORJANNA M. CAMAGUIN, MPA' ||
+            (isset($appReviewed['name']) && $data['prepared_by_name'] === $appReviewed['name'])
+        ) && (empty($data['reviewed_by_name']) || $data['reviewed_by_name'] === $data['prepared_by_name']);
+
+        if ($isLegacyNorjanna) {
+            $data['reviewed_by_name'] = $appReviewed['name'] ?? 'NORJANNA M. CAMAGUIN, MPA';
+            $data['reviewed_by_position'] = $appReviewed['position'] ?? 'PGDH - OPPMO';
+            $data['prepared_by_name'] = $appPrepared['name'] ?? 'GINA MAE B. CARBAQUEL';
+            $data['prepared_by_position'] = $appPrepared['position'] ?? 'ADAS II';
+        }
+
+        return $data;
     }
 
     public function parent()
@@ -277,5 +328,10 @@ class Ppmp extends Model
     public function notifications()
     {
         return $this->hasMany(SystemNotification::class, 'ppmp_id');
+    }
+
+    public function monitoringProjects()
+    {
+        return $this->hasMany(MonitoringProject::class, 'ppmp_id');
     }
 }
