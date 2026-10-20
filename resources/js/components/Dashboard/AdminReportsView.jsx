@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import {
     FileSpreadsheet,
@@ -13,12 +13,17 @@ import {
     RotateCcw,
 } from 'lucide-react';
 import { StatusBadge, formatCurrency, formatDate } from '../UI/StatusBadge';
+import { getStandardFiscalYears } from '../../utils/fiscalYears';
 
 export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
     const [selectedYear, setSelectedYear] = useState('');
     const [selectedOffice, setSelectedOffice] = useState('');
     const [selectedStatus, setSelectedStatus] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
+
+    const reportYearOptions = useMemo(() => {
+        return getStandardFiscalYears([selectedYear, ...(recentPpmps || []).map((p) => p.fiscal_year)]);
+    }, [recentPpmps, selectedYear]);
 
     // Filter PPMPs according to report criteria
     const filteredReports = (recentPpmps || []).filter((ppmp) => {
@@ -168,9 +173,9 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
                             className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none text-slate-800"
                         >
                             <option value="">All Fiscal Years</option>
-                            <option value="2027">CY 2027</option>
-                            <option value="2026">CY 2026</option>
-                            <option value="2025">CY 2025</option>
+                            {reportYearOptions.map((year) => (
+                                <option key={year} value={year}>CY {year}</option>
+                            ))}
                         </select>
                     </div>
 

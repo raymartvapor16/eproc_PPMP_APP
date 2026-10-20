@@ -12,6 +12,7 @@ import {
     Landmark,
     Truck,
     Leaf,
+    FileCheck2,
     Sliders,
 } from 'lucide-react';
 
@@ -67,6 +68,13 @@ export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingU
             icon: Leaf,
             badge: null,
             description: 'Green Specs & Custom Terms',
+        },
+        {
+            id: 'supporting_docs',
+            label: 'Supporting Documents',
+            icon: FileCheck2,
+            badge: null,
+            description: 'Pre Canvass, PO, Attachments',
         },
         {
             id: 'users',

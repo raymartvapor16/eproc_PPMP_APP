@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { formatCurrency } from '../UI/StatusBadge';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, FileCheck2 } from 'lucide-react';
+import { SupportingDocsDropdown } from './SupportingDocsDropdown';
+import { supportingDocumentService } from '../../services/api';
 
 /**
  * Automatically wraps long text so each line has at most 6 words,
@@ -220,8 +222,26 @@ export const ProcurementPlanTable = ({
     placeOfDelivery = '',
     paymentMethod = '',
     warrantyAndOtherTerms = '',
+    supportingDocuments = [],
 }) => {
     const [showProgramInput, setShowProgramInput] = useState(Boolean(programName && String(programName).trim()));
+    const [docsList, setDocsList] = useState(supportingDocuments);
+
+    useEffect(() => {
+        if (supportingDocuments && supportingDocuments.length > 0) {
+            setDocsList(supportingDocuments);
+            return;
+        }
+        let isMounted = true;
+        supportingDocumentService.getAll({ active_only: 1 })
+            .then(res => {
+                if (isMounted && Array.isArray(res.data)) {
+                    setDocsList(res.data);
+                }
+            })
+            .catch(() => {});
+        return () => { isMounted = false; };
+    }, [supportingDocuments]);
 
     useEffect(() => {
         if (programName && String(programName).trim()) {
@@ -275,7 +295,7 @@ export const ProcurementPlanTable = ({
                                 Estimated Budget / Authorized<br />
                                 Budgetary Allocation (PhP)
                             </th>
-                            <th className="p-2 min-w-[120px]">
+                            <th className="p-2 min-w-[170px]">
                                 ATTACHED SUPPORTING<br />
                                 DOCUMENTS
                             </th>
@@ -530,12 +550,12 @@ export const ProcurementPlanTable = ({
                                                     <textarea
                                                         value={item.source_of_fund || ''}
                                                         onChange={(e) => onUpdateItem(realIdx, 'source_of_fund', e.target.value)}
-                                                        placeholder=""
+                                                        placeholder="Enter source of funds..."
                                                         rows={3}
                                                         className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none resize-y leading-tight"
                                                     />
                                                 ) : (
-                                                    <span className="whitespace-pre-wrap">{item.source_of_fund || 'General Fund'}</span>
+                                                    <span className="whitespace-pre-wrap">{item.source_of_fund || '—'}</span>
                                                 )}
                                             </td>
 
@@ -562,17 +582,34 @@ export const ProcurementPlanTable = ({
                                             </td>
 
                                             {/* Attached Supporting Documents */}
-                                            <td className="p-2 align-top">
+                                            <td className="p-2 align-top min-w-[170px]">
                                                 {isEditable ? (
-                                                    <textarea
+                                                    <SupportingDocsDropdown
                                                         value={item.supporting_docs_text || ''}
-                                                        onChange={(e) => onUpdateItem(realIdx, 'supporting_docs_text', e.target.value)}
-                                                        placeholder=""
-                                                        rows={3}
-                                                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none resize-y leading-tight"
+                                                        onChange={(val) => onUpdateItem(realIdx, 'supporting_docs_text', val)}
+                                                        documents={docsList}
+                                                        placeholder="Select supporting docs..."
                                                     />
                                                 ) : (
-                                                    <span className="text-slate-600 whitespace-pre-wrap">{item.supporting_docs_text || '—'}</span>
+                                                    item.supporting_docs_text ? (
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {item.supporting_docs_text.split(',').map((doc, dIdx) => {
+                                                                const cleanDoc = doc.trim();
+                                                                if (!cleanDoc) return null;
+                                                                return (
+                                                                    <span
+                                                                        key={dIdx}
+                                                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-800 border border-blue-200"
+                                                                    >
+                                                                        <FileCheck2 className="w-2.5 h-2.5 text-blue-600 shrink-0" />
+                                                                        <span>{cleanDoc}</span>
+                                                                    </span>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-slate-400 italic text-[11px]">—</span>
+                                                    )
                                                 )}
                                             </td>
 

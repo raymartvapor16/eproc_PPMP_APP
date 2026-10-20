@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\OfficeController;
 use App\Http\Controllers\Api\FundSourceController;
 use App\Http\Controllers\Api\ProcurementConditionController;
 use App\Http\Controllers\Api\OtherTermController;
+use App\Http\Controllers\Api\SupportingDocumentController;
 use App\Http\Controllers\Api\SystemSettingController;
 use App\Http\Controllers\Api\MonitoringController;
 use Illuminate\Support\Facades\Route;
@@ -87,6 +88,12 @@ Route::prefix('api')->group(function () {
         Route::post('/other-terms', [OtherTermController::class, 'store'])->middleware('role:admin,super_admin');
         Route::put('/other-terms/{id}', [OtherTermController::class, 'update'])->middleware('role:admin,super_admin');
         Route::delete('/other-terms/{id}', [OtherTermController::class, 'destroy'])->middleware('role:admin,super_admin');
+
+        // Supporting Documents Management (Public list for PPMP form dropdowns, Admin & Super Admin CRUD)
+        Route::get('/supporting-documents', [SupportingDocumentController::class, 'index']);
+        Route::post('/supporting-documents', [SupportingDocumentController::class, 'store'])->middleware('role:admin,super_admin');
+        Route::put('/supporting-documents/{id}', [SupportingDocumentController::class, 'update'])->middleware('role:admin,super_admin');
+        Route::delete('/supporting-documents/{id}', [SupportingDocumentController::class, 'destroy'])->middleware('role:admin,super_admin');
 
         // Notifications & Utility
         Route::get('/notifications', [NotificationController::class, 'index']);

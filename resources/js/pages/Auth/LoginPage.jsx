@@ -533,8 +533,11 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
                                     <h1 className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-tight uppercase font-sans">
                                         Provincial Government
                                     </h1>
-                                    <p className="text-[11px] font-bold text-amber-600 uppercase tracking-widest">
+                                    <p className="text-[11px] font-bold text-amber-600 uppercase tracking-widest leading-none mt-0.5">
                                         Davao del Sur
+                                    </p>
+                                    <p className="text-[9.5px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-none mt-1">
+                                        ISO 9001:2015 CERTIFIED
                                     </p>
                                 </div>
                             </div>

@@ -4,6 +4,7 @@ import { StatusBadge, formatCurrency, formatDate } from '../../components/UI/Sta
 import { PaginationControl } from '../../components/UI/PaginationControl';
 import { signatoryService, userService, officeService, ppmpService } from '../../services/api';
 import { isAwaitingReceive } from '../../utils/workflowHelpers';
+import { getStandardFiscalYears } from '../../utils/fiscalYears';
 import { AdminSidebar } from '../../components/Dashboard/AdminSidebar';
 import { AdminVisualAnalytics } from '../../components/Dashboard/AdminVisualAnalytics';
 import { AdminReportsView } from '../../components/Dashboard/AdminReportsView';
@@ -11,6 +12,7 @@ import { AdminActivityLog } from '../../components/Dashboard/AdminActivityLog';
 import { FundSourcesManagement } from '../../components/Dashboard/FundSourcesManagement';
 import { ProcurementConditionsManagement } from '../../components/Dashboard/ProcurementConditionsManagement';
 import { OtherTermsManagement } from '../../components/Dashboard/OtherTermsManagement';
+import { SupportingDocumentsManagement } from '../../components/Dashboard/SupportingDocumentsManagement';
 import { SystemSettingsManagement } from '../../components/Dashboard/SystemSettingsManagement';
 import { SignatoriesManagement } from '../../components/Dashboard/SignatoriesManagement';
 import { isDeveloperModeActive } from '../../utils/devToolsGuard';
@@ -176,6 +178,10 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
     const [ppmpYearFilter, setPpmpYearFilter] = useState('');
     const [ppmpPage, setPpmpPage] = useState(1);
     const [ppmpPerPage, setPpmpPerPage] = useState(5); // 5 or 10 entries
+
+    const ppmpYearOptions = useMemo(() => {
+        return getStandardFiscalYears([ppmpYearFilter, ...recentPpmps.map(p => p.fiscal_year)]);
+    }, [recentPpmps, ppmpYearFilter]);
 
     // Memoize status counts to prevent laggy recalculations on non-related state changes
     const statusCounts = useMemo(() => ({
@@ -685,6 +691,9 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
             }
             if (adminSection === 'other_terms') {
                 return <OtherTermsManagement />;
+            }
+            if (adminSection === 'supporting_docs') {
+                return <SupportingDocumentsManagement />;
             }
             if (adminSection === 'settings') {
                 return <SystemSettingsManagement />;
@@ -3057,9 +3066,9 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             className="text-xs py-2 px-3 border border-slate-300 rounded-lg bg-slate-50 focus:bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
                         >
                             <option value="">All Fiscal Years</option>
-                            <option value="2027">CY 2027</option>
-                            <option value="2026">CY 2026</option>
-                            <option value="2025">CY 2025</option>
+                            {ppmpYearOptions.map((year) => (
+                                <option key={year} value={year}>CY {year}</option>
+                            ))}
                         </select>
 
                         {/* Reset Filters button when active */}

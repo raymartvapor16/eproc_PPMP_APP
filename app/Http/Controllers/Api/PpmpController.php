@@ -59,6 +59,7 @@ class PpmpController extends Controller
             $search = $request->input('search');
             $query->where(function ($q) use ($search) {
                 $q->where('ppmp_number', 'like', "%{$search}%")
+                    ->orWhere('tracking_number', 'like', "%{$search}%")
                     ->orWhere('title', 'like', "%{$search}%");
             });
         }
@@ -82,7 +83,17 @@ class PpmpController extends Controller
         $perPage = min((int) $request->input('per_page', 10), 100);
         $ppmps = $query->latest('id')->paginate($perPage);
 
-        return response()->json($ppmps);
+        $distinctYears = Ppmp::whereNotNull('fiscal_year')
+            ->where('fiscal_year', '!=', '')
+            ->distinct()
+            ->orderByDesc('fiscal_year')
+            ->pluck('fiscal_year')
+            ->values();
+
+        $response = $ppmps->toArray();
+        $response['available_fiscal_years'] = $distinctYears;
+
+        return response()->json($response);
     }
 
     /**
@@ -158,8 +169,14 @@ class PpmpController extends Controller
                 $typeCode = 'GOODS';
             }
 
+            // Clean and extract 4-digit fiscal year from input (e.g. "CY 2028" -> "2028")
+            $rawYear = trim($validated['fiscal_year']);
+            $year = preg_match('/\b(20\d{2}|\d{4})\b/', $rawYear, $m) ? $m[1] : preg_replace('/^CY\s*/i', '', $rawYear);
+            if (empty($year)) {
+                $year = (string) date('Y');
+            }
+
             // Generate unique Tracker Number: {OFFICE}{TYPE}-{YEAR}-XXXXXX
-            $year = $validated['fiscal_year'];
             $trackerPrefix = "{$officeCode}{$typeCode}-{$year}-";
 
             // Determine next sequence by finding the highest sequence number among existing trackers
@@ -201,7 +218,7 @@ class PpmpController extends Controller
                 'title' => $validated['title'],
                 'source_of_fund' => $sourceOfFund,
                 'account_code' => $validated['account_code'] ?? null,
-                'fiscal_year' => $validated['fiscal_year'],
+                'fiscal_year' => $year,
                 'plan_type' => $validated['plan_type'],
                 'is_annual' => true,
                 'delivery_period' => ($validated['additional_condition'] ?? null) === 'POL Condition' ? null : ($validated['delivery_period'] ?? null),
@@ -470,14 +487,59 @@ class PpmpController extends Controller
                 ? ($validated['additional_condition'] === 'POL Condition')
                 : ($ppmp->additional_condition === 'POL Condition');
 
+            $rawYear = trim($validated['fiscal_year']);
+            $cleanFiscalYear = preg_match('/\b(20\d{2}|\d{4})\b/', $rawYear, $m) ? $m[1] : preg_replace('/^CY\s*/i', '', $rawYear);
+            if (empty($cleanFiscalYear)) {
+                $cleanFiscalYear = $ppmp->fiscal_year ?: (string) date('Y');
+            }
+
+            // If fiscal year changed or tracking number does not match the fiscal year, update tracking_number
+            $trackingNumber = $ppmp->tracking_number;
+            if ($cleanFiscalYear !== $ppmp->fiscal_year || !str_contains((string)$trackingNumber, "-{$cleanFiscalYear}-")) {
+                if ($trackingNumber && preg_match('/^([A-Z0-9\-]+)-(\d{4})-(\d+)$/', $trackingNumber, $tnMatches)) {
+                    $prefixBase = $tnMatches[1];
+                    $seqPart = $tnMatches[3];
+                    $candidateTrk = "{$prefixBase}-{$cleanFiscalYear}-{$seqPart}";
+                    $alreadyTaken = Ppmp::where('tracking_number', $candidateTrk)->where('id', '!=', $ppmp->id)->exists();
+                    if (!$alreadyTaken) {
+                        $trackingNumber = $candidateTrk;
+                    } else {
+                        $trackerPrefix = "{$prefixBase}-{$cleanFiscalYear}-";
+                        $existingTrackers = Ppmp::where('fiscal_year', $cleanFiscalYear)
+                            ->where('tracking_number', 'like', "{$trackerPrefix}%")
+                            ->where('id', '!=', $ppmp->id)
+                            ->lockForUpdate()
+                            ->pluck('tracking_number');
+                        $maxSeq = 0;
+                        $prefixRegex = '/^' . preg_quote($trackerPrefix, '/') . '(\d+)/';
+                        foreach ($existingTrackers as $tn) {
+                            if (preg_match($prefixRegex, $tn, $m)) {
+                                $num = (int) $m[1];
+                                if ($num > $maxSeq) $maxSeq = $num;
+                            }
+                        }
+                        $trackingNumber = "{$trackerPrefix}" . str_pad($maxSeq + 1, 6, '0', STR_PAD_LEFT);
+                    }
+                } elseif ($cleanFiscalYear) {
+                    $trackingNumber = preg_replace('/-(\d{4})-/', "-{$cleanFiscalYear}-", (string)$trackingNumber);
+                }
+
+                // Also update any child amendments/supplementals to inherit the synchronized tracking number & fiscal year
+                Ppmp::where('parent_id', $ppmp->id)->update([
+                    'tracking_number' => $trackingNumber,
+                    'fiscal_year' => $cleanFiscalYear,
+                ]);
+            }
+
             $ppmp->update([
+                'tracking_number' => $trackingNumber,
                 'ppmp_number' => isset($validated['ppmp_number']) && $validated['ppmp_number'] !== '' ? $validated['ppmp_number'] : $ppmp->ppmp_number,
                 'implementing_unit' => array_key_exists('implementing_unit', $validated) ? $validated['implementing_unit'] : $ppmp->implementing_unit,
                 'program_name' => array_key_exists('program_name', $validated) ? $validated['program_name'] : $ppmp->program_name,
                 'title' => $validated['title'],
                 'source_of_fund' => $sourceOfFund,
                 'account_code' => $validated['account_code'] ?? $ppmp->account_code,
-                'fiscal_year' => $validated['fiscal_year'],
+                'fiscal_year' => $cleanFiscalYear,
                 'plan_type' => $validated['plan_type'],
                 'delivery_period' => $isPol ? null : ($validated['delivery_period'] ?? $ppmp->delivery_period),
                 'place_of_delivery' => $isPol ? null : ($validated['place_of_delivery'] ?? $ppmp->place_of_delivery),
@@ -528,6 +590,13 @@ class PpmpController extends Controller
             }
 
             AuditLog::log('PPMP_UPDATED', 'ppmps', $ppmp->id, $oldValues, ['total_budget' => $total], $user->id);
+
+            // Automatically sync to Monitoring System so accurate real-time data is available
+            try {
+                \App\Models\MonitoringProject::syncFromPpmp($ppmp);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('MonitoringProject sync failed: ' . $e->getMessage());
+            }
         });
 
         return response()->json([

@@ -3,6 +3,11 @@ import { StatusBadge, formatCurrency, formatDate } from '../../components/UI/Sta
 import { PaginationControl } from '../../components/UI/PaginationControl';
 import { AdminActivityLog } from '../../components/Dashboard/AdminActivityLog';
 import { userService, ppmpService, officeService } from '../../services/api';
+import { getStandardFiscalYears } from '../../utils/fiscalYears';
+import {
+    getPpmpStartOfActivity,
+    getPimsReminderInfo
+} from '../../components/Dashboard/PimsPublishReminderCard';
 import {
     Users,
     UserPlus,
@@ -37,16 +42,18 @@ import {
     Landmark,
     Truck,
     Leaf,
+    FileCheck2,
 } from 'lucide-react';
 import { FundSourcesManagement } from '../../components/Dashboard/FundSourcesManagement';
 import { ProcurementConditionsManagement } from '../../components/Dashboard/ProcurementConditionsManagement';
 import { OtherTermsManagement } from '../../components/Dashboard/OtherTermsManagement';
+import { SupportingDocumentsManagement } from '../../components/Dashboard/SupportingDocumentsManagement';
 import { SignatoriesManagement } from '../../components/Dashboard/SignatoriesManagement';
 import { CreateUserModal } from '../../components/Dashboard/CreateUserModal';
 import { UserSignatureModal } from '../../components/Dashboard/UserSignatureModal';
 
 export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) => {
-    // Current Active Tab: 'users' | 'amendments' | 'logs' | 'ppmps' | 'fund_sources' | 'conditions' | 'other_terms' | 'signatories'
+    // Current Active Tab: 'users' | 'amendments' | 'logs' | 'ppmps' | 'fund_sources' | 'conditions' | 'other_terms' | 'supporting_docs' | 'signatories'
     const [activeTab, setActiveTab] = useState('users');
 
     useEffect(() => {
@@ -123,9 +130,19 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
     const [ppmpSearch, setPpmpSearch] = useState('');
     const [ppmpStatusFilter, setPpmpStatusFilter] = useState('ALL');
     const [ppmpOfficeFilter, setPpmpOfficeFilter] = useState('ALL');
+    const [ppmpYearFilter, setPpmpYearFilter] = useState('ALL');
+    const [availableFiscalYears, setAvailableFiscalYears] = useState([]);
     const [ppmpPage, setPpmpPage] = useState(1);
     const [ppmpPerPage, setPpmpPerPage] = useState(10);
     const [ppmpPagination, setPpmpPagination] = useState(null);
+
+    const adminPpmpYearOptions = useMemo(() => {
+        return getStandardFiscalYears([
+            ppmpYearFilter !== 'ALL' ? ppmpYearFilter : '',
+            ...ppmpsList.map((p) => p.fiscal_year),
+            ...availableFiscalYears,
+        ]);
+    }, [ppmpsList, availableFiscalYears, ppmpYearFilter]);
 
     const officesList = data?.offices || [];
     const metrics = data?.metrics || {};
@@ -168,8 +185,12 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
             if (ppmpSearch) params.search = ppmpSearch;
             if (ppmpStatusFilter !== 'ALL') params.status = ppmpStatusFilter;
             if (ppmpOfficeFilter !== 'ALL') params.office_id = ppmpOfficeFilter;
+            if (ppmpYearFilter !== 'ALL') params.fiscal_year = ppmpYearFilter;
 
             const res = await ppmpService.getAll(params);
+            if (res.data?.available_fiscal_years) {
+                setAvailableFiscalYears(res.data.available_fiscal_years);
+            }
             if (res.data?.data) {
                 setPpmpsList(res.data.data);
                 setPpmpPagination({
@@ -197,7 +218,7 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
         if (activeTab === 'ppmps') {
             fetchPpmps();
         }
-    }, [activeTab, ppmpPage, ppmpPerPage, ppmpStatusFilter, ppmpOfficeFilter]);
+    }, [activeTab, ppmpPage, ppmpPerPage, ppmpStatusFilter, ppmpOfficeFilter, ppmpYearFilter]);
 
     // Auto-dismiss user feedback
     useEffect(() => {
@@ -704,6 +725,19 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 >
                     <Leaf className="w-4 h-4" />
                     <span>Other Terms &amp; Green Specs</span>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('supporting_docs')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
+                        activeTab === 'supporting_docs'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                >
+                    <FileCheck2 className="w-4 h-4" />
+                    <span>Supporting Documents</span>
                 </button>
 
                 <button
@@ -1374,6 +1408,18 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                 ))}
                             </select>
 
+                            {/* Fiscal Year Filter */}
+                            <select
+                                value={ppmpYearFilter}
+                                onChange={(e) => { setPpmpYearFilter(e.target.value); setPpmpPage(1); }}
+                                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                            >
+                                <option value="ALL">All Fiscal Years</option>
+                                {adminPpmpYearOptions.map((year) => (
+                                    <option key={year} value={year}>CY {year}</option>
+                                ))}
+                            </select>
+
                             {/* Status Filter */}
                             <select
                                 value={ppmpStatusFilter}
@@ -1440,6 +1486,27 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                                 <div className="font-semibold text-slate-900 truncate" title={ppmp.title}>
                                                     {ppmp.title}
                                                 </div>
+                                                {(() => {
+                                                    const schedule = getPpmpStartOfActivity(ppmp);
+                                                    if (!schedule) return null;
+                                                    const rem = getPimsReminderInfo(schedule);
+                                                    if (!rem) return null;
+                                                    return (
+                                                        <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                                            <span
+                                                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                                    rem.isUrgent
+                                                                        ? 'bg-rose-100 text-rose-800 border border-rose-300 animate-pulse'
+                                                                        : 'bg-amber-50 text-amber-900 border border-amber-200'
+                                                                }`}
+                                                                title={rem.message}
+                                                            >
+                                                                {rem.isUrgent ? <AlertTriangle className="w-2.5 h-2.5 text-rose-600" /> : <Clock className="w-2.5 h-2.5 text-amber-600" />}
+                                                                PIMS: Start {schedule.summaryLabel} {rem.isNearEnd && '(Near End of Month)'}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })()}
                                                 {ppmp.creator && (
                                                     <div className="text-[10px] text-slate-400 mt-0.5">
                                                         Prepared by: {ppmp.creator.name}
@@ -1510,6 +1577,13 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
             {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'other_terms' && (
                 <OtherTermsManagement />
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            {/* TAB 8: SUPPORTING DOCUMENTS MANAGEMENT                           */}
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            {activeTab === 'supporting_docs' && (
+                <SupportingDocumentsManagement />
             )}
 
             {/* ══════════════════════════════════════════════════════════════════ */}

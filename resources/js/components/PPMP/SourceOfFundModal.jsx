@@ -3,7 +3,7 @@ import { X, Landmark, ShieldCheck, ArrowRight, CheckCircle2, ChevronRight, Refre
 import { fundSourceService } from '../../services/api';
 
 export const FUND_SOURCES = {
-    GENERAL_FUND: 'General Fund and etc..',
+    GENERAL_FUND: 'General Fund',
     TRUST_FUND: 'Trust Fund',
 };
 

@@ -246,6 +246,13 @@ export const otherTermService = {
     delete: (id) => api.delete(`/other-terms/${id}`),
 };
 
+export const supportingDocumentService = {
+    getAll: (params) => api.get('/supporting-documents', { params }),
+    create: (data) => api.post('/supporting-documents', data),
+    update: (id, data) => api.put(`/supporting-documents/${id}`, data),
+    delete: (id) => api.delete(`/supporting-documents/${id}`),
+};
+
 export const systemSettingService = {
     getDeveloperMode: () => api.get('/system-settings/developer-mode'),
     updateDeveloperMode: (developer_mode) => api.put('/system-settings/developer-mode', { developer_mode }),

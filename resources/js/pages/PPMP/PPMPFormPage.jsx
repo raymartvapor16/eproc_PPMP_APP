@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ppmpService, procurementConditionService, otherTermService } from '../../services/api';
+import { ppmpService, procurementConditionService, otherTermService, supportingDocumentService } from '../../services/api';
 import { ProcurementPlanTable } from '../../components/PPMP/ProcurementPlanTable';
 import { GreenSpecDropdown } from '../../components/PPMP/GreenSpecDropdown';
 import { ArrowLeft, Save, Send, AlertCircle, FileCheck, Truck, Sparkles, Lock, Leaf } from 'lucide-react';
@@ -13,18 +13,21 @@ import {
     deduplicateOptions,
     findMatchingOption,
 } from '../../utils/procurementOptions';
+import { sanitizeFiscalYear } from '../../utils/fiscalYears';
 
 export const POL_TERMS_TEXT = `POL Condition:
 -Staggered Delivery based on the latest fuel pump price /At Gasoline Station
 -Staggered Payment: The end-user must ensure that payment is processed within 10 calendar days upon receiving the billing from the supplier/Credit-basis.
 -The supplier reserves the right to discontinue services if payment is not made after two consecutive billings and will resume only after the outstanding obligations are settled.`;
 
-export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = 'General Fund and etc..', onBack, onSaved }) => {
+export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = 'General Fund', onBack, onSaved }) => {
     const isEditMode = !!initialPpmp;
 
-    const [sourceOfFund, setSourceOfFund] = useState(
-        initialPpmp?.source_of_fund || initialSourceOfFund || 'General Fund and etc..'
-    );
+    const cleanInitialFund = (initialPpmp?.source_of_fund === 'General Fund and etc..' ? 'General Fund' : initialPpmp?.source_of_fund) ||
+        (initialSourceOfFund === 'General Fund and etc..' ? 'General Fund' : initialSourceOfFund) ||
+        'General Fund';
+
+    const [sourceOfFund, setSourceOfFund] = useState(cleanInitialFund);
     const [ppmpNumber, setPpmpNumber] = useState(
         (initialPpmp?.ppmp_number !== undefined && initialPpmp?.ppmp_number !== null) ? initialPpmp.ppmp_number : ''
     );
@@ -48,6 +51,9 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
     const [otherTermsList, setOtherTermsList] = useState([]);
     const [loadingOtherTerms, setLoadingOtherTerms] = useState(false);
     const [selectedOtherTermId, setSelectedOtherTermId] = useState('');
+
+    // Dynamic Supporting Documents state
+    const [supportingDocsList, setSupportingDocsList] = useState([]);
 
     const isPolCondition = additionalCondition === 'POL Condition';
 
@@ -90,6 +96,22 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
             }
         };
         fetchOtherTerms();
+        return () => { isMounted = false; };
+    }, []);
+
+    useEffect(() => {
+        let isMounted = true;
+        const fetchSupportingDocs = async () => {
+            try {
+                const res = await supportingDocumentService.getAll({ active_only: 1 });
+                if (isMounted) {
+                    setSupportingDocsList(Array.isArray(res.data) ? res.data : []);
+                }
+            } catch (err) {
+                console.error('Failed to load supporting documents', err);
+            }
+        };
+        fetchSupportingDocs();
         return () => { isMounted = false; };
     }, []);
 
@@ -194,16 +216,17 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
         return deduplicateOptions(pool, canonicalizePaymentMethod);
     }, [conditions]);
 
-    const defaultFund = initialPpmp?.source_of_fund || initialSourceOfFund || 'General Fund and etc..';
+    const defaultFund = (initialPpmp?.source_of_fund === 'General Fund and etc..' ? '' : initialPpmp?.source_of_fund) || '';
     const [items, setItems] = useState(() => {
         if (initialPpmp?.items?.length) {
             return initialPpmp.items.map(it => {
                 const b = parseFloat(it.estimated_budget) || 0;
+                const cleanFund = it.source_of_fund === 'General Fund and etc..' ? '' : (it.source_of_fund || '');
                 return {
                     ...it,
                     description: it.description || '',
                     quantity_size: it.quantity_size || '',
-                    source_of_fund: it.source_of_fund || defaultFund,
+                    source_of_fund: cleanFund,
                     start_date: it.start_date || '',
                     end_date: it.end_date || '',
                     delivery_period: it.delivery_period || '',
@@ -224,7 +247,7 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                 start_date: '',
                 end_date: '',
                 delivery_period: '',
-                source_of_fund: defaultFund,
+                source_of_fund: '',
                 estimated_budget: 0,
                 supporting_docs_text: '',
                 remarks: '',
@@ -304,7 +327,7 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                 start_date: '',
                 end_date: '',
                 delivery_period: '',
-                source_of_fund: sourceOfFund,
+                source_of_fund: '',
                 estimated_budget: 0,
                 supporting_docs_text: '',
                 remarks: '',
@@ -366,7 +389,7 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
             title: title.trim(),
             source_of_fund: sourceOfFund,
             account_code: accountCode.trim(),
-            fiscal_year: fiscalYear,
+            fiscal_year: sanitizeFiscalYear(fiscalYear) || String(new Date().getFullYear()),
             plan_type: planType,
             implementing_unit: implementingUnit.trim(),
             program_name: programName ? programName.trim() : null,
@@ -451,13 +474,13 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                             <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">Change Fund:</span>
                             <button
                                 type="button"
-                                onClick={() => handleFundChange('General Fund and etc..')}
+                                onClick={() => handleFundChange('General Fund')}
                                 className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${!isTrustFund
                                         ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                                         : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
                                     }`}
                             >
-                                General Fund and etc..
+                                General Fund
                             </button>
                             <button
                                 type="button"
@@ -562,7 +585,7 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                             value={fiscalYear ?? ''}
                             onChange={(e) => setFiscalYear(e.target.value)}
                             className="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                            placeholder="2026"
+                            placeholder={new Date().getFullYear().toString()}
                         />
                     </div>
 
@@ -892,6 +915,7 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                     onAccountCodeChange={setAccountCode}
                     programName={programName}
                     onProgramNameChange={setProgramName}
+                    supportingDocuments={supportingDocsList}
                 />
             </div>
         </form>

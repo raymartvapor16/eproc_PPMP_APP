@@ -11,8 +11,6 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
 
     const signatures = ppmp?.signatures || [];
 
-    // If scope is ATTACHMENT_LIST only, PPMP / APP were NOT changed and retain approved baseline signatures from parent.
-    // If scope is PPMP_APP, ALL, or initial plan: PPMP / APP ARE being changed, so budget & oppmo reviewer signatures MUST BE NONE until they approve this child PPMP!
     const isScopeAttachmentOnly = ppmp?.amendment_scope === 'ATTACHMENT_LIST';
 
     // Reviewer signatures require review approval before their initial/signature is valid

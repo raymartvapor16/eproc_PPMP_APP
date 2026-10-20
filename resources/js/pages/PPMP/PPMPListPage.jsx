@@ -1,9 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ppmpService } from '../../services/api';
 import { StatusBadge, formatCurrency, formatDate } from '../../components/UI/StatusBadge';
 import { PaginationControl } from '../../components/UI/PaginationControl';
 import { isAwaitingReceive } from '../../utils/workflowHelpers';
-import { Search, Filter, Plus, FileSpreadsheet, Eye, Inbox, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { getStandardFiscalYears } from '../../utils/fiscalYears';
+import {
+    getPpmpStartOfActivity,
+    getPimsReminderInfo
+} from '../../components/Dashboard/PimsPublishReminderCard';
+import { Search, Filter, Plus, FileSpreadsheet, Eye, Inbox, Loader2, ChevronLeft, ChevronRight, Clock, AlertTriangle } from 'lucide-react';
 
 export const PPMPListPage = ({ user, onSelectPpmp, onNavigate }) => {
     const [ppmps, setPpmps] = useState([]);
@@ -11,6 +16,7 @@ export const PPMPListPage = ({ user, onSelectPpmp, onNavigate }) => {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [yearFilter, setYearFilter] = useState('');
+    const [availableFiscalYears, setAvailableFiscalYears] = useState([]);
     const [page, setPage] = useState(1);
     const [perPage, setPerPage] = useState(5); // 5 and 10 entries show only
     const [totalEntries, setTotalEntries] = useState(0);
@@ -53,6 +59,9 @@ export const PPMPListPage = ({ user, onSelectPpmp, onNavigate }) => {
             if (yearFilter) params.fiscal_year = yearFilter;
 
             const res = await ppmpService.getAll(params);
+            if (res.data?.available_fiscal_years) {
+                setAvailableFiscalYears(res.data.available_fiscal_years);
+            }
             if (res.data && res.data.data !== undefined) {
                 // Laravel LengthAwarePaginator response
                 setPpmps(res.data.data);
@@ -83,6 +92,10 @@ export const PPMPListPage = ({ user, onSelectPpmp, onNavigate }) => {
         window.addEventListener('app:data_reload', handleDataReload);
         return () => window.removeEventListener('app:data_reload', handleDataReload);
     }, [search, statusFilter, yearFilter, page, perPage]);
+
+    const yearOptions = useMemo(() => {
+        return getStandardFiscalYears([yearFilter, ...ppmps.map(p => p.fiscal_year), ...availableFiscalYears]);
+    }, [ppmps, availableFiscalYears, yearFilter]);
 
     return (
         <div className="space-y-6">
@@ -158,9 +171,9 @@ export const PPMPListPage = ({ user, onSelectPpmp, onNavigate }) => {
                     className="text-xs p-2 border border-slate-300 rounded-md bg-white focus:outline-none"
                 >
                     <option value="">All Fiscal Years</option>
-                    <option value="2026">CY 2026</option>
-                    <option value="2025">CY 2025</option>
-                    <option value="2027">CY 2027</option>
+                    {yearOptions.map((year) => (
+                        <option key={year} value={year}>CY {year}</option>
+                    ))}
                 </select>
             </div>
 
@@ -220,8 +233,29 @@ export const PPMPListPage = ({ user, onSelectPpmp, onNavigate }) => {
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="p-3.5 font-medium text-slate-800 max-w-sm truncate" title={ppmp.title}>
-                                            {ppmp.title}
+                                        <td className="p-3.5 font-medium text-slate-800 max-w-sm" title={ppmp.title}>
+                                            <div className="font-semibold text-slate-900 truncate">{ppmp.title}</div>
+                                            {(() => {
+                                                const schedule = getPpmpStartOfActivity(ppmp);
+                                                if (!schedule) return null;
+                                                const rem = getPimsReminderInfo(schedule);
+                                                if (!rem) return null;
+                                                return (
+                                                    <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                                        <span
+                                                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                                rem.isUrgent
+                                                                    ? 'bg-rose-100 text-rose-800 border border-rose-300 animate-pulse'
+                                                                    : 'bg-amber-50 text-amber-900 border border-amber-200'
+                                                            }`}
+                                                            title={rem.message}
+                                                        >
+                                                            {rem.isUrgent ? <AlertTriangle className="w-2.5 h-2.5 text-rose-600" /> : <Clock className="w-2.5 h-2.5 text-amber-600" />}
+                                                            PIMS: Start {schedule.summaryLabel} {rem.isNearEnd && '(Near End of Month)'}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })()}
                                         </td>
                                         <td className="p-3.5 text-slate-600 max-w-xs truncate">
                                             {ppmp.office?.name || 'Provincial Office'}
