@@ -25,6 +25,7 @@ class User extends Authenticatable
         'is_active',
         'approval_status',
         'rejection_reason',
+        'accessible_systems',
     ];
 
     protected $hidden = [
@@ -38,6 +39,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'accessible_systems' => 'array',
         ];
     }
 
@@ -114,5 +116,50 @@ class User extends Authenticatable
     public function isMonitor(): bool
     {
         return $this->role === 'monitor';
+    }
+
+    public function isPgso(): bool
+    {
+        return $this->role === 'pgso';
+    }
+
+    public function isPresentativeStaff(): bool
+    {
+        return in_array($this->role, ['presentative_staff', 'authorized_staff'], true);
+    }
+
+    public function canManageMonitoring(): bool
+    {
+        return in_array($this->role, ['super_admin', 'admin', 'monitor', 'oppmo'], true);
+    }
+
+    public function getAccessibleSystemsList(): array
+    {
+        if ($this->isAdmin()) {
+            return ['/eprocrementppmpapp', '/monitoringsystem', '/supplierevaluation', '*'];
+        }
+        if (!empty($this->accessible_systems) && is_array($this->accessible_systems)) {
+            return $this->accessible_systems;
+        }
+        if ($this->isMonitor()) {
+            return ['/monitoringsystem'];
+        }
+        if ($this->isPgso()) {
+            return ['/supplierevaluation'];
+        }
+        return ['/eprocrementppmpapp'];
+    }
+
+    public function canAccessSystem(string $systemPath): bool
+    {
+        if ($this->isAdmin()) {
+            return true;
+        }
+        $allowed = $this->getAccessibleSystemsList();
+        if (in_array('*', $allowed, true)) {
+            return true;
+        }
+        $clean = '/' . ltrim(trim($systemPath), '/');
+        return in_array($clean, $allowed, true);
     }
 }

@@ -209,6 +209,7 @@ export const userService = {
     updateSignature: (id, data) => api.post(`/users/${id}/signature`, data),
     changePassword: (id, password) => api.post(`/users/${id}/change-password`, { password }),
     updateRole: (id, role) => api.put(`/users/${id}/role`, { role }),
+    updateSystemAccess: (id, systems) => api.put(`/users/${id}/system-access`, { accessible_systems: systems }),
     approve: (id) => api.post(`/users/${id}/approve`),
     reject: (id, reason = '') => api.post(`/users/${id}/reject`, { reason }),
     toggleStatus: (id) => api.post(`/users/${id}/toggle-status`),
@@ -239,6 +240,60 @@ export const procurementConditionService = {
     delete: (id) => api.delete(`/procurement-conditions/${id}`),
 };
 
+let cachedProcurementModes = null;
+let cachedProcurementModesPromise = null;
+
+export const procurementModeService = {
+    getAll: async (params = {}) => {
+        if (!params?.active_only) {
+            return api.get('/procurement-modes', { params });
+        }
+        if (cachedProcurementModes) {
+            return { data: cachedProcurementModes };
+        }
+        if (cachedProcurementModesPromise) {
+            return cachedProcurementModesPromise;
+        }
+        cachedProcurementModesPromise = api.get('/procurement-modes', { params })
+            .then(res => {
+                cachedProcurementModes = Array.isArray(res.data) ? res.data : [];
+                return { data: cachedProcurementModes };
+            })
+            .catch(err => {
+                cachedProcurementModes = null;
+                throw err;
+            })
+            .finally(() => {
+                cachedProcurementModesPromise = null;
+            });
+        return cachedProcurementModesPromise;
+    },
+    invalidateCache: () => {
+        cachedProcurementModes = null;
+        cachedProcurementModesPromise = null;
+    },
+    create: async (data) => {
+        const res = await api.post('/procurement-modes', data);
+        procurementModeService.invalidateCache();
+        return res;
+    },
+    update: async (id, data) => {
+        const res = await api.put(`/procurement-modes/${id}`, data);
+        procurementModeService.invalidateCache();
+        return res;
+    },
+    toggleStatus: async (id) => {
+        const res = await api.patch(`/procurement-modes/${id}/toggle-status`);
+        procurementModeService.invalidateCache();
+        return res;
+    },
+    delete: async (id) => {
+        const res = await api.delete(`/procurement-modes/${id}`);
+        procurementModeService.invalidateCache();
+        return res;
+    },
+};
+
 export const otherTermService = {
     getAll: (params) => api.get('/other-terms', { params }),
     create: (data) => api.post('/other-terms', data),
@@ -246,11 +301,56 @@ export const otherTermService = {
     delete: (id) => api.delete(`/other-terms/${id}`),
 };
 
+let cachedSupportingDocs = null;
+let cachedSupportingDocsPromise = null;
+
 export const supportingDocumentService = {
-    getAll: (params) => api.get('/supporting-documents', { params }),
-    create: (data) => api.post('/supporting-documents', data),
-    update: (id, data) => api.put(`/supporting-documents/${id}`, data),
-    delete: (id) => api.delete(`/supporting-documents/${id}`),
+    getAll: async (params = {}) => {
+        if (!params?.active_only) {
+            return api.get('/supporting-documents', { params });
+        }
+        if (cachedSupportingDocs) {
+            return { data: cachedSupportingDocs };
+        }
+        if (cachedSupportingDocsPromise) {
+            return cachedSupportingDocsPromise;
+        }
+        cachedSupportingDocsPromise = api.get('/supporting-documents', { params })
+            .then(res => {
+                cachedSupportingDocs = Array.isArray(res.data) ? res.data : [];
+                return { data: cachedSupportingDocs };
+            })
+            .catch(err => {
+                cachedSupportingDocs = null;
+                throw err;
+            })
+            .finally(() => {
+                cachedSupportingDocsPromise = null;
+            });
+        return cachedSupportingDocsPromise;
+    },
+    invalidateCache: () => {
+        cachedSupportingDocs = null;
+        cachedSupportingDocsPromise = null;
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('supporting-documents:changed'));
+        }
+    },
+    create: async (data) => {
+        const res = await api.post('/supporting-documents', data);
+        supportingDocumentService.invalidateCache();
+        return res;
+    },
+    update: async (id, data) => {
+        const res = await api.put(`/supporting-documents/${id}`, data);
+        supportingDocumentService.invalidateCache();
+        return res;
+    },
+    delete: async (id) => {
+        const res = await api.delete(`/supporting-documents/${id}`);
+        supportingDocumentService.invalidateCache();
+        return res;
+    },
 };
 
 export const systemSettingService = {
@@ -273,6 +373,94 @@ export const monitoringService = {
     updateStep: (stepId, data) => api.put(`/monitoring/steps/${stepId}`, data),
     deleteStep: (stepId) => api.delete(`/monitoring/steps/${stepId}`),
     publishPims: (data) => api.post('/monitoring/pims-publish', data),
+    unpublishPims: (data) => api.post('/monitoring/pims-unpublish', data),
+};
+
+export const portalSystemService = {
+    getPublic: () => api.get('/public-portal-systems'),
+    getAll: () => api.get('/portal-systems'),
+    create: (data) => api.post('/portal-systems', data),
+    update: (id, data) => api.put(`/portal-systems/${id}`, data),
+    delete: (id) => api.delete(`/portal-systems/${id}`),
+    toggleStatus: (id) => api.patch(`/portal-systems/${id}/toggle-status`),
+};
+
+export const oppmoTeamService = {
+    getPublic: () => api.get('/public-oppmo-team'),
+    getAll: () => api.get('/oppmo-team'),
+    create: (data) => {
+        if (data instanceof FormData) {
+            return api.post('/oppmo-team', data, { headers: { 'Content-Type': 'multipart/form-data' } });
+        }
+        return api.post('/oppmo-team', data);
+    },
+    update: (id, data) => {
+        if (data instanceof FormData) {
+            return api.post(`/oppmo-team/${id}`, data, { headers: { 'Content-Type': 'multipart/form-data' } });
+        }
+        return api.put(`/oppmo-team/${id}`, data);
+    },
+    delete: (id) => api.delete(`/oppmo-team/${id}`),
+    toggleStatus: (id) => api.patch(`/oppmo-team/${id}/toggle-status`),
+};
+
+export const supplierEvaluationService = {
+    getInit: () => api.get('/supplier-evaluation/dashboard-init'),
+    getEvaluations: (params) => api.get('/supplier-evaluation/evaluations', { params }),
+    getEvaluation: (id) => api.get(`/supplier-evaluation/evaluations/${id}`),
+    createEvaluation: (data) => api.post('/supplier-evaluation/evaluations', data),
+    evaluateOrUpdate: (id, data) => api.post(`/supplier-evaluation/evaluations/${id}/evaluate`, data),
+    deleteEvaluation: (id) => api.delete(`/supplier-evaluation/evaluations/${id}`),
+    restoreEvaluation: (id) => api.post(`/supplier-evaluation/evaluations/${id}/restore`),
+    forceDeleteEvaluation: (id) => api.delete(`/supplier-evaluation/evaluations/${id}/force`),
+
+    // Bulk Evaluation
+    getBulkSuppliers: () => api.get('/supplier-evaluation/bulk/suppliers'),
+    fetchBulkEvaluations: (params) => api.get('/supplier-evaluation/bulk/evaluations', { params }),
+    submitBulkEvaluations: (data) => api.post('/supplier-evaluation/bulk/submit', data),
+
+    // Recycle Bin
+    getRecycleBin: () => api.get('/supplier-evaluation/recycle-bin'),
+
+    // Purchase Orders
+    getPurchaseOrders: (params) => api.get('/supplier-evaluation/purchase-orders', { params }),
+    createPurchaseOrder: (formData) => api.post('/supplier-evaluation/purchase-orders', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+    updatePurchaseOrder: (id, formData) => api.post(`/supplier-evaluation/purchase-orders/${id}/update`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+    deletePurchaseOrder: (id) => api.delete(`/supplier-evaluation/purchase-orders/${id}`),
+    uploadPoPdf: (id, formData) => api.post(`/supplier-evaluation/purchase-orders/${id}/upload-pdf`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+    importPurchaseOrders: (formData) => api.post('/supplier-evaluation/purchase-orders/import', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+    getBulkPoList: (params) => api.get('/supplier-evaluation/purchase-orders/bulk-list', { params }),
+    storeBulkPoEvaluations: (data) => api.post('/supplier-evaluation/purchase-orders/bulk-evaluate', data),
+
+    // Requests
+    getRequests: () => api.get('/supplier-evaluation/requests'),
+    createRequest: (data) => api.post('/supplier-evaluation/requests', data),
+    approveRequest: (id) => api.post(`/supplier-evaluation/requests/${id}/approve`),
+    rejectRequest: (id) => api.post(`/supplier-evaluation/requests/${id}/reject`),
+    cancelRequest: (id) => api.delete(`/supplier-evaluation/requests/${id}`),
+
+    // Authorize PDFs
+    getAuthorizePdfs: () => api.get('/supplier-evaluation/pdfs'),
+    uploadAuthorizePdf: (formData) => api.post('/supplier-evaluation/pdfs', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+    updateAuthorizePdfStatus: (id, status) => api.post(`/supplier-evaluation/pdfs/${id}/status`, { status }),
+
+    // Analytics & Activity Logs
+    getAnalytics: (params) => api.get('/supplier-evaluation/analytics', { params }),
+    getActivityLogs: (params) => api.get('/supplier-evaluation/activity-logs', { params }),
+    getExportActivityLogsUrl: (params) => {
+        const qs = new URLSearchParams(params).toString();
+        return `/api/supplier-evaluation/activity-logs/export${qs ? `?${qs}` : ''}`;
+    },
 };
 
 export default api;

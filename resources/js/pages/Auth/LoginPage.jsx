@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { authService } from '../../services/api';
+import { authService, portalSystemService } from '../../services/api';
 import { 
     Shield, 
     Lock, 
@@ -30,11 +30,13 @@ import {
     Compass,
     Maximize2,
     Eye,
-    EyeOff
+    EyeOff,
+    Award
 } from 'lucide-react';
 import { SignaturePadModal } from '../../components/UI/SignaturePadModal';
+import { SpiderParticlesCanvas } from '../../components/UI/SpiderParticlesCanvas';
 
-export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) => {
+export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, initialError = '', targetSystem = 'dashboard' }) => {
     const [mode, setMode] = useState('login'); // 'login' or 'register'
     const [showPrivacyNotice, setShowPrivacyNotice] = useState(false);
     
@@ -81,6 +83,29 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
     const authLetterInputRef = useRef(null);
     const [offices, setOffices] = useState([]);
     const [loadingOffices, setLoadingOffices] = useState(false);
+
+    // Requested Digital Systems State (Multi-select)
+    const [availableSystems, setAvailableSystems] = useState([
+        { id: 1, name: 'E-Procurement PPMP & APP System', link_url: '/eprocrementppmpapp', badge: 'Primary System', description: 'Automated preparation, review lifecycle, and consolidation of PPMP and APP plans.' },
+        { id: 2, name: 'OPPMO Real-Time Monitoring System', link_url: '/monitoringsystem', badge: 'Live Monitoring', description: 'Procurement implementation monitoring, milestone stage tracking, and PIMS timeline across provincial offices.' },
+        { id: 3, name: 'Provincial Bids & Awards Portal', link_url: '/eprocrementppmpapp', badge: 'BAC Portal', description: 'Public bidding notices, awards, and procurement transparency documentation.' },
+        { id: 4, name: 'Supplier Evaluation System', link_url: '/supplierevaluation', badge: 'Evaluations', description: 'Comprehensive supplier performance appraisal, criteria scoring, and vendor ratings.' },
+    ]);
+    const [selectedSystems, setSelectedSystems] = useState(() => {
+        if (targetSystem === 'supplierevaluation') return ['/supplierevaluation'];
+        if (targetSystem === 'monitoring') return ['/monitoringsystem'];
+        return ['/eprocrementppmpapp'];
+    });
+    const [isSystemsDropdownOpen, setIsSystemsDropdownOpen] = useState(false);
+    const systemsDropdownRef = useRef(null);
+
+    useEffect(() => {
+        if (targetSystem === 'supplierevaluation') {
+            setSelectedSystems((prev) => prev.includes('/supplierevaluation') ? prev : ['/supplierevaluation']);
+        } else if (targetSystem === 'monitoring') {
+            setSelectedSystems((prev) => prev.includes('/monitoringsystem') ? prev : ['/monitoringsystem']);
+        }
+    }, [targetSystem]);
 
     // CAPTCHA State for Account Registration
     const [captchaCode, setCaptchaCode] = useState('');
@@ -142,6 +167,18 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
             }
         };
         fetchOffices();
+
+        const fetchSystems = async () => {
+            try {
+                const res = await portalSystemService.getPublic();
+                if (res.data && res.data.length > 0) {
+                    setAvailableSystems(res.data);
+                }
+            } catch (err) {
+                console.warn('Using default systems on login/register', err);
+            }
+        };
+        fetchSystems();
     }, []);
 
     // Close dropdown on outside click
@@ -149,6 +186,9 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
         const handleClickOutside = (event) => {
             if (officeDropdownRef.current && !officeDropdownRef.current.contains(event.target)) {
                 setIsOfficeDropdownOpen(false);
+            }
+            if (systemsDropdownRef.current && !systemsDropdownRef.current.contains(event.target)) {
+                setIsSystemsDropdownOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -244,7 +284,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
         }
 
         if (!registerData.address?.trim()) {
-            setError('Please enter your residential or office address.');
+            setError('Please enter the user address.');
             return;
         }
 
@@ -301,6 +341,11 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
             return;
         }
 
+        if (!selectedSystems || selectedSystems.length === 0) {
+            setError('Please select at least one digital system to request access for.');
+            return;
+        }
+
         setLoading(true);
 
         try {
@@ -315,10 +360,12 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
                 });
                 payload.append('signature', finalSigUrl || '');
                 payload.append('authorization_letter', authorizationLetter);
+                payload.append('accessible_systems', JSON.stringify(selectedSystems));
             } else {
                 payload = {
                     ...registerData,
                     signature: finalSigUrl,
+                    accessible_systems: selectedSystems,
                 };
             }
 
@@ -341,6 +388,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
                 password: '',
                 password_confirmation: '',
             });
+            setSelectedSystems(['/eprocrementppmpapp']);
             setAuthorizationLetter(null);
             setAuthorizationLetterError('');
             if (authLetterInputRef.current) authLetterInputRef.current.value = '';
@@ -362,11 +410,11 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
     };
 
     return (
-        <div className="min-h-screen w-full flex bg-slate-950 text-slate-800 antialiased overflow-x-hidden">
+        <div className="min-h-screen w-full flex flex-col lg:flex-row bg-slate-950 text-slate-800 antialiased overflow-x-hidden">
             {/* ========================================================================= */}
             {/* LEFT PANEL: VISUAL HERO & CINEMATIC CAPITOL BACKGROUND (IMAGE PANEL)       */}
             {/* ========================================================================= */}
-            <div className="hidden lg:flex flex-1 relative flex-col justify-between overflow-hidden bg-blue-950 border-r border-blue-900/40 lg:h-screen lg:max-h-screen">
+            <div className="w-full lg:w-[55%] xl:w-[58%] 2xl:w-[60%] relative flex flex-col justify-between overflow-hidden bg-blue-950 border-b lg:border-b-0 lg:border-r border-blue-900/40 min-h-[480px] sm:min-h-[520px] lg:h-screen lg:max-h-screen">
                 
                 {/* Background Image Layer with Cinematic Slow Pan Effect */}
                 <div 
@@ -377,26 +425,34 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
                 />
 
                 {/* Bright, Clean, Friendly Civic Gradient Layers (No heavy black) */}
-                <div className="absolute inset-0 bg-gradient-to-t from-blue-950/85 via-blue-900/40 to-transparent" />
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-950/70 via-sky-900/30 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-blue-950/90 via-blue-900/50 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-950/80 via-sky-900/40 to-transparent" />
+                
+                {/* Interactive Spider / Constellation Network Particles Canvas */}
+                <SpiderParticlesCanvas className="absolute inset-0 pointer-events-none z-0 opacity-75" />
                 
                 {/* Soft Friendly Ambient Lighting Accents */}
                 <div className="absolute -bottom-16 -left-16 w-[500px] h-[500px] bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
                 <div className="absolute top-10 right-10 w-96 h-96 bg-amber-400/15 rounded-full blur-3xl pointer-events-none" />
 
                 {/* Top Bar inside Visual Panel */}
-                <div className="landing-fade-top relative z-10 p-5 xl:p-7 flex items-center justify-between">
-                    <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-blue-950/60 backdrop-blur-xl border border-white/20 text-white shadow-xl">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span className="text-xs font-bold tracking-wider uppercase text-blue-100">OPPMO - BAC</span>
+                <div className="landing-fade-top relative z-10 px-4 sm:px-6 xl:px-8 py-3 xl:py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-950/70 backdrop-blur-xl border border-white/20 text-white shadow-xl">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            <span className="text-[11px] xl:text-xs font-bold tracking-wider uppercase text-blue-100">OPPMO - BAC</span>
+                        </div>
+                        <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/20 backdrop-blur-xl border border-amber-400/40 text-amber-200 text-[10px] xl:text-[11px] font-bold tracking-wider uppercase shadow-md font-mono">
+                            <span>MULTI-SYSTEM GATEWAY</span>
+                        </div>
                     </div>
 
                     <div className="flex items-center gap-3">
                         <div className="text-right hidden sm:block">
-                            <p className="text-xs font-extrabold text-white uppercase tracking-wider drop-shadow-md">
+                            <p className="text-xs xl:text-sm font-extrabold text-white uppercase tracking-wider drop-shadow-md">
                                 Office of the Provincial Procurement Management Officer
                             </p>
-                            <p className="text-[10px] text-amber-300 font-semibold tracking-wide uppercase drop-shadow-sm">
+                            <p className="text-[10px] xl:text-[11px] text-amber-300 font-semibold tracking-wide uppercase drop-shadow-sm">
                                 (OPPMO) • Bids and Awards Committee
                             </p>
                         </div>
@@ -416,84 +472,121 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
                 </div>
 
                 {/* Center Hero Information Card */}
-                <div className="relative z-10 px-6 xl:px-10 py-3 xl:py-4 max-w-xl my-auto">
-                    <div className="landing-hero-title inline-flex items-center gap-2 px-3 py-1 bg-amber-500/25 border border-amber-300/40 rounded-lg text-amber-200 text-xs font-mono font-bold tracking-wider uppercase mb-3.5 backdrop-blur-md shadow-sm soft-glow-badge">
-                        <span>Province of Davao Del Sur - OPPMO</span>
+                <div className="relative z-10 px-4 sm:px-6 xl:px-10 py-2 sm:py-3 xl:py-4 max-w-4xl my-auto w-full">
+                    <div className="landing-hero-title inline-flex items-center gap-2 px-3 py-1 bg-amber-500/25 border border-amber-300/40 rounded-lg text-amber-200 text-[11px] xl:text-xs font-mono font-bold tracking-wider uppercase mb-2 backdrop-blur-md shadow-sm soft-glow-badge">
+                        <span>Province of Davao Del Sur • Unified Digital Gateway</span>
                     </div>
 
-                    <h2 className="landing-hero-title text-xl sm:text-2xl xl:text-3xl font-black text-white tracking-tight leading-snug drop-shadow-[0_2px_10px_rgba(15,23,42,0.6)]">
-                        E-Procurement PPMP & APP System
+                    <h2 className="landing-hero-title text-xl sm:text-2xl xl:text-3xl 2xl:text-4xl font-black text-white tracking-tight leading-tight drop-shadow-[0_2px_12px_rgba(15,23,42,0.8)]">
+                        Provincial Multi-System Procurement Portal
                     </h2>
 
-                    <p className="landing-hero-sub mt-2 text-xs xl:text-sm text-blue-50/90 leading-relaxed font-normal drop-shadow max-w-lg">
-                        Streamlining Annual Procurement Plans (APP), PPMP preparation, TWG evaluations, 
-                        and multi-tier approvals for all provincial departments with real-time auditability.
+                    <p className="landing-hero-sub mt-1.5 sm:mt-2 text-xs xl:text-sm text-blue-50/95 leading-relaxed font-normal drop-shadow max-w-2xl">
+                        Centralized single sign-on authentication and unified governance across Davao del Sur's digital procurement infrastructure, automated PPMP/APP workflows, real-time project implementation monitoring, and provincial supplier evaluations.
                     </p>
 
-                    {/* Features Grid Showcase with Distinct Intro Transitions & Flying Objects */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5 perspective-[1000px]">
-                        {/* Card 1: Automated PPMP (Fly-in from left with slight rotate & subtle glow) */}
-                        <div className="intro-card-1 float-loop-1 relative p-3.5 rounded-2xl bg-gradient-to-b from-blue-950/80 to-slate-950/80 backdrop-blur-xl border border-amber-400/30 shadow-xl hover:border-amber-400 hover:shadow-amber-500/20 hover:-translate-y-1.5 transition-all duration-300 group overflow-hidden">
-                            <div className="absolute -top-10 -right-10 w-20 h-20 bg-amber-400/10 rounded-full blur-xl group-hover:bg-amber-400/20 transition-colors pointer-events-none" />
-                            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400/30 to-amber-600/20 border border-amber-300/40 flex items-center justify-center text-amber-300 mb-2.5 shadow-xs group-hover:scale-110 group-hover:rotate-6 transition-all duration-300">
-                                <FileCheck2 className="w-4 h-4" />
+                    {/* Single Sign-On Multi-System Badge */}
+                    <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-900/50 border border-blue-400/35 text-blue-200 text-[11px] font-semibold backdrop-blur-md shadow-sm">
+                        <Lock className="w-3 h-3 text-amber-400 shrink-0" />
+                        <span>Unified SSO Credentials • One Account for All 3 Integrated Systems</span>
+                    </div>
+
+                    {/* Multi-System Cards Showcase with Proportional Sizing (No Overflow) */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 xl:gap-4 mt-3.5 sm:mt-4 xl:mt-5 perspective-[1000px] w-full">
+                        {/* Card 1: E-Procurement PPMP & APP System */}
+                        <div className="intro-card-1 relative p-3 sm:p-4 xl:p-5 rounded-2xl bg-gradient-to-b from-blue-950/85 via-slate-900/85 to-slate-950/90 backdrop-blur-xl border border-amber-400/35 hover:border-amber-400 hover:shadow-2xl hover:shadow-amber-500/25 hover:-translate-y-1.5 transition-all duration-300 group overflow-hidden flex flex-col justify-between">
+                            <div className="absolute -top-10 -right-10 w-24 h-24 bg-amber-400/15 rounded-full blur-xl group-hover:bg-amber-400/30 transition-colors pointer-events-none" />
+                            
+                            <div>
+                                <div className="flex items-center justify-between gap-1.5 mb-2">
+                                    <div className="w-9 h-9 xl:w-10 xl:h-10 rounded-xl bg-gradient-to-br from-amber-400/30 to-amber-600/20 border border-amber-300/40 flex items-center justify-center text-amber-300 shadow-sm group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
+                                        <FileCheck2 className="w-4 h-4 xl:w-5 xl:h-5" />
+                                    </div>
+                                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[9.5px] xl:text-[10px] font-mono font-bold uppercase tracking-wider">
+                                        PRIMARY PORTAL
+                                    </span>
+                                </div>
+
+                                <h4 className="text-xs sm:text-sm xl:text-base font-black text-white uppercase tracking-wider mb-1 group-hover:text-amber-200 transition-colors">
+                                    PPMP &amp; APP System
+                                </h4>
+                                <p className="text-[11px] xl:text-xs text-blue-100/90 leading-snug">
+                                    Automated PPMP creation, multi-tier approvals, specimen digital signatures, and APP consolidation.
+                                </p>
                             </div>
-                            <h4 className="text-xs font-extrabold text-white uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                                <span>Automated PPMP</span>
-                            </h4>
-                            <p className="text-[11px] text-blue-100/85 leading-snug">
-                                Real-time consolidation of budget items into official APP templates.
-                            </p>
+
+                            <div className="mt-3 pt-2 border-t border-white/10 text-[9.5px] xl:text-[10px] font-semibold text-amber-300/80 flex items-center justify-between">
+                                <span>RA 12009 / RA 9184 Standard</span>
+                                <ArrowRight className="w-3 h-3 text-amber-400 group-hover:translate-x-1 transition-transform" />
+                            </div>
                         </div>
 
-                        {/* Card 2: Digital Signatures (Drop-in bounce from top & pulse aura) */}
-                        <div className="intro-card-2 float-loop-2 relative p-3.5 rounded-2xl bg-gradient-to-b from-blue-950/80 to-slate-950/80 backdrop-blur-xl border border-sky-400/30 shadow-xl hover:border-sky-400 hover:shadow-sky-500/20 hover:-translate-y-1.5 transition-all duration-300 group overflow-hidden">
-                            <div className="absolute -top-10 -right-10 w-20 h-20 bg-sky-400/10 rounded-full blur-xl group-hover:bg-sky-400/20 transition-colors pointer-events-none" />
-                            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-sky-400/30 to-blue-600/20 border border-sky-300/40 flex items-center justify-center text-sky-200 mb-2.5 shadow-xs group-hover:scale-110 group-hover:-rotate-6 transition-all duration-300">
-                                <ShieldCheck className="w-4 h-4" />
+                        {/* Card 2: Real-Time Monitoring System */}
+                        <div className="intro-card-2 relative p-3 sm:p-4 xl:p-5 rounded-2xl bg-gradient-to-b from-blue-950/85 via-slate-900/85 to-slate-950/90 backdrop-blur-xl border border-sky-400/35 hover:border-sky-400 hover:shadow-2xl hover:shadow-sky-500/25 hover:-translate-y-1.5 transition-all duration-300 group overflow-hidden flex flex-col justify-between">
+                            <div className="absolute -top-10 -right-10 w-24 h-24 bg-sky-400/15 rounded-full blur-xl group-hover:bg-sky-400/30 transition-colors pointer-events-none" />
+                            
+                            <div>
+                                <div className="flex items-center justify-between gap-1.5 mb-2">
+                                    <div className="w-9 h-9 xl:w-10 xl:h-10 rounded-xl bg-gradient-to-br from-sky-400/30 to-blue-600/20 border border-sky-300/40 flex items-center justify-center text-sky-200 shadow-sm group-hover:scale-110 group-hover:-rotate-3 transition-all duration-300">
+                                        <ShieldCheck className="w-4 h-4 xl:w-5 xl:h-5" />
+                                    </div>
+                                    <span className="px-2 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/40 text-sky-300 text-[9.5px] xl:text-[10px] font-mono font-bold uppercase tracking-wider">
+                                        LIVE PIMS TRACKING
+                                    </span>
+                                </div>
+
+                                <h4 className="text-xs sm:text-sm xl:text-base font-black text-white uppercase tracking-wider mb-1 group-hover:text-sky-200 transition-colors">
+                                    Real-Time Monitoring
+                                </h4>
+                                <p className="text-[11px] xl:text-xs text-blue-100/90 leading-snug">
+                                    Milestone stage surveillance across offices, implementation timelines, and automated PIMS publishing.
+                                </p>
                             </div>
-                            <h4 className="text-xs font-extrabold text-white uppercase tracking-wider mb-1">
-                                Digital Signatures
-                            </h4>
-                            <p className="text-[11px] text-blue-100/85 leading-snug">
-                                Certified end-to-end multi-signatory electronic endorsement.
-                            </p>
+
+                            <div className="mt-3 pt-2 border-t border-white/10 text-[9.5px] xl:text-[10px] font-semibold text-sky-300/80 flex items-center justify-between">
+                                <span>End-to-End Surveillance</span>
+                                <ArrowRight className="w-3 h-3 text-sky-400 group-hover:translate-x-1 transition-transform" />
+                            </div>
                         </div>
 
-                        {/* Card 3: Inter-Office Routing (Flying object intro glide + active flying paper plane / transit trail) */}
-                        <div className="intro-card-3 float-loop-3 relative p-3.5 rounded-2xl bg-gradient-to-b from-blue-950/80 to-slate-950/80 backdrop-blur-xl border border-emerald-400/35 shadow-xl hover:border-emerald-400 hover:shadow-emerald-500/20 hover:-translate-y-1.5 transition-all duration-300 group overflow-hidden">
-                            {/* Animated Gliding Light Trail */}
-                            <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-emerald-400 to-transparent trail-line-anim pointer-events-none" />
+                        {/* Card 3: Supplier Evaluation System */}
+                        <div className="intro-card-3 relative p-3 sm:p-4 xl:p-5 rounded-2xl bg-gradient-to-b from-blue-950/85 via-slate-900/85 to-slate-950/90 backdrop-blur-xl border border-emerald-400/35 hover:border-emerald-400 hover:shadow-2xl hover:shadow-emerald-500/25 hover:-translate-y-1.5 transition-all duration-300 group overflow-hidden flex flex-col justify-between">
+                            <div className="absolute -top-10 -right-10 w-24 h-24 bg-emerald-400/15 rounded-full blur-xl group-hover:bg-emerald-400/30 transition-colors pointer-events-none" />
                             
-                            <div className="flex items-center justify-between mb-2.5">
-                                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-400/30 to-teal-600/20 border border-emerald-300/40 flex items-center justify-center text-emerald-200 shadow-xs group-hover:scale-110 transition-all duration-300">
-                                    <Building2 className="w-4 h-4" />
+                            <div>
+                                <div className="flex items-center justify-between gap-1.5 mb-2">
+                                    <div className="w-9 h-9 xl:w-10 xl:h-10 rounded-xl bg-gradient-to-br from-emerald-400/30 to-teal-600/20 border border-emerald-300/40 flex items-center justify-center text-emerald-200 shadow-sm group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
+                                        <Award className="w-4 h-4 xl:w-5 xl:h-5" />
+                                    </div>
+                                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[9.5px] xl:text-[10px] font-mono font-bold uppercase tracking-wider">
+                                        VENDOR APPRAISAL
+                                    </span>
                                 </div>
-                                {/* Flying Object indicator: soaring Send / Paperplane icon with trail */}
-                                <div className="flying-icon-paperplane flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-[10px] text-emerald-300 font-bold uppercase tracking-wider shadow-xs">
-                                    <Send className="w-3 h-3 text-emerald-300 animate-pulse -rotate-12" />
-                                    <span>Transit</span>
-                                </div>
+
+                                <h4 className="text-xs sm:text-sm xl:text-base font-black text-white uppercase tracking-wider mb-1 group-hover:text-emerald-200 transition-colors">
+                                    Supplier Evaluation
+                                </h4>
+                                <p className="text-[11px] xl:text-xs text-blue-100/90 leading-snug">
+                                    Comprehensive vendor ratings, 4-tier criteria performance scoring, and official supplier compliance logs.
+                                </p>
                             </div>
-                            
-                            <h4 className="text-xs font-extrabold text-white uppercase tracking-wider mb-1 flex items-center justify-between">
-                                <span>Inter-Office Routing</span>
-                            </h4>
-                            <p className="text-[11px] text-blue-100/85 leading-snug">
-                                Seamless transitions between End-Users, OPPMO, Budget, and TWG.
-                            </p>
+
+                            <div className="mt-3 pt-2 border-t border-white/10 text-[9.5px] xl:text-[10px] font-semibold text-emerald-300/80 flex items-center justify-between">
+                                <span>4-Tier Criteria Scoring</span>
+                                <ArrowRight className="w-3 h-3 text-emerald-400 group-hover:translate-x-1 transition-transform" />
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 {/* Left Panel Bottom Bar */}
-                <div className="relative z-10 px-6 py-3 xl:px-8 xl:py-3.5 border-t border-white/15 bg-blue-950/50 backdrop-blur-xl flex items-center justify-between text-[11px] text-blue-100">
-                    <div className="flex items-center gap-2.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <div className="relative z-10 px-4 sm:px-6 xl:px-8 py-2.5 xl:py-3 border-t border-white/15 bg-blue-950/60 backdrop-blur-xl flex flex-wrap items-center justify-between gap-2 text-[10.5px] xl:text-[11px] text-blue-100">
+                    <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                         <span className="text-blue-100 font-medium"></span>
                     </div>
-                    <div className="text-blue-200/80 text-[11px]">
-                        
+                    <div className="text-blue-200/80 text-[10px] xl:text-[10.5px] font-mono">
+                        ISO 9001:2015 CERTIFIED • PROVINCE OF DAVAO DEL SUR
                     </div>
                 </div>
             </div>
@@ -501,7 +594,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
             {/* ========================================================================= */}
             {/* RIGHT PANEL: AUTHENTICATION FORM (SIGN IN & REGISTRATION)                 */}
             {/* ========================================================================= */}
-            <div className="w-full lg:w-[50%] xl:w-[46%] 2xl:w-[42%] min-h-screen lg:h-screen flex flex-col justify-between bg-slate-50/95 relative z-20 shadow-2xl overflow-y-auto custom-scrollbar border-l border-slate-200/80">
+            <div className="w-full lg:w-[45%] xl:w-[42%] 2xl:w-[40%] min-h-screen lg:h-screen flex flex-col justify-between bg-slate-50/95 relative z-20 shadow-2xl overflow-y-auto custom-scrollbar border-t lg:border-t-0 lg:border-l border-slate-200/80">
                 
                 {/* Top Subtle Amber & Navy Accent Line */}
                 <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-blue-600 to-indigo-600" />
@@ -512,6 +605,16 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
                     {/* Elevated Content Card (Expanded) with smooth landing transition */}
                     <div className="landing-auth-card bg-white rounded-2xl p-5 sm:p-7 shadow-lg shadow-slate-200/50 border border-slate-200/80 w-full my-auto">
                         
+                        {onBackToLanding && (
+                            <button
+                                type="button"
+                                onClick={onBackToLanding}
+                                className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-blue-600 transition mb-3 hover:underline"
+                            >
+                                <span>← Back to Portal Home</span>
+                            </button>
+                        )}
+
                         {/* Header: Logo & Identity */}
                         <div className="mb-4">
                             <div className="flex items-center gap-3 mb-2.5">
@@ -544,11 +647,11 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
 
                             <div className="mt-4">
                                 <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
-                                    {mode === 'login' ? 'Welcome Back' : 'Create Government Account'}
+                                    {mode === 'login' ? 'Unified Portal Access' : 'Create Government Account'}
                                 </h2>
                                 <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 font-medium leading-relaxed">
                                     {mode === 'login' 
-                                        ? 'Sign in to access the Integrated E-Procurement PPMP & APP Portal.'
+                                        ? 'Sign in with your provincial credentials to access your authorized digital systems and procurement workspaces.'
                                         : 'Fill in your provincial credentials to register for workspace authorization.'
                                     }
                                 </p>
@@ -705,16 +808,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
                                     </div>
 
                                     <div className="flex flex-col items-center gap-2 pt-4">
-                                        <div className="text-xs text-slate-500">
-                                            Need a provincial system account?{' '}
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowPrivacyNotice(true)}
-                                                className="font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition"
-                                            >
-                                                Register here
-                                            </button>
-                                        </div>
                                         <button
                                             type="button"
                                             onClick={() => {
@@ -820,7 +913,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
                                             htmlFor="register-address"
                                             className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1"
                                         >
-                                            Residential / Office Address <span className="text-rose-500">*</span>
+                                            User Address <span className="text-rose-500">*</span>
                                         </label>
                                         <div className="relative group">
                                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -971,6 +1064,147 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
 
                                                 <div className="px-3 py-1.5 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-500 font-medium text-right">
                                                     Showing {filteredOffices.length} of {offices.length} offices
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Multi-Select Systems Dropdown with Checkboxes */}
+                                    <div className="relative" ref={systemsDropdownRef}>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                                                Requested Digital Systems Access <span className="text-rose-500">*</span>
+                                            </label>
+                                            <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                                                {selectedSystems.length} {selectedSystems.length === 1 ? 'system' : 'systems'} selected
+                                            </span>
+                                        </div>
+
+                                        {/* Dropdown Button Trigger */}
+                                        <div
+                                            id="register-systems-select-btn"
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={() => setIsSystemsDropdownOpen(!isSystemsDropdownOpen)}
+                                            className={`w-full min-h-[42px] px-3 py-2 border rounded-xl flex items-center justify-between cursor-pointer bg-slate-50 hover:bg-white transition shadow-sm text-left ${
+                                                isSystemsDropdownOpen
+                                                    ? 'border-blue-600 ring-2 ring-blue-600/20 bg-white'
+                                                    : 'border-slate-300 hover:border-slate-400'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-2 truncate mr-2">
+                                                <Layers className="w-4 h-4 text-blue-600 shrink-0" />
+                                                {selectedSystems.length > 0 ? (
+                                                    <div className="truncate text-xs font-semibold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                                                        {selectedSystems.map((url) => {
+                                                            const matched = availableSystems.find((s) => s.link_url === url);
+                                                            const label = matched?.name || (url === '/monitoringsystem' ? 'Monitoring System' : 'PPMP & APP System');
+                                                            return (
+                                                                <span
+                                                                    key={url}
+                                                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 text-[10px] font-bold border border-blue-200"
+                                                                >
+                                                                    <Check className="w-3 h-3 text-blue-600" />
+                                                                    <span className="max-w-[130px] truncate">{label}</span>
+                                                                </span>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-xs text-slate-400">
+                                                        -- Select Systems (Multi-select) --
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center gap-1 shrink-0">
+                                                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isSystemsDropdownOpen ? 'rotate-180' : ''}`} />
+                                            </div>
+                                        </div>
+
+                                        {/* Dropdown Menu with Checkboxes */}
+                                        {isSystemsDropdownOpen && (
+                                            <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100 p-2.5">
+                                                <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 text-[11px]">
+                                                    <span className="font-bold text-slate-500 uppercase tracking-wider text-[10px]">
+                                                        Available Provincial Systems
+                                                    </span>
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSelectedSystems(availableSystems.map((s) => s.link_url))}
+                                                            className="text-blue-600 hover:text-blue-800 font-bold hover:underline cursor-pointer"
+                                                        >
+                                                            Select All
+                                                        </button>
+                                                        <span className="text-slate-300">•</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSelectedSystems([])}
+                                                            className="text-slate-500 hover:text-slate-700 font-medium hover:underline cursor-pointer"
+                                                        >
+                                                            Clear
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                <div className="max-h-56 overflow-y-auto space-y-1.5 custom-scrollbar pr-1">
+                                                    {availableSystems.map((sys) => {
+                                                        const isChecked = selectedSystems.includes(sys.link_url);
+                                                        return (
+                                                            <label
+                                                                key={sys.id || sys.link_url}
+                                                                className={`flex items-start gap-2.5 p-2 rounded-xl border cursor-pointer transition ${
+                                                                    isChecked
+                                                                        ? 'bg-blue-50/70 border-blue-300 shadow-2xs'
+                                                                        : 'bg-white border-slate-200 hover:bg-slate-50'
+                                                                }`}
+                                                            >
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isChecked}
+                                                                    onChange={(e) => {
+                                                                        if (e.target.checked) {
+                                                                            setSelectedSystems(prev => [...prev, sys.link_url]);
+                                                                        } else {
+                                                                            setSelectedSystems(prev => prev.filter(u => u !== sys.link_url));
+                                                                        }
+                                                                    }}
+                                                                    className="mt-0.5 w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer shrink-0"
+                                                                />
+                                                                <div className="min-w-0 flex-1">
+                                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                                        <span className="text-xs font-bold text-slate-900 leading-snug">
+                                                                            {sys.name}
+                                                                        </span>
+                                                                        {sys.badge && (
+                                                                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                                                                                {sys.badge}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                                                        URL: <span className="text-blue-600 font-semibold">{sys.link_url}</span>
+                                                                    </div>
+                                                                    {sys.description && (
+                                                                        <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">
+                                                                            {sys.description}
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            </label>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+                                                    <span>Select all systems required for your duties.</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setIsSystemsDropdownOpen(false)}
+                                                        className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold"
+                                                    >
+                                                        Done
+                                                    </button>
                                                 </div>
                                             </div>
                                         )}
@@ -1489,7 +1723,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, initialError = '' }) 
                                     <li><strong>Full Name:</strong> Required for official identity, review tracking, and accountability.</li>
                                     <li><strong>Official Email Address:</strong> Used for account credentials, system notifications, and security recovery.</li>
                                     <li><strong>Contact / Phone Number:</strong> Used for official procurement communications and verification.</li>
-                                    <li><strong>Physical / Office Address:</strong> Used for institutional routing and record integrity.</li>
+                                    <li><strong>User Address:</strong> Used for user account identification, profile verification, and record integrity.</li>
                                     <li><strong>Department / Implementing Office & Designation:</strong> Identifies your administrative unit and procurement jurisdiction.</li>
                                     <li><strong>System Role / Privilege Level:</strong> Determines access control for procurement operations.</li>
                                     <li><strong>Specimen Digital Signature:</strong> Affixed to official PPMP documents for electronic endorsements and reviews.</li>

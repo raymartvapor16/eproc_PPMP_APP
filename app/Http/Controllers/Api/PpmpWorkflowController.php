@@ -846,7 +846,8 @@ class PpmpWorkflowController extends Controller
             return response()->json(['message' => "PPMP is not awaiting OPPMO review."], 422);
         }
 
-        $isPostTwg = $ppmp->twg_approved_at !== null || $ppmp->signatures()->where('role', 'twg')->exists();
+        $isTwgSkipped = ($ppmp->amendment_type === 'AMENDMENT' && $ppmp->amendment_scope === 'PPMP_APP');
+        $isPostTwg = $isTwgSkipped || $ppmp->twg_approved_at !== null || $ppmp->signatures()->where('role', 'twg')->exists();
 
         if ($isPostTwg) {
             // Must have generated the APP before forwarding to Head
@@ -863,7 +864,7 @@ class PpmpWorkflowController extends Controller
             $nextRole = 'twg';
         }
 
-        DB::transaction(function () use ($ppmp, $user, $isPostTwg, $nextStatus, $nextRole) {
+        DB::transaction(function () use ($ppmp, $user, $isPostTwg, $isTwgSkipped, $nextStatus, $nextRole) {
             $now = now();
             $receivedAt = $ppmp->oppmo_received_at ?? $now;
 
@@ -871,8 +872,15 @@ class PpmpWorkflowController extends Controller
                 $targetHeadUsers = $this->getTargetHeadUsers($ppmp->office_id);
                 $primaryHeadId = $targetHeadUsers->first()?->id;
 
+                $appData = is_array($ppmp->app_data) ? $ppmp->app_data : [];
+                $appData['is_oppmo_approved'] = true;
+                $appData['oppmo_approved_at'] = $now->toIso8601String();
+                $appData['oppmo_approved_by_id'] = $user->id;
+                $appData['oppmo_approved_by_name'] = $user->name;
+
                 $updateData = [
                     'status' => 'HEAD_PENDING',
+                    'app_data' => $appData,
                     'oppmo_app_approved_at' => $now,
                     'oppmo_received_at' => $receivedAt,
                     'head_submitted_at' => $now,
@@ -899,6 +907,10 @@ class PpmpWorkflowController extends Controller
                     'user_agent' => request()->userAgent(),
                 ]);
 
+                $oppmoRouteRemarks = $isTwgSkipped
+                    ? 'Annual Procurement Plan (APP) generated and verified. BAC-TWG technical review bypassed (Amendment: PPMP/APP Only). Forwarded to Office Head for approval.'
+                    : 'Annual Procurement Plan (APP) generated. Forwarded to Office Head for approval.';
+
                 PpmpRoute::create([
                     'ppmp_id' => $ppmp->id,
                     'from_user_id' => $user->id,
@@ -907,7 +919,7 @@ class PpmpWorkflowController extends Controller
                     'to_role' => 'head',
                     'action' => 'OPPMO_APP_GENERATED',
                     'status' => 'HEAD_PENDING',
-                    'remarks' => 'Annual Procurement Plan (APP) generated. Forwarded to Office Head for approval.',
+                    'remarks' => $oppmoRouteRemarks,
                     'submitted_at' => $now,
                     'acted_at' => $now,
                 ]);
@@ -1011,7 +1023,9 @@ class PpmpWorkflowController extends Controller
         });
 
         $returnMessage = $isPostTwg
-            ? 'Annual Procurement Plan (APP) verified and forwarded to Office Head for approval.'
+            ? ($isTwgSkipped
+                ? 'Annual Procurement Plan (APP) generated and verified. Forwarded to Office Head for approval (BAC-TWG review bypassed).'
+                : 'Annual Procurement Plan (APP) verified and forwarded to Office Head for approval.')
             : 'PPMP approved by OPPMO and forwarded to BAC-TWG.';
 
         return response()->json([
@@ -1120,6 +1134,10 @@ class PpmpWorkflowController extends Controller
             return response()->json(['message' => "PPMP is not awaiting TWG review."], 422);
         }
 
+        if ($ppmp->amendment_type === 'AMENDMENT' && $ppmp->amendment_scope === 'PPMP_APP') {
+            return response()->json(['message' => 'BAC-TWG review is not applicable for this PPMP revision because the amendment scope is restricted to PPMP/APP only.'], 422);
+        }
+
         DB::transaction(function () use ($ppmp, $user) {
             $now = now();
             $receivedAt = $ppmp->twg_received_at ?? $now;
@@ -1212,6 +1230,10 @@ class PpmpWorkflowController extends Controller
 
         if ($ppmp->status !== 'TWG_REVIEW') {
             return response()->json(['message' => "PPMP is not awaiting TWG review."], 422);
+        }
+
+        if ($ppmp->amendment_type === 'AMENDMENT' && $ppmp->amendment_scope === 'PPMP_APP') {
+            return response()->json(['message' => 'BAC-TWG review is not applicable for this PPMP revision because the amendment scope is restricted to PPMP/APP only.'], 422);
         }
 
         $validated = $request->validate([
@@ -1373,7 +1395,8 @@ class PpmpWorkflowController extends Controller
             $ppmp->update(['oppmo_received_at' => $now]);
             $this->markLatestPendingRouteReceived($ppmp->id, $now);
 
-            $isPostTwg = $ppmp->twg_approved_at !== null || $ppmp->signatures()->where('role', 'twg')->exists();
+            $isTwgSkipped = ($ppmp->amendment_type === 'AMENDMENT' && $ppmp->amendment_scope === 'PPMP_APP');
+            $isPostTwg = $isTwgSkipped || $ppmp->twg_approved_at !== null || $ppmp->signatures()->where('role', 'twg')->exists();
             $twgUser = User::where('role', 'twg')->where('is_active', true)->first();
             $headUser = $this->getTargetHeadUsers($ppmp->office_id)->first();
 
@@ -1648,7 +1671,11 @@ class PpmpWorkflowController extends Controller
                 'payment_method' => $ppmp->payment_method,
                 'warranty_and_other_terms' => $ppmp->warranty_and_other_terms,
                 'attachment_list_data' => $ppmp->attachment_list_data,
-                'app_data' => $ppmp->app_data,
+                'app_data' => [
+                    'needs_regeneration' => true,
+                    'is_generated' => false,
+                    'old_app' => $ppmp->app_data,
+                ],
                 'total_budget' => $ppmp->total_budget,
                 'status' => 'DRAFT',
                 'amendment_status' => null,
@@ -1854,17 +1881,19 @@ class PpmpWorkflowController extends Controller
             $oldVal = $change['old_value'] ?? '';
             $newVal = $change['new_value'] ?? '';
 
-            if ($itemId && in_array($fieldName, ['estimated_budget', 'description', 'procurement_mode', 'quantity_size'])) {
+            $item = null;
+            if ($itemId) {
                 $item = PpmpItem::where('ppmp_id', $ppmp->id)->where('id', $itemId)->first();
-                if ($item) {
-                    $item->update([$fieldName => $newVal]);
+            }
 
-                    // If budget changed, update ppmp total_budget
-                    if ($fieldName === 'estimated_budget') {
-                        $ppmp->update([
-                            'total_budget' => $ppmp->items()->sum('estimated_budget'),
-                        ]);
-                    }
+            if ($item && in_array($fieldName, ['estimated_budget', 'description', 'procurement_mode', 'quantity_size'])) {
+                $item->update([$fieldName => $newVal]);
+
+                // If budget changed, update ppmp total_budget
+                if ($fieldName === 'estimated_budget') {
+                    $ppmp->update([
+                        'total_budget' => $ppmp->items()->sum('estimated_budget'),
+                    ]);
                 }
             }
 
@@ -1875,7 +1904,24 @@ class PpmpWorkflowController extends Controller
                 'field_name' => $fieldName,
                 'old_value' => (string) $oldVal,
                 'new_value' => (string) $newVal,
-                'action' => 'field_correction',
+                'action' => $item ? "Item #{$item->item_no} field correction" : 'field_correction',
+            ]);
+        }
+
+        // If this is an amended or supplemental PPMP, invalidate APP so OPPMO generates it again
+        $isAmendedOrSupplemental = !empty($ppmp->parent_id) || in_array($ppmp->amendment_type, ['AMENDMENT', 'SUPPLEMENTAL'], true);
+        if ($isAmendedOrSupplemental) {
+            $existingApp = $ppmp->app_data;
+            $oldApp = $existingApp['old_app'] ?? ((!empty($existingApp['rows']) && is_array($existingApp['rows'])) ? $existingApp : null) ?? $ppmp->parent?->app_data;
+            $ppmp->update([
+                'app_data' => [
+                    'needs_regeneration' => true,
+                    'is_generated' => false,
+                    'old_app' => $oldApp,
+                    'invalidated_at' => now()->toIso8601String(),
+                    'invalidated_by' => $user->name,
+                    'invalidated_by_role' => $role,
+                ],
             ]);
         }
     }

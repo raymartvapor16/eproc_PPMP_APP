@@ -292,6 +292,10 @@ export const FundSourcesManagement = () => {
                         <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
                         <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded border border-purple-200 shrink-0">BAC-TWG</span>
                         <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
+                        <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded border border-indigo-200 shrink-0">OPPMO (Generate APP)</span>
+                        <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
+                        <span className="px-2 py-0.5 bg-amber-50 text-amber-800 rounded border border-amber-200 shrink-0">Head (Approval)</span>
+                        <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
                         <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded border border-emerald-200 shrink-0">Ready to Print</span>
                     </div>
                 </div>
@@ -313,6 +317,10 @@ export const FundSourcesManagement = () => {
                         <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded border border-indigo-200 shrink-0">OPPMO</span>
                         <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
                         <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded border border-purple-200 shrink-0">BAC-TWG</span>
+                        <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
+                        <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded border border-indigo-200 shrink-0">OPPMO (Generate APP)</span>
+                        <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
+                        <span className="px-2 py-0.5 bg-amber-50 text-amber-800 rounded border border-amber-200 shrink-0">Head (Approval)</span>
                         <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
                         <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded border border-emerald-200 shrink-0">Ready to Print</span>
                     </div>
@@ -660,7 +668,7 @@ export const FundSourcesManagement = () => {
                                             />
                                         </div>
                                         <div className="text-[10px] text-slate-500 mt-2">
-                                            End User ➔ Head ➔ <strong>Budget Officer</strong> ➔ OPPMO ➔ BAC-TWG ➔ Ready to Print
+                                            End User ➔ Head ➔ <strong>Budget Officer</strong> ➔ OPPMO ➔ BAC-TWG ➔ OPPMO (Generate APP) ➔ Head (Approval) ➔ Ready to Print
                                         </div>
                                     </label>
 
@@ -686,7 +694,7 @@ export const FundSourcesManagement = () => {
                                             />
                                         </div>
                                         <div className="text-[10px] text-slate-500 mt-2">
-                                            End User ➔ Head ➔ <strong>PACCO Reviewer</strong> ➔ OPPMO ➔ BAC-TWG ➔ Ready to Print
+                                            End User ➔ Head ➔ <strong>PACCO Reviewer</strong> ➔ OPPMO ➔ BAC-TWG ➔ OPPMO (Generate APP) ➔ Head (Approval) ➔ Ready to Print
                                         </div>
                                     </label>
                                 </div>

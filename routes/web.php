@@ -12,10 +12,14 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\OfficeController;
 use App\Http\Controllers\Api\FundSourceController;
 use App\Http\Controllers\Api\ProcurementConditionController;
+use App\Http\Controllers\Api\ProcurementModeController;
 use App\Http\Controllers\Api\OtherTermController;
 use App\Http\Controllers\Api\SupportingDocumentController;
 use App\Http\Controllers\Api\SystemSettingController;
 use App\Http\Controllers\Api\MonitoringController;
+use App\Http\Controllers\Api\PortalSystemController;
+use App\Http\Controllers\Api\OppmoTeamController;
+use App\Http\Controllers\Api\SupplierEvaluationController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -29,6 +33,9 @@ Route::prefix('api')->group(function () {
     Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:30,1');
     Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:30,1');
     Route::get('/public-offices', [OfficeController::class, 'index'])->middleware('throttle:240,1');
+    Route::get('/public-portal-systems', [PortalSystemController::class, 'publicIndex'])->middleware('throttle:240,1');
+    Route::get('/public-oppmo-team', [OppmoTeamController::class, 'publicIndex'])->middleware('throttle:240,1');
+    Route::get('/oppmo-team-photo/{filename}', [OppmoTeamController::class, 'getPhoto'])->where('filename', '[A-Za-z0-9_\-\.]+')->middleware('throttle:300,1');
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/csrf-token', [AuthController::class, 'csrfToken'])->middleware('throttle:240,1');
     Route::get('/system-settings/developer-mode', [SystemSettingController::class, 'getDeveloperMode'])->middleware('throttle:240,1');
@@ -52,6 +59,7 @@ Route::prefix('api')->group(function () {
         Route::post('/users/{id}/reject', [UserController::class, 'reject'])->middleware('role:admin,super_admin');
         Route::post('/users/{id}/toggle-status', [UserController::class, 'toggleStatus'])->middleware('role:admin,super_admin');
         Route::put('/users/{id}/role', [UserController::class, 'updateRole'])->middleware('role:admin,super_admin');
+        Route::put('/users/{id}/system-access', [UserController::class, 'updateSystemAccess'])->middleware('role:admin,super_admin');
         Route::delete('/users/{id}', [UserController::class, 'destroy'])->middleware('role:admin,super_admin');
 
         // Super Admin Office Management & CSV/Excel Batch Import
@@ -71,6 +79,21 @@ Route::prefix('api')->group(function () {
         Route::put('/system-settings/developer-mode', [SystemSettingController::class, 'updateDeveloperMode'])->middleware('role:super_admin');
         Route::put('/system-settings/signatures', [SystemSettingController::class, 'updateSignatureSettings'])->middleware('role:super_admin');
 
+        // Portal Systems Management (Super Admin only)
+        Route::get('/portal-systems', [PortalSystemController::class, 'index'])->middleware('role:super_admin');
+        Route::post('/portal-systems', [PortalSystemController::class, 'store'])->middleware('role:super_admin');
+        Route::put('/portal-systems/{id}', [PortalSystemController::class, 'update'])->middleware('role:super_admin');
+        Route::delete('/portal-systems/{id}', [PortalSystemController::class, 'destroy'])->middleware('role:super_admin');
+        Route::patch('/portal-systems/{id}/toggle-status', [PortalSystemController::class, 'toggleStatus'])->middleware('role:super_admin');
+
+        // OPPMO Team Management (Super Admin only)
+        Route::get('/oppmo-team', [OppmoTeamController::class, 'index'])->middleware('role:super_admin');
+        Route::post('/oppmo-team', [OppmoTeamController::class, 'store'])->middleware('role:super_admin');
+        Route::post('/oppmo-team/{id}', [OppmoTeamController::class, 'update'])->middleware('role:super_admin');
+        Route::put('/oppmo-team/{id}', [OppmoTeamController::class, 'update'])->middleware('role:super_admin');
+        Route::delete('/oppmo-team/{id}', [OppmoTeamController::class, 'destroy'])->middleware('role:super_admin');
+        Route::patch('/oppmo-team/{id}/toggle-status', [OppmoTeamController::class, 'toggleStatus'])->middleware('role:super_admin');
+
         // Source of Fund Management (Public list for dropdowns, Admin & Super Admin CRUD)
         Route::get('/fund-sources', [FundSourceController::class, 'index']);
         Route::post('/fund-sources', [FundSourceController::class, 'store'])->middleware('role:admin,super_admin');
@@ -82,6 +105,13 @@ Route::prefix('api')->group(function () {
         Route::post('/procurement-conditions', [ProcurementConditionController::class, 'store'])->middleware('role:admin,super_admin');
         Route::put('/procurement-conditions/{id}', [ProcurementConditionController::class, 'update'])->middleware('role:admin,super_admin');
         Route::delete('/procurement-conditions/{id}', [ProcurementConditionController::class, 'destroy'])->middleware('role:admin,super_admin');
+
+        // Modes of Procurement Management (List for PPMP & Monitoring dropdowns, Admin & Super Admin CRUD)
+        Route::get('/procurement-modes', [ProcurementModeController::class, 'index']);
+        Route::post('/procurement-modes', [ProcurementModeController::class, 'store'])->middleware('role:admin,super_admin');
+        Route::put('/procurement-modes/{id}', [ProcurementModeController::class, 'update'])->middleware('role:admin,super_admin');
+        Route::patch('/procurement-modes/{id}/toggle-status', [ProcurementModeController::class, 'toggleStatus'])->middleware('role:admin,super_admin');
+        Route::delete('/procurement-modes/{id}', [ProcurementModeController::class, 'destroy'])->middleware('role:admin,super_admin');
 
         // Other Terms & Green Specifications Management (Public list for PPMP form dropdowns, Admin & Super Admin CRUD)
         Route::get('/other-terms', [OtherTermController::class, 'index']);
@@ -168,8 +198,8 @@ Route::prefix('api')->group(function () {
         // Activity Logs (Admin & Super Admin)
         Route::get('/activity-logs', [ActivityLogController::class, 'index'])->middleware('role:admin,super_admin');
 
-        // OPPMO Monitoring System API Routes (Strictly accessible by monitor role only)
-        Route::prefix('monitoring')->middleware('role:monitor')->group(function () {
+        // OPPMO Monitoring System API Routes (Guarded by MonitoringController::authorizeMonitor for monitor, admin, super_admin, and users with system access)
+        Route::prefix('monitoring')->group(function () {
             Route::get('/stats', [MonitoringController::class, 'getStats']);
             Route::get('/pending-pims', [MonitoringController::class, 'pendingPims']);
             Route::get('/projects', [MonitoringController::class, 'index']);
@@ -186,9 +216,65 @@ Route::prefix('api')->group(function () {
         });
 
         // PIMS Publishing & Automatic Monitoring Link
-        Route::post('/monitoring/pims-publish', [MonitoringController::class, 'publishPims'])->middleware('role:monitor,end_user');
+        Route::post('/monitoring/pims-publish', [MonitoringController::class, 'publishPims']);
+        Route::post('/monitoring/pims-unpublish', [MonitoringController::class, 'unpublishPims']);
+
+        // Supplier Evaluation System API Routes
+        Route::prefix('supplier-evaluation')->group(function () {
+            Route::get('/dashboard-init', [SupplierEvaluationController::class, 'dashboardInit']);
+            Route::get('/evaluations', [SupplierEvaluationController::class, 'evaluations']);
+            Route::get('/evaluations/{id}', [SupplierEvaluationController::class, 'showEvaluation'])->whereNumber('id');
+            Route::post('/evaluations', [SupplierEvaluationController::class, 'storeEvaluation']);
+            Route::post('/evaluations/{id}/evaluate', [SupplierEvaluationController::class, 'evaluateOrUpdate'])->whereNumber('id');
+            Route::delete('/evaluations/{id}', [SupplierEvaluationController::class, 'destroyEvaluation'])->whereNumber('id');
+            Route::post('/evaluations/{id}/restore', [SupplierEvaluationController::class, 'restoreEvaluation'])->whereNumber('id');
+            Route::delete('/evaluations/{id}/force', [SupplierEvaluationController::class, 'forceDeleteEvaluation'])->whereNumber('id');
+
+            // Bulk Evaluation Workspace
+            Route::get('/bulk/suppliers', [SupplierEvaluationController::class, 'getBulkSuppliers']);
+            Route::get('/bulk/evaluations', [SupplierEvaluationController::class, 'fetchBulkEvaluations']);
+            Route::post('/bulk/submit', [SupplierEvaluationController::class, 'submitBulkEvaluations']);
+
+            // Recycle Bin
+            Route::get('/recycle-bin', [SupplierEvaluationController::class, 'recycleBin']);
+
+            // Purchase Orders & Bulk PO Add
+            Route::get('/purchase-orders', [SupplierEvaluationController::class, 'purchaseOrders']);
+            Route::post('/purchase-orders', [SupplierEvaluationController::class, 'storePurchaseOrder']);
+            Route::post('/purchase-orders/import', [SupplierEvaluationController::class, 'importPurchaseOrders']);
+            Route::get('/purchase-orders/bulk-list', [SupplierEvaluationController::class, 'bulkPoList']);
+            Route::post('/purchase-orders/bulk-evaluate', [SupplierEvaluationController::class, 'storeBulkPoEvaluations']);
+            Route::post('/purchase-orders/{id}/update', [SupplierEvaluationController::class, 'updatePurchaseOrder'])->whereNumber('id');
+            Route::put('/purchase-orders/{id}', [SupplierEvaluationController::class, 'updatePurchaseOrder'])->whereNumber('id');
+            Route::delete('/purchase-orders/{id}', [SupplierEvaluationController::class, 'destroyPurchaseOrder'])->whereNumber('id');
+            Route::post('/purchase-orders/{id}/upload-pdf', [SupplierEvaluationController::class, 'uploadPurchaseOrderPdf'])->whereNumber('id');
+            Route::get('/purchase-orders/{id}/pdf', [SupplierEvaluationController::class, 'viewPurchaseOrderPdf'])->whereNumber('id');
+
+            // Update / Delete Requests
+            Route::get('/requests', [SupplierEvaluationController::class, 'listRequests']);
+            Route::post('/requests', [SupplierEvaluationController::class, 'storeRequest']);
+            Route::post('/requests/{id}/approve', [SupplierEvaluationController::class, 'approveRequest'])->whereNumber('id');
+            Route::post('/requests/{id}/reject', [SupplierEvaluationController::class, 'rejectRequest'])->whereNumber('id');
+            Route::delete('/requests/{id}', [SupplierEvaluationController::class, 'cancelRequest'])->whereNumber('id');
+
+            // Authorize Personnel PDFs
+            Route::get('/pdfs', [SupplierEvaluationController::class, 'listAuthorizePdfs']);
+            Route::post('/pdfs', [SupplierEvaluationController::class, 'uploadAuthorizePdf']);
+            Route::post('/pdfs/{id}/status', [SupplierEvaluationController::class, 'updateAuthorizePdfStatus'])->whereNumber('id');
+            Route::get('/pdfs/{id}/file', [SupplierEvaluationController::class, 'viewAuthorizePdfFile'])->whereNumber('id');
+
+            // Analytics & Reports
+            Route::get('/analytics', [SupplierEvaluationController::class, 'analytics']);
+
+            // Activity Logs
+            Route::get('/activity-logs', [SupplierEvaluationController::class, 'activityLogs']);
+            Route::get('/activity-logs/export', [SupplierEvaluationController::class, 'exportActivityLogs']);
+        });
     });
 });
+
+// Direct /storage/oppmo_team fallback to serve from private storage
+Route::get('/storage/oppmo_team/{filename}', [OppmoTeamController::class, 'getPhoto'])->where('filename', '[A-Za-z0-9_\-\.]+')->middleware('throttle:300,1');
 
 // Single Page Application entry for all frontend routes
 Route::get('/{any}', function () {

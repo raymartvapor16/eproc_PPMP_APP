@@ -24,7 +24,28 @@ class PpmpSignatory extends Model
         ];
     }
 
-    // Scopes
+    // Scopes & In-Memory Cache
+    protected static ?\Illuminate\Support\Collection $activeCache = null;
+
+    public static function flushCache(): void
+    {
+        static::$activeCache = null;
+    }
+
+    public static function getActiveSignatories(): \Illuminate\Support\Collection
+    {
+        if (static::$activeCache === null) {
+            static::$activeCache = static::where('is_active', true)->get();
+        }
+        return static::$activeCache;
+    }
+
+    protected static function booted(): void
+    {
+        static::saved(fn() => static::flushCache());
+        static::deleted(fn() => static::flushCache());
+    }
+
     public function scopeBudgetRequirement(Builder $query): Builder
     {
         return $query->where('signatory_type', 'budget_requirement');

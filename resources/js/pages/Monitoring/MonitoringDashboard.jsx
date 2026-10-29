@@ -23,9 +23,11 @@ import {
     TrendingUp,
     ExternalLink,
     Bell,
-    Check
+    Check,
+    GitBranch,
+    GitMerge
 } from 'lucide-react';
-import { monitoringService, ppmpService } from '../../services/api';
+import { monitoringService, ppmpService, procurementModeService } from '../../services/api';
 import { formatCurrency } from '../../components/UI/StatusBadge';
 import { PimsPublishModal } from '../../components/Monitoring/PimsPublishModal';
 import { MonitoringProjectDetailModal } from '../../components/Monitoring/MonitoringProjectDetailModal';
@@ -33,8 +35,15 @@ import { MonitoringProjectDetailModal } from '../../components/Monitoring/Monito
 export const MonitoringDashboard = ({
     user,
     onBackToPpmpSystem,
+    onNavigateToPortal,
     onLogout,
 }) => {
+    // Only OPPMO Monitors and Admins can manage monitoring projects and steps
+    // End-users, Office Heads, and Reviewers (Budget Officer, TWG, PACCO, etc.) are view-only
+    const canManageMonitoring = Boolean(
+        user && ['super_admin', 'admin', 'monitor', 'oppmo'].includes(user.role)
+    );
+
     const [projects, setProjects] = useState([]);
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -42,9 +51,10 @@ export const MonitoringDashboard = ({
 
     // Filters
     const [selectedCategory, setSelectedCategory] = useState('ALL'); // 'ALL' | 'GOODS_CONSULTING' | 'INFRA'
-    const [selectedMode, setSelectedMode] = useState('ALL'); // 'ALL' | 'SVP' | 'CB'
+    const [selectedMode, setSelectedMode] = useState('ALL'); // 'ALL' or specific mode name
     const [selectedDivision, setSelectedDivision] = useState('ALL'); // 'ALL' | 'pr_division' | 'technical_division' | 'bac_support_division' | 'contracting_division'
     const [searchQuery, setSearchQuery] = useState('');
+    const [modesList, setModesList] = useState([]);
 
     // Modals
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -156,6 +166,33 @@ export const MonitoringDashboard = ({
         };
     }, []);
 
+    // Load active modes of procurement dynamically from database
+    useEffect(() => {
+        let isMounted = true;
+        const loadModes = () => {
+            procurementModeService.getAll({ active_only: 1 })
+                .then((res) => {
+                    if (isMounted && Array.isArray(res.data)) {
+                        setModesList(res.data);
+                    }
+                })
+                .catch((err) => {
+                    console.error('Failed to load modes of procurement', err);
+                });
+        };
+        loadModes();
+
+        const handleModesChanged = () => {
+            if (isMounted) loadModes();
+        };
+        window.addEventListener('procurement-modes:changed', handleModesChanged);
+
+        return () => {
+            isMounted = false;
+            window.removeEventListener('procurement-modes:changed', handleModesChanged);
+        };
+    }, []);
+
     // Instant real-time fast search (0ms latency, zero delay)
     const filteredProjects = useMemo(() => {
         if (!searchQuery.trim()) return projects;
@@ -257,7 +294,31 @@ export const MonitoringDashboard = ({
                     </div>
 
                     {/* Navigation Actions */}
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2">
+                        {onNavigateToPortal && (
+                            <button
+                                type="button"
+                                onClick={onNavigateToPortal}
+                                className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5"
+                                title="Portal Landing Page"
+                            >
+                                <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                                <span className="hidden sm:inline">Portal Home</span>
+                            </button>
+                        )}
+
+                        {onBackToPpmpSystem && (
+                            <button
+                                type="button"
+                                onClick={onBackToPpmpSystem}
+                                className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
+                                title="Switch to E-Procurement PPMP/APP System"
+                            >
+                                <ArrowLeft className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">PPMP & APP System</span>
+                            </button>
+                        )}
+
                         <button
                             type="button"
                             onClick={() => loadData(true)}
@@ -324,14 +385,16 @@ export const MonitoringDashboard = ({
                             </button>
 
                             {/* New Monitored Procurement */}
-                            <button
-                                type="button"
-                                onClick={() => setIsCreateModalOpen(true)}
-                                className="px-4.5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-blue-500/20 cursor-pointer"
-                            >
-                                <Plus className="w-4 h-4" />
-                                <span>+ New Procurement Project</span>
-                            </button>
+                            {canManageMonitoring && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsCreateModalOpen(true)}
+                                    className="px-4.5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-blue-500/20 cursor-pointer"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    <span>+ New Procurement Project</span>
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -571,10 +634,11 @@ export const MonitoringDashboard = ({
                             className="bg-slate-950 border border-slate-800 text-slate-300 text-xs font-semibold rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500"
                         >
                             <option value="ALL">All Modes of Procurement</option>
-                            <option value="SVP">Small Value Procurement (SVP)</option>
-                            <option value="CB">Competitive Bidding (CB)</option>
-                            <option value="DIRECT_CONTRACTING">Direct Contracting</option>
-                            <option value="NEGOTIATED">Negotiated Procurement</option>
+                            {modesList.map((mode) => (
+                                <option key={mode.id} value={mode.name}>
+                                    {mode.name}
+                                </option>
+                            ))}
                         </select>
 
                         {/* Division Filter */}
@@ -650,7 +714,7 @@ export const MonitoringDashboard = ({
                             >
                                 <span>Clear Search</span>
                             </button>
-                        ) : (
+                        ) : canManageMonitoring ? (
                             <button
                                 type="button"
                                 onClick={() => setIsCreateModalOpen(true)}
@@ -659,7 +723,7 @@ export const MonitoringDashboard = ({
                                 <Plus className="w-4 h-4" />
                                 <span>Register New Monitored Procurement</span>
                             </button>
-                        )}
+                        ) : null}
                     </div>
                 ) : (
                     <>
@@ -688,16 +752,37 @@ export const MonitoringDashboard = ({
                                     >
                                         <div className="space-y-3">
                                             {/* Top Badges */}
-                                            <div className="flex items-center justify-between gap-2">
-                                                <span
-                                                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold tracking-wider border ${
-                                                        isInfra
-                                                            ? 'bg-amber-400/10 text-amber-300 border-amber-400/30'
-                                                            : 'bg-blue-400/10 text-blue-300 border-blue-400/30'
-                                                    }`}
-                                                >
-                                                    {isInfra ? 'Infrastructure (INFRA)' : 'Goods & Consulting'}
-                                                </span>
+                                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span
+                                                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold tracking-wider border ${
+                                                            isInfra
+                                                                ? 'bg-amber-400/10 text-amber-300 border-amber-400/30'
+                                                                : 'bg-blue-400/10 text-blue-300 border-blue-400/30'
+                                                        }`}
+                                                    >
+                                                        {isInfra ? 'Infrastructure (INFRA)' : 'Goods & Consulting'}
+                                                    </span>
+
+                                                    {(proj.ppmp?.status || proj.remarks?.startsWith('PPMP Status:')) && (
+                                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                                            PPMP: {proj.ppmp?.status || proj.remarks.replace('PPMP Status: ', '')}
+                                                        </span>
+                                                    )}
+
+                                                    {proj.amendment_badge && (
+                                                        <span
+                                                            className={`px-2 py-0.5 rounded-full text-[10px] font-black tracking-wider border flex items-center gap-1 shadow-xs ${
+                                                                proj.is_supplemental
+                                                                    ? 'bg-amber-500/25 text-amber-200 border-amber-400/50'
+                                                                    : 'bg-purple-500/25 text-purple-200 border-purple-400/50'
+                                                            }`}
+                                                        >
+                                                            <GitBranch className="w-3 h-3" />
+                                                            <span>{proj.amendment_badge}</span>
+                                                        </span>
+                                                    )}
+                                                </div>
 
                                                 <span
                                                     className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
@@ -844,6 +929,30 @@ export const MonitoringDashboard = ({
                                                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-300 border border-blue-400/20">
                                                             {proj.ppmp.status.replace(/_/g, ' ')}
                                                         </span>
+                                                    </div>
+                                                )}
+
+                                                {(proj.is_amended || proj.is_supplemental) && (
+                                                    <div className="mt-2 p-2 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs space-y-1">
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-[10px] font-bold text-purple-300 uppercase tracking-wide flex items-center gap-1">
+                                                                <GitBranch className="w-3 h-3 text-purple-400" />
+                                                                <span>{proj.is_supplemental ? 'Supplemental PPMP' : 'Amended PPMP Cycle'}</span>
+                                                            </span>
+                                                            {proj.amendment_history?.length > 1 && (
+                                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-200 border border-purple-400/30">
+                                                                    v{proj.amendment_history.length} Active Revision
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-[11px] text-purple-200/90 flex items-center justify-between">
+                                                            <span>Active: <strong className="text-white">{proj.ppmp?.status?.replace(/_/g, ' ') || 'In Review'}</strong></span>
+                                                            {proj.amendment_history?.length > 1 && (
+                                                                <span className="text-[10px] text-slate-400">
+                                                                    Original: {proj.amendment_history[0]?.status?.replace(/_/g, ' ')}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 )}
                                             </div>
@@ -993,6 +1102,8 @@ export const MonitoringDashboard = ({
                         setSelectedProjectForDetail(null);
                     }}
                     projectId={selectedProjectForDetail.id}
+                    user={user}
+                    canManage={canManageMonitoring}
                     onProjectUpdated={() => loadData(true)}
                 />
             )}

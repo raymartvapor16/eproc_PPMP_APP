@@ -13,6 +13,7 @@ export const ReviewPanel = ({
     isUpdatingAllowed = true,
     onEdit = null,
     onOpenItemsModal = null,
+    onOpenApp = null,
 }) => {
     const [actionLoading, setActionLoading] = useState(false);
     const [showRemarksModal, setShowRemarksModal] = useState(false);
@@ -51,9 +52,18 @@ export const ReviewPanel = ({
         )
     );
 
-    const isPostTwg = Boolean(ppmp?.twg_approved_at || ppmp?.signatures?.some(s => s.role === 'twg'));
+    const isTwgSkipped = Boolean(
+        (ppmp?.amendment_type === 'AMENDMENT' || ppmp?.amendment?.amendment_type === 'AMENDMENT') &&
+        (ppmp?.amendment_scope === 'PPMP_APP' || ppmp?.amendment?.amendment_scope === 'PPMP_APP')
+    );
+    const isPostTwg = Boolean(isTwgSkipped || ppmp?.twg_approved_at || ppmp?.signatures?.some(s => s.role === 'twg'));
     const isOppmoReviewer = effectiveRole === 'oppmo';
-    const hasApp = Boolean(ppmp?.app_data || ppmp?.pre_submission_checks?.app_generated || localStorage.getItem(`ppmp_app_generated_${ppmp?.uuid}`));
+    const hasApp = Boolean(
+        !ppmp?.app_data?.needs_regeneration && (
+            ppmp?.app_data?.is_generated ||
+            (Array.isArray(ppmp?.app_data?.rows) && ppmp?.app_data?.rows.length > 0)
+        )
+    );
     const needsAppGeneration = isOppmoReviewer && isPostTwg && !hasApp;
 
     const handleApprove = async () => {
@@ -67,14 +77,14 @@ export const ReviewPanel = ({
         } else if (effectiveRole === 'oppmo') {
             if (isPostTwg) {
                 if (!hasApp) {
-                    alert('Annual Procurement Plan (APP) Required:\n\nPlease generate the Annual Procurement Plan (APP) using the "Create APP" button before forwarding this PPMP to the Office Head.');
+                    alert('Annual Procurement Plan (APP) Required:\n\nPlease generate the Annual Procurement Plan (APP) using the "Generate APP Now" button before forwarding this PPMP to the Office Head.');
                     return;
                 }
-                confirmText = 'Are you sure you want to approve this PPMP? The generated Annual Procurement Plan (APP) will be forwarded to the Office Head for final approval.';
+                confirmText = isTwgSkipped
+                    ? 'Are you sure you want to approve this PPMP? BAC-TWG technical review is bypassed for this PPMP/APP amendment. The generated Annual Procurement Plan (APP) will be forwarded directly to the Office Head for final approval.'
+                    : 'Are you sure you want to approve this PPMP? The generated Annual Procurement Plan (APP) will be forwarded to the Office Head for final approval.';
             } else {
-                confirmText = ppmp?.amendment_scope === 'PPMP_APP'
-                    ? 'Are you sure you want to approve this PPMP? Initial indicator will be affixed and this PPMP will be finalized and marked READY TO PRINT.'
-                    : 'Are you sure you want to approve this PPMP? Initial indicator will be affixed and this PPMP will automatically route to BAC-TWG for technical review.';
+                confirmText = 'Are you sure you want to approve this PPMP? Initial indicator will be affixed and this PPMP will automatically route to BAC-TWG for technical review.';
             }
         } else if (effectiveRole === 'twg') {
             confirmText = 'Are you sure you want to approve this PPMP? BAC-TWG technical review will be certified and this PPMP will route back to OPPMO to generate the Annual Procurement Plan (APP).';
@@ -166,7 +176,18 @@ export const ReviewPanel = ({
 
             {errorMessage && (
                 <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded text-xs text-rose-700 font-medium">
-                    {errorMessage}
+                    <p>{errorMessage}</p>
+                    {(errorMessage.toLowerCase().includes('annual procurement plan') || errorMessage.toLowerCase().includes('app')) && onOpenApp && (
+                        <div className="mt-2.5 pt-2 border-t border-rose-200 flex justify-end">
+                            <button
+                                type="button"
+                                onClick={onOpenApp}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold uppercase tracking-wider transition shadow-2xs cursor-pointer"
+                            >
+                                <span>Generate Annual Procurement Plan (APP) Now</span>
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -213,8 +234,24 @@ export const ReviewPanel = ({
                                 Annual Procurement Plan (APP) Generation Required
                             </p>
                             <p className="mt-1 text-[11px] text-amber-700 leading-relaxed">
-                                BAC-TWG technical review is complete. As OPPMO Reviewer, you must generate the official APP using the <strong>Create APP</strong> button on this page before granting approval to the Office Head.
+                                {isTwgSkipped ? (
+                                    <>This is an amended PPMP with scope <strong>PPMP/APP Only</strong> (BAC-TWG review is bypassed). As OPPMO Reviewer, you must generate the updated APP using the <strong>Generate APP Now</strong> button before forwarding approval to the Office Head.</>
+                                ) : ppmp?.parent_id || ppmp?.amendment_type ? (
+                                    <>Changes were made on this amended/supplemental PPMP. As OPPMO Reviewer, you must generate the updated APP using the <strong>Generate APP Now</strong> button before forwarding approval to the Office Head. The previous APP is safely preserved.</>
+                                ) : (
+                                    <>BAC-TWG technical review is complete. As OPPMO Reviewer, you must generate the official APP using the <strong>Create APP</strong> button on this page before granting approval to the Office Head.</>
+                                )}
                             </p>
+                            {onOpenApp && (
+                                <button
+                                    type="button"
+                                    onClick={onOpenApp}
+                                    className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold uppercase tracking-wider transition shadow-2xs cursor-pointer"
+                                    title="Open and generate Annual Procurement Plan"
+                                >
+                                    <span>Generate APP Now</span>
+                                </button>
+                            )}
                         </div>
                     )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">

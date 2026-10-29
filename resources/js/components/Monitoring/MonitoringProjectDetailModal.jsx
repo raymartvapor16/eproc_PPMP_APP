@@ -17,7 +17,10 @@ import {
     ArrowRight,
     Award,
     Printer,
-    FileSpreadsheet
+    FileSpreadsheet,
+    GitBranch,
+    GitMerge,
+    Eye
 } from 'lucide-react';
 import { MonitoringStepItem } from './MonitoringStepItem';
 import { AddStepModal } from './AddStepModal';
@@ -28,9 +31,19 @@ export const MonitoringProjectDetailModal = ({
     isOpen,
     onClose,
     projectId,
+    user,
+    canManage = true,
     onProjectUpdated,
 }) => {
     if (!isOpen || !projectId) return null;
+
+    // Only OPPMO Monitors and Admins can manage monitoring projects and steps.
+    // End-users, Office Heads, and Reviewers (Budget Officer, TWG, PACCO, etc.) are view-only.
+    const isManageable = Boolean(
+        canManage &&
+        user &&
+        ['super_admin', 'admin', 'monitor', 'oppmo'].includes(user.role)
+    );
 
     const [project, setProject] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -157,6 +170,24 @@ export const MonitoringProjectDetailModal = ({
                                 <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
                                     {project.status}
                                 </span>
+                                {!isManageable && (
+                                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-700/80 text-slate-300 border border-slate-600 flex items-center gap-1 shadow-xs">
+                                        <Eye className="w-3.5 h-3.5 text-slate-400" />
+                                        <span>View Only</span>
+                                    </span>
+                                )}
+                                {project.amendment_badge && (
+                                    <span
+                                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-wider border flex items-center gap-1 shadow-xs ${
+                                            project.is_supplemental
+                                                ? 'bg-amber-500/25 text-amber-200 border-amber-400/50'
+                                                : 'bg-purple-500/25 text-purple-200 border-purple-400/50'
+                                        }`}
+                                    >
+                                        <GitBranch className="w-3.5 h-3.5" />
+                                        <span>{project.amendment_badge}</span>
+                                    </span>
+                                )}
                             </div>
 
                             <h2 className="text-base sm:text-lg font-bold text-white tracking-tight line-clamp-2">
@@ -174,16 +205,23 @@ export const MonitoringProjectDetailModal = ({
                                     <span className="flex items-center gap-1.5 bg-emerald-500/20 border border-emerald-400/40 px-2.5 py-0.5 rounded-lg text-emerald-200">
                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                                         <span>PIMS PR ID: <strong className="text-white font-mono">{project.pims_pr_id}</strong></span>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setIsEditingPrId(true);
-                                                setPrIdInput(project.pims_pr_id);
-                                            }}
-                                            className="text-[10px] text-emerald-300 hover:text-white underline ml-1 cursor-pointer font-bold"
-                                        >
-                                            Edit
-                                        </button>
+                                        {isManageable && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setIsEditingPrId(true);
+                                                    setPrIdInput(project.pims_pr_id);
+                                                }}
+                                                className="text-[10px] text-emerald-300 hover:text-white underline ml-1 cursor-pointer font-bold"
+                                            >
+                                                Edit
+                                            </button>
+                                        )}
+                                    </span>
+                                )}
+                                {!project.pims_pr_id && (
+                                    <span className="flex items-center gap-1.5 bg-slate-800/80 border border-slate-700 px-2.5 py-0.5 rounded-lg text-slate-300">
+                                        <span>PIMS PR ID: <strong className="text-slate-400 font-mono italic">Not assigned</strong></span>
                                     </span>
                                 )}
                                 {project.abc_amount && (
@@ -212,8 +250,54 @@ export const MonitoringProjectDetailModal = ({
                                 )}
                             </div>
 
+                            {/* Linked Tracker PPMP Versions (Amended / Supplemental) */}
+                            {project.amendment_history && project.amendment_history.length > 1 && (
+                                <div className="mt-2.5 p-3 rounded-xl bg-purple-950/60 border border-purple-500/40 text-xs text-purple-100">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-1.5 font-bold text-purple-200">
+                                            <GitMerge className="w-4 h-4 text-purple-400" />
+                                            <span>Merged Tracker PPMP Revisions ({project.pr_number})</span>
+                                        </div>
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/30 text-purple-200 border border-purple-400/40">
+                                            {project.amendment_history.length} Versions Merged
+                                        </span>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        {project.amendment_history.map((rev) => (
+                                            <div
+                                                key={rev.id}
+                                                className={`p-2.5 rounded-lg border text-xs flex items-center justify-between transition ${
+                                                    rev.is_current
+                                                        ? 'bg-purple-900/60 border-purple-400 text-white font-semibold shadow-xs'
+                                                        : 'bg-slate-900/60 border-slate-700 text-slate-300'
+                                                }`}
+                                            >
+                                                <div className="space-y-0.5">
+                                                    <div className="flex items-center gap-1.5 text-[11px]">
+                                                        <span>{rev.version_label}</span>
+                                                        {rev.is_current && (
+                                                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold uppercase">
+                                                                Active In Workflow
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-400">
+                                                        Budget: {formatCurrency(rev.total_budget)}
+                                                    </div>
+                                                </div>
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                                                    rev.is_current ? 'bg-purple-500/30 text-purple-200' : 'bg-slate-800 text-slate-400'
+                                                }`}>
+                                                    {rev.status?.replace(/_/g, ' ')}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Prompt to input PIMS PR ID if missing or editing */}
-                            {(!project.pims_pr_id || isEditingPrId) && (
+                            {isManageable && (!project.pims_pr_id || isEditingPrId) && (
                                 <div className="mt-3 p-3 rounded-xl bg-amber-500/20 border border-amber-400/40 flex flex-wrap items-center justify-between gap-3 text-amber-200">
                                     <div className="flex items-center gap-2 text-xs font-semibold">
                                         <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
@@ -372,7 +456,7 @@ export const MonitoringProjectDetailModal = ({
                         </button>
                     </div>
 
-                    {activeDivision !== 'history' && (
+                    {activeDivision !== 'history' && isManageable && (
                         <button
                             type="button"
                             onClick={() => setIsAddStepModalOpen(true)}
@@ -406,6 +490,7 @@ export const MonitoringProjectDetailModal = ({
                                         step={step}
                                         index={idx}
                                         projectId={project.id}
+                                        canManage={isManageable}
                                         onStepUpdated={handleStepUpdated}
                                     />
                                 ))}
@@ -445,6 +530,7 @@ export const MonitoringProjectDetailModal = ({
                                         step={step}
                                         index={idx}
                                         projectId={project.id}
+                                        canManage={isManageable}
                                         isTechnicalCb={isCbMode && idx === techSteps.length - 1}
                                         onStepUpdated={handleStepUpdated}
                                     />
@@ -474,6 +560,7 @@ export const MonitoringProjectDetailModal = ({
                                             step={step}
                                             index={idx}
                                             projectId={project.id}
+                                            canManage={isManageable}
                                             isBacDecision={isDecisionStep}
                                             onStepUpdated={handleStepUpdated}
                                         />
@@ -502,6 +589,7 @@ export const MonitoringProjectDetailModal = ({
                                         step={step}
                                         index={idx}
                                         projectId={project.id}
+                                        canManage={isManageable}
                                         onStepUpdated={handleStepUpdated}
                                     />
                                 ))}

@@ -11,6 +11,13 @@
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+html {
+    scroll-behavior: smooth;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
 /* Custom Animation Utilities */
 @keyframes fadeInSlideUp {
     from {
@@ -200,6 +207,258 @@
     animation: trailGlider 3s ease-in-out infinite;
 }
 
+/* Staggered Floating Cards for Hero & Landing - Hardware Accelerated */
+@keyframes landingCardFloat1 {
+    0%, 100% {
+        transform: translate3d(0, 0, 0);
+    }
+    50% {
+        transform: translate3d(0, -6px, 0);
+    }
+}
+
+@keyframes landingCardFloat2 {
+    0%, 100% {
+        transform: translate3d(0, 0, 0);
+    }
+    50% {
+        transform: translate3d(0, -8px, 0);
+    }
+}
+
+@keyframes landingCardFloat3 {
+    0%, 100% {
+        transform: translate3d(0, 0, 0);
+    }
+    50% {
+        transform: translate3d(0, -5px, 0);
+    }
+}
+
+@keyframes landingCardFloat4 {
+    0%, 100% {
+        transform: translate3d(0, 0, 0);
+    }
+    50% {
+        transform: translate3d(0, -7px, 0);
+    }
+}
+
+@keyframes auraBreathe {
+    0%, 100% {
+        opacity: 0.35;
+    }
+    50% {
+        opacity: 0.55;
+    }
+}
+
+@keyframes shimmerSweep {
+    0% {
+        transform: translate3d(-160%, 0, 0) skewX(-20deg);
+        opacity: 0;
+    }
+    30% {
+        opacity: 0.7;
+    }
+    100% {
+        transform: translate3d(260%, 0, 0) skewX(-20deg);
+        opacity: 0;
+    }
+}
+
+.landing-card-float-1 {
+    animation: landingCardFloat1 6s ease-in-out infinite;
+    will-change: transform;
+}
+
+.landing-card-float-2 {
+    animation: landingCardFloat2 7s ease-in-out infinite 0.7s;
+    will-change: transform;
+}
+
+.landing-card-float-3 {
+    animation: landingCardFloat3 5.5s ease-in-out infinite 1.4s;
+    will-change: transform;
+}
+
+.landing-card-float-4 {
+    animation: landingCardFloat4 6.5s ease-in-out infinite 2.1s;
+    will-change: transform;
+}
+
+.landing-aura-glow {
+    animation: auraBreathe 8s ease-in-out infinite;
+    will-change: opacity;
+    transform: translate3d(-50%, -50%, 0);
+    backface-visibility: hidden;
+}
+
+/* Shimmer reflection sweeps cleanly on hover without continuous CPU/GPU background load */
+.shimmer-shine {
+    position: absolute;
+    inset: 0;
+    width: 60%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.16), transparent);
+    transform: translate3d(-160%, 0, 0) skewX(-20deg);
+    pointer-events: none;
+    opacity: 0;
+    will-change: transform, opacity;
+}
+
+.group:hover .shimmer-shine,
+.group\/card:hover .shimmer-shine {
+    opacity: 1;
+    animation: shimmerSweep 1.1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* =========================================================================
+   PRESENTATION OPENING ANIMATIONS (HARDWARE-ACCELERATED KEYNOTE PRESENTATION)
+   ========================================================================= */
+
+@keyframes presentationHeroIn {
+    0% {
+        opacity: 0;
+        transform: translate3d(0, 24px, 0) scale(0.98);
+    }
+    100% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+}
+
+@keyframes presentationBeamSweep {
+    0% {
+        transform: translate3d(-150%, 0, 0) skewX(-20deg);
+        opacity: 0;
+    }
+    30% {
+        opacity: 0.8;
+    }
+    100% {
+        transform: translate3d(250%, 0, 0) skewX(-20deg);
+        opacity: 0;
+    }
+}
+
+@keyframes presentationCardIn1 {
+    0% {
+        opacity: 0;
+        transform: translate3d(-35px, 20px, 0) scale(0.93);
+    }
+    100% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+}
+
+@keyframes presentationCardIn2 {
+    0% {
+        opacity: 0;
+        transform: translate3d(0, -25px, 0) scale(0.93);
+    }
+    100% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+}
+
+@keyframes presentationCardIn3 {
+    0% {
+        opacity: 0;
+        transform: translate3d(0, 25px, 0) scale(0.93);
+    }
+    100% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+}
+
+@keyframes presentationCardIn4 {
+    0% {
+        opacity: 0;
+        transform: translate3d(35px, 20px, 0) scale(0.93);
+    }
+    100% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+}
+
+.presentation-hero-entry {
+    animation: presentationHeroIn 0.85s cubic-bezier(0.16, 1, 0.3, 1) both;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+}
+
+.presentation-aperture-beam {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(245, 158, 11, 0.8), rgba(59, 130, 246, 0.8), transparent);
+    animation: presentationBeamSweep 2.2s cubic-bezier(0.2, 0.8, 0.2, 1) 0.2s both;
+    pointer-events: none;
+    will-change: transform, opacity;
+    transform: translateZ(0);
+}
+
+.presentation-card-1,
+.presentation-stagger-1 {
+    animation: presentationCardIn1 0.75s cubic-bezier(0.19, 1, 0.22, 1) 0.1s both;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+}
+
+.presentation-card-2,
+.presentation-stagger-2 {
+    animation: presentationCardIn2 0.75s cubic-bezier(0.19, 1, 0.22, 1) 0.2s both;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+}
+
+.presentation-card-3,
+.presentation-stagger-3 {
+    animation: presentationCardIn3 0.75s cubic-bezier(0.19, 1, 0.22, 1) 0.3s both;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+}
+
+.presentation-card-4,
+.presentation-stagger-4 {
+    animation: presentationCardIn4 0.75s cubic-bezier(0.19, 1, 0.22, 1) 0.4s both;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+}
+
+.presentation-stagger-5 {
+    animation: presentationCardIn1 0.75s cubic-bezier(0.19, 1, 0.22, 1) 0.5s both;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+}
+
+.presentation-stagger-6 {
+    animation: presentationCardIn2 0.75s cubic-bezier(0.19, 1, 0.22, 1) 0.6s both;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+}
+
+.presentation-slide-entry {
+    animation: presentationHeroIn 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+}
+
+
 @keyframes slowPanZoom {
     0% {
         transform: scale(1.02) translate(0, 0);
@@ -272,11 +531,11 @@ select.text-black {
     color: #94a3b8 !important;
 }
 
-/* Custom print stylesheet for Official Government PPMP Document matching Davao del Sur template */
+/* Custom print stylesheet for Official Government Document matching Davao del Sur template */
 @media print {
     @page {
-        size: landscape;
-        margin: 0 !important;
+        size: auto;
+        margin: auto;
     }
 
     html,
@@ -285,7 +544,7 @@ select.text-black {
         background: #ffffff !important;
         color: #000000 !important;
         font-size: 8.5pt !important;
-        padding: 8mm !important;
+        padding: 0 !important;
         margin: 0 !important;
         width: 100% !important;
         height: auto !important;

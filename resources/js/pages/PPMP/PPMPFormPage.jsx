@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ppmpService, procurementConditionService, otherTermService, supportingDocumentService } from '../../services/api';
+import { ppmpService, procurementConditionService, otherTermService, supportingDocumentService, procurementModeService } from '../../services/api';
 import { ProcurementPlanTable } from '../../components/PPMP/ProcurementPlanTable';
 import { GreenSpecDropdown } from '../../components/PPMP/GreenSpecDropdown';
 import { ArrowLeft, Save, Send, AlertCircle, FileCheck, Truck, Sparkles, Lock, Leaf } from 'lucide-react';
@@ -54,6 +54,9 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
 
     // Dynamic Supporting Documents state
     const [supportingDocsList, setSupportingDocsList] = useState([]);
+
+    // Dynamic Modes of Procurement state
+    const [procurementModesList, setProcurementModesList] = useState([]);
 
     const isPolCondition = additionalCondition === 'POL Condition';
 
@@ -112,7 +115,41 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
             }
         };
         fetchSupportingDocs();
-        return () => { isMounted = false; };
+
+        const handleDocsChanged = () => {
+            if (isMounted) fetchSupportingDocs();
+        };
+        window.addEventListener('supporting-documents:changed', handleDocsChanged);
+
+        return () => {
+            isMounted = false;
+            window.removeEventListener('supporting-documents:changed', handleDocsChanged);
+        };
+    }, []);
+
+    useEffect(() => {
+        let isMounted = true;
+        const fetchModes = async () => {
+            try {
+                const res = await procurementModeService.getAll({ active_only: 1 });
+                if (isMounted) {
+                    setProcurementModesList(Array.isArray(res.data) ? res.data : []);
+                }
+            } catch (err) {
+                console.error('Failed to load modes of procurement', err);
+            }
+        };
+        fetchModes();
+
+        const handleModesChanged = () => {
+            if (isMounted) fetchModes();
+        };
+        window.addEventListener('procurement-modes:changed', handleModesChanged);
+
+        return () => {
+            isMounted = false;
+            window.removeEventListener('procurement-modes:changed', handleModesChanged);
+        };
     }, []);
 
     const { cseTerms, nonCseTerms, generalTerms } = useMemo(() => {
@@ -315,6 +352,7 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
             return;
         }
 
+        const defaultProcMode = procurementModesList[0]?.name || 'Competitive Bidding (RA 12009)';
         setItems([
             ...items,
             {
@@ -322,7 +360,7 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                 description: '',
                 project_type: 'Goods',
                 quantity_size: '',
-                procurement_mode: 'Competitive Bidding (RA 12009)',
+                procurement_mode: defaultProcMode,
                 pre_proc_conference: false,
                 start_date: '',
                 end_date: '',
@@ -514,6 +552,14 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                                     BAC-TWG
                                 </span>
                                 <span className="text-slate-400 font-bold">➔</span>
+                                <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-200 font-semibold">
+                                    OPPMO (Generate APP)
+                                </span>
+                                <span className="text-slate-400 font-bold">➔</span>
+                                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200 font-semibold">
+                                    Head (Approval)
+                                </span>
+                                <span className="text-slate-400 font-bold">➔</span>
                                 <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-200 font-bold">
                                     Ready to Print
                                 </span>
@@ -530,6 +576,14 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                                 <span className="text-slate-400 font-bold">➔</span>
                                 <span className="px-2 py-0.5 rounded bg-cyan-100 text-cyan-900 border border-cyan-200 font-semibold">
                                     BAC-TWG
+                                </span>
+                                <span className="text-slate-400 font-bold">➔</span>
+                                <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-200 font-semibold">
+                                    OPPMO (Generate APP)
+                                </span>
+                                <span className="text-slate-400 font-bold">➔</span>
+                                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200 font-semibold">
+                                    Head (Approval)
                                 </span>
                                 <span className="text-slate-400 font-bold">➔</span>
                                 <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-200 font-bold">
@@ -916,6 +970,7 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                     programName={programName}
                     onProgramNameChange={setProgramName}
                     supportingDocuments={supportingDocsList}
+                    procurementModes={procurementModesList}
                 />
             </div>
         </form>

@@ -22,7 +22,7 @@ export const PPMPRoutingPrintView = ({ ppmp, onBack }) => {
         if (status.includes('RETURNED') || status.includes('REJECTED')) {
             return 'bg-rose-100 text-rose-800 border-rose-300';
         }
-        if (status.includes('APPROVED') || status === 'READY_TO_PRINT') {
+        if (status.includes('APPROVED') || status === 'READY_TO_PRINT' || status === 'HEAD_PENDING') {
             return 'bg-emerald-100 text-emerald-800 border-emerald-300';
         }
         return 'bg-blue-100 text-blue-800 border-blue-300';
@@ -168,7 +168,11 @@ export const PPMPRoutingPrintView = ({ ppmp, onBack }) => {
                                             </td>
                                             <td className="border border-slate-900 p-2 text-center">
                                                 <div className="font-bold text-[11px] uppercase tracking-wide text-slate-900">
-                                                    {route.action?.replace(/_/g, ' ')}
+                                                    {route.action === 'OPPMO_APP_GENERATED'
+                                                        ? 'APP Generated & Released to Head'
+                                                        : route.action === 'TWG_APPROVED'
+                                                            ? 'BAC-TWG Approved & Released to OPPMO'
+                                                            : route.action?.replace(/_/g, ' ')}
                                                 </div>
                                                 <div className="mt-0.5">
                                                     <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border ${getStatusBadgeClass(route.status)}`}>

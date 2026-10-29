@@ -73,7 +73,8 @@ class AuditLog extends Model
             'WORKFLOW_OPPMO_APPROVED'    => "{$actor} (OPPMO) approved {$entity}",
             'WORKFLOW_OPPMO_RETURNED'    => "{$actor} (OPPMO) returned {$entity}",
             'WORKFLOW_TWG_RECEIVED'      => "{$actor} (TWG) received {$entity}",
-            'WORKFLOW_TWG_APPROVED'      => "{$actor} (TWG) approved {$entity} — Ready to Print",
+            'WORKFLOW_TWG_APPROVED'      => "{$actor} (TWG) approved {$entity} — Routed to OPPMO for APP Generation",
+            'WORKFLOW_OPPMO_APP_GENERATED' => "{$actor} (OPPMO) generated APP for {$entity} — Forwarded to Office Head",
             'WORKFLOW_TWG_RETURNED'      => "{$actor} (TWG) returned {$entity}",
             'WORKFLOW_DOCUMENT_RECEIVED' => "{$actor} received document for {$entity}",
 

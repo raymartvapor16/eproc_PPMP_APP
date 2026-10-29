@@ -560,5 +560,109 @@ class PpmpWorkflowTest extends TestCase
         $updateRes->assertStatus(200);
         $this->assertEquals('Provincial Nutrition & Wellness Program', $ppmp->fresh()->program_name);
     }
+
+    public function test_ppmp_milestones_normalized_relationship_and_schema_integrity(): void
+    {
+        // 1. Verify ppmps table does not have denormalized milestone columns
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'head_received_at'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'budget_received_at'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'admin_received_at'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'pacco_received_at'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'oppmo_received_at'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'twg_received_at'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'ready_to_print_at'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'enduser_received_at'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'amendment_requested_at'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'amendment_approved_at'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'amendment_status'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'amendment_type'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'amendment_scope'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'amendment_reason'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'requested_amendment_type'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'requested_amendment_scope'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'requested_amendment_reason'));
+
+        // 2. Verify ppmp_milestones & ppmp_amendments tables exist with foreign key relationships
+        $this->assertTrue(\Illuminate\Support\Facades\Schema::hasTable('ppmp_milestones'));
+        $this->assertTrue(\Illuminate\Support\Facades\Schema::hasColumn('ppmp_milestones', 'ppmp_id'));
+        $this->assertTrue(\Illuminate\Support\Facades\Schema::hasColumn('ppmp_milestones', 'head_received_at'));
+        $this->assertTrue(\Illuminate\Support\Facades\Schema::hasColumn('ppmp_milestones', 'budget_received_at'));
+        $this->assertTrue(\Illuminate\Support\Facades\Schema::hasColumn('ppmp_milestones', 'admin_received_at'));
+
+        $this->assertTrue(\Illuminate\Support\Facades\Schema::hasTable('ppmp_amendments'));
+        $this->assertTrue(\Illuminate\Support\Facades\Schema::hasColumn('ppmp_amendments', 'ppmp_id'));
+        $this->assertTrue(\Illuminate\Support\Facades\Schema::hasColumn('ppmp_amendments', 'amendment_status'));
+        $this->assertTrue(\Illuminate\Support\Facades\Schema::hasColumn('ppmp_amendments', 'amendment_type'));
+        $this->assertTrue(\Illuminate\Support\Facades\Schema::hasColumn('ppmp_amendments', 'amendment_scope'));
+
+        // 3. Create PPMP via API and check normalized milestone and amendment record creation
+        $res = $this->actingAs($this->endUser)->postJson('/api/ppmps', [
+            'title' => 'Normalized Milestones Test PPMP',
+            'fiscal_year' => '2026',
+            'plan_type' => 'INDICATIVE',
+            'source_of_fund' => 'General Fund',
+            'items' => [
+                [
+                    'description' => 'Test Item',
+                    'project_type' => 'Goods',
+                    'estimated_budget' => 50000,
+                ],
+            ],
+        ]);
+
+        $res->assertStatus(201);
+        $ppmp = Ppmp::where('uuid', $res->json('ppmp.uuid'))->firstOrFail();
+
+        // 4. Verify milestones & amendment relationships are populated
+        $this->assertInstanceOf(\App\Models\PpmpMilestone::class, $ppmp->milestones);
+        $this->assertInstanceOf(\App\Models\PpmpAmendment::class, $ppmp->amendment);
+        $this->assertEquals($ppmp->id, $ppmp->milestones->ppmp_id);
+        $this->assertEquals($ppmp->id, $ppmp->amendment->ppmp_id);
+        $this->assertNotNull($ppmp->prepared_at);
+        $this->assertNotNull($ppmp->milestones->prepared_at);
+
+        // 5. Route to HEAD_PENDING and receive
+        $ppmp->update([
+            'status' => 'HEAD_PENDING',
+            'head_submitted_at' => now(),
+            'amendment_status' => 'PENDING_APPROVAL',
+            'requested_amendment_type' => 'SUPPLEMENTAL',
+        ]);
+        $this->assertNull($ppmp->fresh()->head_received_at);
+        $this->assertEquals('PENDING_APPROVAL', $ppmp->fresh()->amendment_status);
+        $this->assertEquals('SUPPLEMENTAL', $ppmp->fresh()->requested_amendment_type);
+        $this->assertEquals('PENDING_APPROVAL', $ppmp->fresh()->amendment->amendment_status);
+
+        $receiveRes = $this->actingAs($this->headUser)->postJson("/api/ppmps/{$ppmp->uuid}/receive");
+        $receiveRes->assertStatus(200);
+
+        // Verify milestone was updated in ppmp_milestones table
+        $freshPpmp = $ppmp->fresh();
+        $this->assertNotNull($freshPpmp->milestones->head_received_at);
+        $this->assertNotNull($freshPpmp->head_received_at);
+
+        // 6. Verify JSON response includes milestones and amendment relationships and delegated fields
+        $showRes = $this->actingAs($this->endUser)->getJson("/api/ppmps/{$ppmp->uuid}");
+        $showRes->assertStatus(200)
+            ->assertJsonStructure([
+                'ppmp' => [
+                    'id',
+                    'milestones' => [
+                        'ppmp_id',
+                        'prepared_at',
+                        'head_submitted_at',
+                        'head_received_at',
+                    ],
+                    'amendment' => [
+                        'ppmp_id',
+                        'amendment_status',
+                        'requested_amendment_type',
+                    ],
+                    'prepared_at',
+                    'head_received_at',
+                    'amendment_status',
+                ],
+            ]);
+    }
 }
 

@@ -14,6 +14,9 @@ import {
     Leaf,
     FileCheck2,
     Sliders,
+    Globe,
+    UserCheck,
+    Tags,
 } from 'lucide-react';
 
 export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingUsersCount }) => {
@@ -25,6 +28,22 @@ export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingU
             badge: metrics?.total_ppmps || 0,
             badgeColor: 'bg-blue-100 text-blue-800',
             description: 'Core KPIs & Recent Activities',
+        },
+        {
+            id: 'portal_systems',
+            label: 'Portal Systems',
+            icon: Globe,
+            badge: 'Landing',
+            badgeColor: 'bg-blue-100 text-blue-800',
+            description: 'Public Systems Catalog',
+        },
+        {
+            id: 'oppmo_team',
+            label: 'OPPMO Team Roster',
+            icon: UserCheck,
+            badge: 'About Us',
+            badgeColor: 'bg-amber-100 text-amber-800',
+            description: 'Team Bios & Photos',
         },
         {
             id: 'analytics',
@@ -54,6 +73,14 @@ export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingU
             icon: Landmark,
             badge: null,
             description: 'Review Routes & Funds',
+        },
+        {
+            id: 'procurement_modes',
+            label: 'Modes of Procurement',
+            icon: Tags,
+            badge: 'RA 12009',
+            badgeColor: 'bg-indigo-100 text-indigo-800',
+            description: 'RA 12009 Modes Masterlist',
         },
         {
             id: 'conditions',

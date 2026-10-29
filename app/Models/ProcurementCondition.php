@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -26,16 +27,22 @@ class ProcurementCondition extends Model
 
     /**
      * Scope a query to only include active conditions.
+     *
+     * @param Builder $query
+     * @return Builder
      */
-    public function scopeActive($query)
+    public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
     }
 
     /**
      * Scope a query to order by display_order then name.
+     *
+     * @param Builder $query
+     * @return Builder
      */
-    public function scopeOrdered($query)
+    public function scopeOrdered(Builder $query): Builder
     {
         return $query->orderBy('display_order', 'asc')->orderBy('name', 'asc');
     }

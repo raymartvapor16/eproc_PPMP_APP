@@ -16,12 +16,6 @@ return new class extends Migration
             if (!Schema::hasColumn('ppmps', 'source_of_fund')) {
                 $table->string('source_of_fund')->nullable()->default('General Fund')->after('title');
             }
-            if (!Schema::hasColumn('ppmps', 'pacco_received_at')) {
-                $table->timestamp('pacco_received_at')->nullable()->after('budget_approved_at');
-            }
-            if (!Schema::hasColumn('ppmps', 'pacco_approved_at')) {
-                $table->timestamp('pacco_approved_at')->nullable()->after('pacco_received_at');
-            }
         });
 
         $driver = Schema::getConnection()->getDriverName();
@@ -57,12 +51,6 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('ppmps', function (Blueprint $table) {
-            if (Schema::hasColumn('ppmps', 'pacco_approved_at')) {
-                $table->dropColumn('pacco_approved_at');
-            }
-            if (Schema::hasColumn('ppmps', 'pacco_received_at')) {
-                $table->dropColumn('pacco_received_at');
-            }
             if (Schema::hasColumn('ppmps', 'source_of_fund')) {
                 $table->dropColumn('source_of_fund');
             }

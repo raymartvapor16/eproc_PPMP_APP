@@ -15,13 +15,45 @@ use Illuminate\Support\Facades\DB;
 class MonitoringController extends Controller
 {
     /**
-     * Strictly restrict access to users with the 'monitor' role only
+     * Authorize access to users with monitoring system access or administrative roles
      */
     protected function authorizeMonitor(Request $request): void
     {
-        if (!$request->user() || $request->user()->role !== 'monitor') {
+        $user = $request->user();
+        if (!$user) {
             abort(response()->json([
-                'message' => 'Forbidden. Only users with the OPPMO Monitor role can access the Monitoring System.'
+                'message' => 'Unauthenticated.'
+            ], 401));
+        }
+
+        if (
+            $user->role === 'super_admin' ||
+            $user->role === 'admin' ||
+            $user->role === 'monitor' ||
+            $user->canAccessSystem('/monitoringsystem')
+        ) {
+            return;
+        }
+
+        abort(response()->json([
+            'message' => 'Forbidden. Your account is not authorized to access the OPPMO Monitoring System.'
+        ], 403));
+    }
+
+    /**
+     * Authorize managing (mutating) monitoring projects and workflow steps.
+     * Only Admins and OPPMO Monitors can manage.
+     * End-users, Office Heads, and Reviewers (Budget Officer, TWG, PACCO, etc.) are view-only.
+     */
+    protected function authorizeManage(Request $request): void
+    {
+        $this->authorizeMonitor($request);
+        $user = $request->user();
+
+        $allowedRoles = ['super_admin', 'admin', 'monitor', 'oppmo'];
+        if (!$user || !in_array($user->role, $allowedRoles, true)) {
+            abort(response()->json([
+                'message' => 'Forbidden. Your role is view-only on the Monitoring System and cannot add, edit, or delete projects or steps.'
             ], 403));
         }
     }
@@ -38,17 +70,31 @@ class MonitoringController extends Controller
             MonitoringProject::syncAllActivePpmps();
         }
 
-        $query = MonitoringProject::with(['office', 'steps', 'creator', 'ppmp'])
-            ->where('pims_status', 'PUBLISHED');
+        $query = MonitoringProject::with([
+            'office',
+            'steps',
+            'creator',
+            'ppmp.attachments',
+            'ppmp.monitoringProjects',
+            'ppmp.parent',
+        ]);
 
         // Filter by Category: GOODS_CONSULTING or INFRA
         if ($request->filled('category') && $request->category !== 'ALL') {
             $query->where('category', $request->category);
         }
 
-        // Filter by Mode: SVP, CB, etc.
+        // Filter by Mode: matches exact mode name, code, or corresponding registered mode
         if ($request->filled('procurement_mode') && $request->procurement_mode !== 'ALL') {
-            $query->where('procurement_mode', $request->procurement_mode);
+            $selectedMode = trim($request->procurement_mode);
+            $query->where(function ($q) use ($selectedMode) {
+                $q->where('procurement_mode', $selectedMode);
+                $modeRecord = \App\Models\ProcurementMode::where('name', $selectedMode)->orWhere('code', $selectedMode)->first();
+                if ($modeRecord) {
+                    if ($modeRecord->name) $q->orWhere('procurement_mode', $modeRecord->name);
+                    if ($modeRecord->code) $q->orWhere('procurement_mode', $modeRecord->code);
+                }
+            });
         }
 
         // Filter by Current Division
@@ -93,7 +139,9 @@ class MonitoringController extends Controller
 
         $project = MonitoringProject::with([
             'office',
-            'ppmp',
+            'ppmp.attachments',
+            'ppmp.monitoringProjects',
+            'ppmp.parent',
             'creator',
             'steps',
             'histories.user'
@@ -112,7 +160,7 @@ class MonitoringController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $this->authorizeMonitor($request);
+        $this->authorizeManage($request);
 
         $validated = $request->validate([
             'project_title' => 'required|string|max:500',
@@ -162,7 +210,7 @@ class MonitoringController extends Controller
      */
     public function update(Request $request, string $idOrUuid): JsonResponse
     {
-        $this->authorizeMonitor($request);
+        $this->authorizeManage($request);
 
         $project = MonitoringProject::where('id', $idOrUuid)->orWhere('uuid', $idOrUuid)->firstOrFail();
 
@@ -203,7 +251,7 @@ class MonitoringController extends Controller
      */
     public function updatePrId(Request $request, string $idOrUuid): JsonResponse
     {
-        $this->authorizeMonitor($request);
+        $this->authorizeManage($request);
 
         $validated = $request->validate([
             'pims_pr_id' => 'required|string|max:100',
@@ -240,7 +288,7 @@ class MonitoringController extends Controller
      */
     public function destroy(Request $request, string $idOrUuid): JsonResponse
     {
-        $this->authorizeMonitor($request);
+        $this->authorizeManage($request);
 
         $project = MonitoringProject::where('id', $idOrUuid)->orWhere('uuid', $idOrUuid)->firstOrFail();
         $projectTitle = $project->project_title;
@@ -266,7 +314,7 @@ class MonitoringController extends Controller
      */
     public function addStep(Request $request, string $idOrUuid): JsonResponse
     {
-        $this->authorizeMonitor($request);
+        $this->authorizeManage($request);
 
         $project = MonitoringProject::where('id', $idOrUuid)->orWhere('uuid', $idOrUuid)->firstOrFail();
 
@@ -316,7 +364,7 @@ class MonitoringController extends Controller
      */
     public function updateStep(Request $request, int $stepId): JsonResponse
     {
-        $this->authorizeMonitor($request);
+        $this->authorizeManage($request);
 
         $step = MonitoringStep::with('project')->findOrFail($stepId);
         $project = $step->project;
@@ -370,7 +418,7 @@ class MonitoringController extends Controller
      */
     public function deleteStep(Request $request, int $stepId): JsonResponse
     {
-        $this->authorizeMonitor($request);
+        $this->authorizeManage($request);
 
         $step = MonitoringStep::with('project')->findOrFail($stepId);
         $project = $step->project;
@@ -468,6 +516,45 @@ class MonitoringController extends Controller
     }
 
     /**
+     * Unpublish from PIMS (unmark reminder card and delete/remove monitoring project)
+     */
+    public function unpublishPims(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ppmp_uuid' => 'required|string',
+        ]);
+
+        $ppmp = Ppmp::where('uuid', $validated['ppmp_uuid'])->firstOrFail();
+
+        // Delete associated monitoring project records for this PPMP
+        $projects = MonitoringProject::where('ppmp_id', $ppmp->id)
+            ->orWhere(function ($q) use ($ppmp) {
+                if (!empty($ppmp->tracking_number)) {
+                    $q->where('pr_number', $ppmp->tracking_number);
+                }
+            })->get();
+
+        foreach ($projects as $project) {
+            $project->steps()->delete();
+            $project->histories()->delete();
+            $project->delete();
+        }
+
+        AuditLog::log(
+            'PIMS_UNPUBLISHED',
+            'ppmps',
+            $ppmp->id,
+            null,
+            ['tracking_number' => $ppmp->tracking_number, 'title' => $ppmp->title],
+            $request->user()->id
+        );
+
+        return response()->json([
+            'message' => 'PPMP publication unmarked and monitoring project removed.',
+        ]);
+    }
+
+    /**
      * Get monitoring dashboard summary metrics
      */
     public function getStats(Request $request): JsonResponse
@@ -494,8 +581,20 @@ class MonitoringController extends Controller
             ->pluck('ppmp_id')
             ->toArray();
 
+        $publishedTrackers = MonitoringProject::whereNotNull('pr_number')
+            ->where('pims_status', 'PUBLISHED')
+            ->pluck('pr_number')
+            ->filter()
+            ->toArray();
+
         $pendingPimsReminders = Ppmp::whereDoesntHave('children')
             ->whereNotIn('id', $publishedPpmpIds)
+            ->where(function ($q) use ($publishedTrackers) {
+                if (!empty($publishedTrackers)) {
+                    $q->whereNotIn('tracking_number', $publishedTrackers)
+                      ->orWhereNull('tracking_number');
+                }
+            })
             ->count();
 
         return response()->json([
@@ -524,9 +623,21 @@ class MonitoringController extends Controller
             ->pluck('ppmp_id')
             ->toArray();
 
-        $pendingPpmps = Ppmp::with(['office', 'creator', 'items'])
+        $publishedTrackers = MonitoringProject::whereNotNull('pr_number')
+            ->where('pims_status', 'PUBLISHED')
+            ->pluck('pr_number')
+            ->filter()
+            ->toArray();
+
+        $pendingPpmps = Ppmp::with(['office', 'creator', 'items', 'attachments', 'monitoringProjects'])
             ->whereDoesntHave('children')
             ->whereNotIn('id', $publishedPpmpIds)
+            ->where(function ($q) use ($publishedTrackers) {
+                if (!empty($publishedTrackers)) {
+                    $q->whereNotIn('tracking_number', $publishedTrackers)
+                      ->orWhereNull('tracking_number');
+                }
+            })
             ->orderBy('created_at', 'desc')
             ->get();
 

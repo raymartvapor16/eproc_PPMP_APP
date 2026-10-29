@@ -25,7 +25,7 @@ return new class extends Migration
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
-            $table->enum('role', ['end_user', 'head', 'budget_officer', 'oppmo', 'twg', 'super_admin', 'admin', 'authorized_staff', 'pacco'])->default('end_user')->index();
+            $table->enum('role', ['end_user', 'head', 'budget_officer', 'oppmo', 'twg', 'super_admin', 'admin', 'authorized_staff', 'pacco', 'monitor', 'pgso', 'presentative_staff'])->default('end_user')->index();
             $table->string('designation')->nullable();
             $table->foreignId('office_id')->nullable()->constrained('offices')->nullOnDelete();
             $table->boolean('is_active')->default(true);

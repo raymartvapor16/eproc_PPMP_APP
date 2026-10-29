@@ -1,7 +1,7 @@
 /**
  * DevTools & Developer Mode Security Guard
  * 
- * Protects application from unauthorized inspection (F12, right-click Inspect, DevTools)
+ * Protects application from unauthorized inspection (F12, DevTools shortcuts)
  * when Developer Mode is disabled by the Super Administrator.
  * When Developer Mode is ENABLED by Super Admin, all inspection and DevTools access is permitted.
  */
@@ -11,7 +11,6 @@ import { authService, systemSettingService } from '../services/api';
 let isDevMode = false;
 let isGuardInitialized = false;
 let isHandlingUnauthorized = false;
-let devCheckInterval = null;
 
 // Initialize state from window.App or default false
 if (typeof window !== 'undefined' && window.App && typeof window.App.developer_mode !== 'undefined') {
@@ -40,7 +39,8 @@ export const setDeveloperModeActive = (enabled) => {
 
 /**
  * Trigger unauthorized inspection action:
- * Immediately logs out user, dispatches unauthorized event, and redirects to login.
+ * When Developer Mode is disabled and an explicit developer inspection action
+ * (e.g., F12 or DevTools keyboard shortcut) is executed.
  */
 export const handleUnauthorizedDevToolsAccess = (actionName = 'inspect') => {
     if (isDevMode) return;
@@ -106,14 +106,20 @@ export const initDevToolsGuard = () => {
         const isF12 = e.key === 'F12' || e.keyCode === 123;
         const isCtrlOrCmd = e.ctrlKey || e.metaKey;
         const isShift = e.shiftKey;
+        const isAlt = e.altKey;
 
-        // Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+Shift+K
-        const isInspectShortcut = isCtrlOrCmd && isShift && (
+        // Windows/Linux: Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+Shift+K
+        // Mac: Cmd+Option+I, Cmd+Option+J, Cmd+Option+C
+        const isInspectShortcut = (isCtrlOrCmd && isShift && (
             e.key === 'I' || e.key === 'i' || e.keyCode === 73 ||
             e.key === 'J' || e.key === 'j' || e.keyCode === 74 ||
             e.key === 'C' || e.key === 'c' || e.keyCode === 67 ||
             e.key === 'K' || e.key === 'k' || e.keyCode === 75
-        );
+        )) || (isCtrlOrCmd && isAlt && (
+            e.key === 'I' || e.key === 'i' || e.keyCode === 73 ||
+            e.key === 'J' || e.key === 'j' || e.keyCode === 74 ||
+            e.key === 'C' || e.key === 'c' || e.keyCode === 67
+        ));
 
         // Ctrl+U (View Source)
         const isViewSource = isCtrlOrCmd && (e.key === 'u' || e.key === 'U' || e.keyCode === 85);
@@ -127,38 +133,28 @@ export const initDevToolsGuard = () => {
         }
     }, true);
 
-    // 3. Right-Click Context Menu Guard (prevent right-click "Inspect")
+    // 3. Right-Click Context Menu Guard:
+    // Prevent right-click context menu (which contains "Inspect") on non-editable elements,
+    // while allowing users to right-click in text fields to copy/paste, and without false-flagging.
     window.addEventListener('contextmenu', (e) => {
         if (isDevMode) return; // Allowed when developer mode is ON
 
+        const target = e.target;
+        const isEditable = target && (
+            target.tagName === 'INPUT' ||
+            target.tagName === 'TEXTAREA' ||
+            target.isContentEditable
+        );
+
+        if (isEditable) {
+            return; // Allow native right click on input fields
+        }
+
+        // Prevent opening browser context menu (disables Inspect option)
         e.preventDefault();
         e.stopPropagation();
-        handleUnauthorizedDevToolsAccess('right-click inspect');
         return false;
     }, true);
-
-    // 4. Periodic docked DevTools window dimension check (with zoom & display scaling compensation)
-    const checkDevToolsDimensions = () => {
-        if (isDevMode) return;
-
-        const dpr = window.devicePixelRatio || 1;
-        // In un-docked or normal windows, inner dimensions scaled by DPR correspond closely to outer dimensions minus OS borders
-        const effectiveOuterWidth = Math.round(window.outerWidth / dpr);
-        const effectiveOuterHeight = Math.round(window.outerHeight / dpr);
-
-        const widthDiff = Math.abs(effectiveOuterWidth - window.innerWidth);
-        const heightDiff = Math.abs(effectiveOuterHeight - window.innerHeight);
-        const threshold = 220;
-
-        // Only trigger if docked DevTools takes up significant window space
-        if ((widthDiff > threshold || heightDiff > threshold) && window.outerWidth > 700 && window.outerHeight > 500) {
-            handleUnauthorizedDevToolsAccess('docked devtools panel');
-        }
-    };
-
-    // Run dimension check on resize and periodic interval
-    window.addEventListener('resize', checkDevToolsDimensions);
-    devCheckInterval = setInterval(checkDevToolsDimensions, 2000);
 };
 
 export default {

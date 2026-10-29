@@ -25,12 +25,14 @@ class PpmpAttachment extends Model
         'encrypted_uuid',
     ];
 
+    protected static array $encryptedUuidCache = [];
+
     /**
      * Encrypt a UUID to a safe URL token
      */
     public static function encryptUuid(string $uuid): string
     {
-        return rtrim(strtr(\Illuminate\Support\Facades\Crypt::encryptString($uuid), '+/', '-_'), '=');
+        return static::$encryptedUuidCache[$uuid] ??= rtrim(strtr(\Illuminate\Support\Facades\Crypt::encryptString($uuid), '+/', '-_'), '=');
     }
 
     /**

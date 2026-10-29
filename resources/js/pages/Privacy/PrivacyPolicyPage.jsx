@@ -127,7 +127,7 @@ export const PrivacyPolicyPage = ({ onBack }) => {
                                     <UserCheck className="w-3.5 h-3.5" /> User Identification
                                 </h4>
                                 <p className="text-xs text-slate-400">
-                                    Full Name, official email address, contact/mobile telephone number, and institutional residence/office address.
+                                    Full Name, official email address, contact/mobile telephone number, and user address.
                                 </p>
                             </div>
                             <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800">

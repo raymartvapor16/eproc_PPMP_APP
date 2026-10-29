@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { UserPlus, X, Eye, EyeOff, Shield, Building, Phone, Mail, User, Briefcase, Lock, PenTool, Check, Loader2, Sparkles, UploadCloud } from 'lucide-react';
-import { userService } from '../../services/api';
+import React, { useState, useEffect } from 'react';
+import { UserPlus, X, Eye, EyeOff, Shield, Building, Phone, Mail, User, Briefcase, Lock, PenTool, Check, Loader2, Sparkles, UploadCloud, Layers } from 'lucide-react';
+import { userService, portalSystemService } from '../../services/api';
 import { SignaturePadModal } from '../UI/SignaturePadModal';
 
 const ROLES_LIST = [
@@ -36,6 +36,25 @@ export const CreateUserModal = ({
         address: '',
         signature: '',
     });
+
+    const [availableSystems, setAvailableSystems] = useState([
+        { id: 1, name: 'E-Procurement PPMP & APP System', link_url: '/eprocrementppmpapp', badge: 'Primary System' },
+        { id: 2, name: 'OPPMO Real-Time Monitoring System', link_url: '/monitoringsystem', badge: 'Live Monitoring' },
+        { id: 3, name: 'Supplier Evaluation System', link_url: '/supplierevaluation', badge: 'Supplier Rating' },
+    ]);
+    const [accessibleSystems, setAccessibleSystems] = useState(['/eprocrementppmpapp']);
+
+    useEffect(() => {
+        const fetchSystems = async () => {
+            try {
+                const res = await portalSystemService.getPublic();
+                if (res.data && res.data.length > 0) {
+                    setAvailableSystems(res.data);
+                }
+            } catch (_) {}
+        };
+        fetchSystems();
+    }, []);
 
     const [showPassword, setShowPassword] = useState(false);
     const [signaturePreview, setSignaturePreview] = useState(null);
@@ -88,6 +107,17 @@ export const CreateUserModal = ({
         setFormData(prev => ({ ...prev, signature: '' }));
     };
 
+    const toggleSystem = (url) => {
+        setAccessibleSystems(prev => {
+            if (prev.includes(url)) {
+                if (prev.length === 1) return prev;
+                return prev.filter(u => u !== url);
+            } else {
+                return [...prev, url];
+            }
+        });
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setErrorMessage('');
@@ -104,12 +134,17 @@ export const CreateUserModal = ({
             setErrorMessage('Password must be at least 6 characters.');
             return;
         }
+        if (!accessibleSystems || accessibleSystems.length === 0) {
+            setErrorMessage('Please grant access to at least one digital system.');
+            return;
+        }
 
         setLoading(true);
         try {
             const payload = {
                 ...formData,
                 office_id: formData.office_id ? Number(formData.office_id) : null,
+                accessible_systems: accessibleSystems,
             };
 
             const res = await userService.create(payload);
@@ -270,6 +305,58 @@ export const CreateUserModal = ({
                                 </p>
                             </div>
 
+                            {/* Permitted Digital Systems Access */}
+                            <div className="sm:col-span-2 bg-slate-50/80 border border-slate-200 rounded-xl p-3">
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                        <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                                        Permitted Digital Systems <span className="text-rose-500">*</span>
+                                    </label>
+                                    <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                                        {accessibleSystems.length} Selected
+                                    </span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 mb-2">
+                                    Check which provincial digital systems this user can access after account creation.
+                                </p>
+                                <div className="space-y-1.5">
+                                    {availableSystems.map((sys) => {
+                                        const isChecked = accessibleSystems.includes(sys.link_url);
+                                        return (
+                                            <div
+                                                key={sys.id || sys.link_url}
+                                                onClick={() => toggleSystem(sys.link_url)}
+                                                className={`flex items-start gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-all select-none ${
+                                                    isChecked
+                                                        ? 'bg-indigo-50/90 border-indigo-300 text-slate-900 shadow-xs'
+                                                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                                                }`}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isChecked}
+                                                    onChange={() => {}}
+                                                    className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 pointer-events-none"
+                                                />
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-semibold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                                                        <span>{sys.name}</span>
+                                                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-mono">
+                                                            {sys.link_url}
+                                                        </span>
+                                                    </div>
+                                                    {sys.description && (
+                                                        <p className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">
+                                                            {sys.description}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
                             {/* Assigned Department / Office */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -326,16 +413,16 @@ export const CreateUserModal = ({
                                 </div>
                             </div>
 
-                            {/* Office Address / Location */}
+                            {/* User Address */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                                    Office Building / Location
+                                    User Address
                                 </label>
                                 <input
                                     type="text"
                                     value={formData.address}
                                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                                    placeholder="e.g. 2nd Floor, Executive Bldg, Capitol"
+                                    placeholder="e.g. Digos City, Davao del Sur"
                                     className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
                                 />
                             </div>

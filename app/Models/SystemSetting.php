@@ -12,17 +12,52 @@ class SystemSetting extends Model
     ];
 
     /**
+     * In-memory cache of settings to eliminate redundant DB queries per request
+     * while staying 100% real-time accurate on updates.
+     */
+    protected static ?array $memoryCache = null;
+
+    /**
+     * Clear in-memory setting cache (useful between tests or after updates).
+     */
+    public static function flushCache(): void
+    {
+        static::$memoryCache = null;
+    }
+
+    /**
+     * Load all system settings into memory in a single query.
+     */
+    protected static function loadAllIntoCache(): void
+    {
+        if (static::$memoryCache !== null) {
+            return;
+        }
+
+        try {
+            static::$memoryCache = static::pluck('value', 'key')->all();
+        } catch (\Throwable $e) {
+            static::$memoryCache = [];
+        }
+    }
+
+    /**
      * Retrieve a setting value by key with optional default.
      */
     public static function get(string $key, mixed $default = null): mixed
     {
         try {
-            $setting = static::where('key', $key)->first();
-            if (!$setting) {
-                return $default;
+            static::loadAllIntoCache();
+
+            if (!array_key_exists($key, static::$memoryCache)) {
+                $setting = static::where('key', $key)->first();
+                if (!$setting) {
+                    return $default;
+                }
+                static::$memoryCache[$key] = $setting->value;
             }
 
-            $val = $setting->value;
+            $val = static::$memoryCache[$key];
 
             if ($val === 'true') {
                 return true;
@@ -31,7 +66,7 @@ class SystemSetting extends Model
                 return false;
             }
 
-            $decoded = json_decode($val, true);
+            $decoded = json_decode((string) $val, true);
             if (json_last_error() === JSON_ERROR_NONE && (is_array($decoded) || is_object($decoded))) {
                 return $decoded;
             }
@@ -55,10 +90,16 @@ class SystemSetting extends Model
             $val = (string) $value;
         }
 
-        return static::updateOrCreate(
+        $record = static::updateOrCreate(
             ['key' => $key],
             ['value' => $val]
         );
+
+        if (static::$memoryCache !== null) {
+            static::$memoryCache[$key] = $val;
+        }
+
+        return $record;
     }
 
     /**

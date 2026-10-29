@@ -24,8 +24,14 @@ class PpmpController extends Controller
         $user = $request->user();
 
         // Only show active/latest PPMPs in the list (superseded PPMPs that have child PPMPs are folded inside the new PPMP)
-        $query = Ppmp::with(['office', 'creator', 'items', 'signatures'])
-            ->whereDoesntHave('children');
+        $query = Ppmp::with([
+            'office',
+            'creator',
+            'items',
+            'signatures',
+            'attachments',
+            'monitoringProjects',
+        ])->whereDoesntHave('children');
 
         // Scope based on role
         if ($user->isEndUser()) {
@@ -44,7 +50,7 @@ class PpmpController extends Controller
             // TWG sees PPMPs reaching TWG review or that they already acted on
             $query->where(function ($q) {
                 $q->whereNotIn('status', ['DRAFT', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED'])
-                  ->orWhereNotNull('twg_approved_at')
+                  ->orWhereHas('milestones', fn($mq) => $mq->whereNotNull('twg_approved_at'))
                   ->orWhereHas('signatures', function ($sq) {
                       $sq->where('role', 'twg');
                   });
@@ -69,7 +75,7 @@ class PpmpController extends Controller
         }
 
         if ($request->filled('amendment_status')) {
-            $query->where('amendment_status', $request->input('amendment_status'));
+            $query->whereHas('amendment', fn($aq) => $aq->where('amendment_status', $request->input('amendment_status')));
         }
 
         if ($request->filled('fiscal_year')) {
@@ -82,6 +88,11 @@ class PpmpController extends Controller
 
         $perPage = min((int) $request->input('per_page', 10), 100);
         $ppmps = $query->latest('id')->paginate($perPage);
+
+        $returnedPpmps = $ppmps->getCollection()->filter(fn ($p) => str_ends_with($p->status ?? '', '_RETURNED'));
+        if ($returnedPpmps->isNotEmpty()) {
+            \Illuminate\Database\Eloquent\Collection::make($returnedPpmps->all())->load(['reviews.reviewer', 'routes.fromUser']);
+        }
 
         $distinctYears = Ppmp::whereNotNull('fiscal_year')
             ->where('fiscal_year', '!=', '')
@@ -289,16 +300,9 @@ class PpmpController extends Controller
             return $ppmp;
         });
 
-        // Automatically sync to Monitoring System so accurate real-time data is available
-        try {
-            \App\Models\MonitoringProject::syncFromPpmp($ppmp);
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('MonitoringProject sync failed: ' . $e->getMessage());
-        }
-
         return response()->json([
             'message' => 'PPMP created successfully in DRAFT status.',
-            'ppmp' => $ppmp->load(['office', 'creator', 'items', 'signatures', 'attachments', 'routes']),
+            'ppmp' => $ppmp->load(['office', 'creator', 'items', 'signatures', 'attachments', 'routes', 'monitoringProjects']),
         ], 201);
     }
 
@@ -319,6 +323,7 @@ class PpmpController extends Controller
             'routes.fromUser',
             'routes.toUser',
             'changeLogs.user',
+            'monitoringProjects',
             'parent.items',
             'parent.signatures.user',
             'parent.office',
@@ -375,16 +380,18 @@ class PpmpController extends Controller
                 'routes.toUser',
                 'reviews.reviewer',
                 'changeLogs.user',
+                'monitoringProjects',
             ]);
             $history[] = $currentParent;
             $currentParent = $currentParent->parent;
         }
         $ppmp->setRelation('history', collect($history));
 
-        // Signatories for report / details
-        $activeBudget = \App\Models\PpmpSignatory::budgetRequirement()->active()->first();
-        $activeBac = \App\Models\PpmpSignatory::bacSecretariat()->active()->first();
-        $activeGovernor = \App\Models\PpmpSignatory::approvedBy()->active()->first();
+        // Signatories for report / details (served from static cache)
+        $activeSignatories = \App\Models\PpmpSignatory::getActiveSignatories();
+        $activeBudget = $activeSignatories->firstWhere('signatory_type', 'budget_requirement');
+        $activeBac = $activeSignatories->firstWhere('signatory_type', 'bac_secretariat');
+        $activeGovernor = $activeSignatories->firstWhere('signatory_type', 'approved_by');
 
         return response()->json([
             'ppmp' => $ppmp,
@@ -548,17 +555,49 @@ class PpmpController extends Controller
                 'warranty_and_other_terms' => array_key_exists('warranty_and_other_terms', $validated) ? $validated['warranty_and_other_terms'] : $ppmp->warranty_and_other_terms,
             ]);
 
+            // Compare old items before deleting to track detailed changes
+            $oldItems = $ppmp->items()->get();
+            $oldItemsMap = $oldItems->keyBy('item_no');
+            $changeLogsToCreate = [];
+
+            // Check header changes
+            $headerFields = [
+                'title' => 'Project Title',
+                'program_name' => 'Program Name',
+                'account_code' => 'Account Code',
+                'delivery_period' => 'Delivery Period',
+                'place_of_delivery' => 'Place of Delivery',
+                'payment_method' => 'Payment Method',
+                'source_of_fund' => 'Source of Fund',
+            ];
+            foreach ($headerFields as $field => $label) {
+                $oldVal = trim((string) ($oldValues[$field] ?? $ppmp->{$field} ?? ''));
+                $newVal = trim((string) ($validated[$field] ?? ($field === 'source_of_fund' ? $sourceOfFund : '')));
+                if ($oldVal !== $newVal && ($oldVal !== '' || $newVal !== '')) {
+                    $changeLogsToCreate[] = [
+                        'ppmp_id' => $ppmp->id,
+                        'user_id' => $user->id,
+                        'role' => $user->role,
+                        'field_name' => $label,
+                        'old_value' => $oldVal ?: '(empty)',
+                        'new_value' => $newVal ?: '(empty)',
+                        'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                    ];
+                }
+            }
+
             // Replace items safely
             $ppmp->items()->delete();
 
             $total = 0;
             foreach ($validated['items'] as $index => $itemData) {
+                $itemNo = $index + 1;
                 $itemBudget = (float) $itemData['estimated_budget'];
                 $total += $itemBudget;
 
                 PpmpItem::create([
                     'ppmp_id' => $ppmp->id,
-                    'item_no' => $index + 1,
+                    'item_no' => $itemNo,
                     'description' => $itemData['description'],
                     'project_type' => $itemData['project_type'] ?? 'Goods',
                     'quantity_size' => $itemData['quantity_size'] ?? '',
@@ -572,36 +611,135 @@ class PpmpController extends Controller
                     'supporting_docs_text' => $itemData['supporting_docs_text'] ?? null,
                     'remarks' => $itemData['remarks'] ?? null,
                 ]);
+
+                // Track item-level changes
+                $oldItem = $oldItemsMap->get($itemNo);
+                $newDesc = trim((string) ($itemData['description'] ?? ''));
+                $newMode = trim((string) ($itemData['procurement_mode'] ?? ''));
+                $newQty = trim((string) ($itemData['quantity_size'] ?? ''));
+
+                if (!$oldItem) {
+                    $changeLogsToCreate[] = [
+                        'ppmp_id' => $ppmp->id,
+                        'user_id' => $user->id,
+                        'role' => $user->role,
+                        'field_name' => "Item #{$itemNo} Added",
+                        'old_value' => '(none)',
+                        'new_value' => "{$newDesc} (₱" . number_format($itemBudget, 2) . ")",
+                        'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                    ];
+                } else {
+                    $oldBudget = (float) $oldItem->estimated_budget;
+                    $oldDesc = trim((string) $oldItem->description);
+                    $oldMode = trim((string) $oldItem->procurement_mode);
+                    $oldQty = trim((string) $oldItem->quantity_size);
+
+                    if ($oldDesc !== $newDesc) {
+                        $changeLogsToCreate[] = [
+                            'ppmp_id' => $ppmp->id,
+                            'user_id' => $user->id,
+                            'role' => $user->role,
+                            'field_name' => "Item #{$itemNo} Description",
+                            'old_value' => $oldDesc,
+                            'new_value' => $newDesc,
+                            'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                        ];
+                    }
+                    if (abs($oldBudget - $itemBudget) > 0.009) {
+                        $changeLogsToCreate[] = [
+                            'ppmp_id' => $ppmp->id,
+                            'user_id' => $user->id,
+                            'role' => $user->role,
+                            'field_name' => "Item #{$itemNo} Estimated Budget",
+                            'old_value' => '₱' . number_format($oldBudget, 2),
+                            'new_value' => '₱' . number_format($itemBudget, 2),
+                            'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                        ];
+                    }
+                    if ($oldMode !== $newMode) {
+                        $changeLogsToCreate[] = [
+                            'ppmp_id' => $ppmp->id,
+                            'user_id' => $user->id,
+                            'role' => $user->role,
+                            'field_name' => "Item #{$itemNo} Procurement Mode",
+                            'old_value' => $oldMode,
+                            'new_value' => $newMode,
+                            'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                        ];
+                    }
+                    if ($oldQty !== $newQty) {
+                        $changeLogsToCreate[] = [
+                            'ppmp_id' => $ppmp->id,
+                            'user_id' => $user->id,
+                            'role' => $user->role,
+                            'field_name' => "Item #{$itemNo} Quantity/Size",
+                            'old_value' => $oldQty ?: '(empty)',
+                            'new_value' => $newQty ?: '(empty)',
+                            'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                        ];
+                    }
+                }
+            }
+
+            // Check if any old items were removed
+            $newCount = count($validated['items']);
+            foreach ($oldItems as $oldItem) {
+                if ($oldItem->item_no > $newCount) {
+                    $changeLogsToCreate[] = [
+                        'ppmp_id' => $ppmp->id,
+                        'user_id' => $user->id,
+                        'role' => $user->role,
+                        'field_name' => "Item #{$oldItem->item_no} Removed",
+                        'old_value' => "{$oldItem->description} (₱" . number_format((float)$oldItem->estimated_budget, 2) . ")",
+                        'new_value' => '(removed)',
+                        'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                    ];
+                }
+            }
+
+            // Total budget change
+            $oldTotal = (float) ($oldValues['total_budget'] ?? 0);
+            if (abs($oldTotal - $total) > 0.009) {
+                $changeLogsToCreate[] = [
+                    'ppmp_id' => $ppmp->id,
+                    'user_id' => $user->id,
+                    'role' => $user->role,
+                    'field_name' => 'Total Budget',
+                    'old_value' => '₱' . number_format($oldTotal, 2),
+                    'new_value' => '₱' . number_format($total, 2),
+                    'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                ];
+            }
+
+            foreach ($changeLogsToCreate as $log) {
+                \App\Models\PpmpChangeLog::create($log);
             }
 
             $ppmp->update(['total_budget' => $total]);
 
-            // If a reviewer edited the PPMP, log the field-level change
-            if (!$user->isEndUser()) {
-                \App\Models\PpmpChangeLog::create([
-                    'ppmp_id' => $ppmp->id,
-                    'user_id' => $user->id,
-                    'role' => $user->role,
-                    'field_name' => 'items_and_specifications',
-                    'old_value' => 'Old Total: ' . ($oldValues['total_budget'] ?? 0),
-                    'new_value' => 'New Total: ' . $total,
-                    'action' => 'reviewer_edit',
+            // If amended/supplemental and changes were made, invalidate APP so OPPMO is required to regenerate
+            $isAmendedOrSupplemental = !empty($ppmp->parent_id) || in_array($ppmp->amendment_type, ['AMENDMENT', 'SUPPLEMENTAL'], true);
+            if ($isAmendedOrSupplemental && count($changeLogsToCreate) > 0) {
+                $existingApp = $ppmp->app_data;
+                $oldApp = $existingApp['old_app'] ?? ((!empty($existingApp['rows']) && is_array($existingApp['rows'])) ? $existingApp : null) ?? $ppmp->parent?->app_data;
+                $ppmp->update([
+                    'app_data' => [
+                        'needs_regeneration' => true,
+                        'is_generated' => false,
+                        'old_app' => $oldApp,
+                        'invalidated_at' => now()->toIso8601String(),
+                        'invalidated_by' => $user->name,
+                        'invalidated_by_role' => $user->role,
+                    ],
                 ]);
             }
 
             AuditLog::log('PPMP_UPDATED', 'ppmps', $ppmp->id, $oldValues, ['total_budget' => $total], $user->id);
-
-            // Automatically sync to Monitoring System so accurate real-time data is available
-            try {
-                \App\Models\MonitoringProject::syncFromPpmp($ppmp);
-            } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('MonitoringProject sync failed: ' . $e->getMessage());
-            }
         });
 
         return response()->json([
             'message' => 'PPMP updated successfully.',
-            'ppmp' => $ppmp->fresh(['office', 'creator', 'items', 'signatures', 'attachments', 'routes']),
+            'ppmp' => $ppmp->fresh(['office', 'creator', 'items', 'signatures', 'attachments', 'routes', 'changeLogs.user', 'monitoringProjects']),
         ]);
     }
 
@@ -671,6 +809,47 @@ class PpmpController extends Controller
             return response()->json(['message' => 'The rows or attachment_lists field is required.'], 422);
         }
 
+        // Validate that Total Cost of attachment items does not exceed the Allocated Budget from the PPMP data
+        $ppmpBudget = (float) ($ppmp->total_budget ?? 0);
+        $procurementItems = $ppmp->items()->whereNotNull('description')->where('description', '!=', '')->get();
+        $itemsByIdBudget = [];
+        $itemsByIdxBudget = [];
+        foreach ($procurementItems as $idx => $pItem) {
+            $itemEstimated = (float) ($pItem->estimated_budget ?? 0);
+            $effectiveBudget = $itemEstimated > 0 ? $itemEstimated : $ppmpBudget;
+            $itemsByIdBudget[(string) $pItem->id] = $effectiveBudget;
+            $itemsByIdxBudget[(string) $idx] = $effectiveBudget;
+        }
+
+        $listsToCheck = !empty($validated['attachment_lists']) ? $validated['attachment_lists'] : [];
+        if (!empty($validated['rows'])) {
+            $activeKey = (string) ($validated['active_item_id'] ?? '0');
+            $listsToCheck[$activeKey] = array_merge($listsToCheck[$activeKey] ?? [], ['rows' => $validated['rows']]);
+        }
+
+        foreach ($listsToCheck as $key => $listData) {
+            if (empty($listData['rows']) || !is_array($listData['rows'])) {
+                continue;
+            }
+            $calculatedTotal = 0.0;
+            foreach ($listData['rows'] as $r) {
+                if (isset($r['totalCost']) && is_numeric($r['totalCost'])) {
+                    $calculatedTotal += (float) $r['totalCost'];
+                } elseif (!empty($r['qty']) && !empty($r['unitCost']) && is_numeric($r['qty']) && is_numeric($r['unitCost'])) {
+                    $calculatedTotal += ((float) $r['qty']) * ((float) $r['unitCost']);
+                }
+            }
+            $allocatedBudget = $itemsByIdBudget[(string) $key] ?? $itemsByIdxBudget[(string) $key] ?? $ppmpBudget;
+            if ($allocatedBudget > 0 && $calculatedTotal > ($allocatedBudget + 0.01)) {
+                $formattedTotal = number_format($calculatedTotal, 2);
+                $formattedBudget = number_format($allocatedBudget, 2);
+                $excess = number_format($calculatedTotal - $allocatedBudget, 2);
+                return response()->json([
+                    'message' => "Cannot save: The Total Cost (₱{$formattedTotal}) of the PPMP List of Attachment exceeds the Allocated Budget (₱{$formattedBudget}) from the PPMP data by ₱{$excess}. The total cost must coincide with or be lower than the Allocated Budget."
+                ], 422);
+            }
+        }
+
         // Merge with existing attachment_list_data if already present, preserving keys
         $existingData = is_array($ppmp->attachment_list_data) ? $ppmp->attachment_list_data : [];
         if (!empty($validated['attachment_lists'])) {
@@ -723,12 +902,13 @@ class PpmpController extends Controller
         $user = $request->user();
         $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
 
-        $isTwgDone = $ppmp->twg_approved_at !== null || $ppmp->signatures()->where('role', 'twg')->exists();
-        $isOppmoAuthorized = ($user->isOppmo() && $isTwgDone);
+        $isTwgSkipped = ($ppmp->amendment_type === 'AMENDMENT' && $ppmp->amendment_scope === 'PPMP_APP');
+        $isTwgDone = $isTwgSkipped || $ppmp->twg_approved_at !== null || $ppmp->signatures()->where('role', 'twg')->exists();
+        $isOppmoAuthorized = $user->isOppmo() && $isTwgDone && in_array($ppmp->status, ['OPPMO_REVIEW', 'READY_TO_PRINT'], true);
 
         if (!$isOppmoAuthorized && !$user->isAdmin()) {
             return response()->json([
-                'message' => 'Only the OPPMO reviewer can generate or update the Annual Procurement Plan (APP) after BAC-TWG review is completed.'
+                'message' => 'Only the OPPMO reviewer can generate or regenerate the Annual Procurement Plan (APP) after BAC-TWG technical review is complete.'
             ], 403);
         }
 
@@ -747,8 +927,31 @@ class PpmpController extends Controller
             'rows' => 'required|array',
         ]);
 
+        $existingApp = $ppmp->app_data;
+        $oldApp = $existingApp['old_app'] ?? ((!empty($existingApp['rows']) && is_array($existingApp['rows'])) ? $existingApp : null) ?? $ppmp->parent?->app_data;
+
+        $validated['is_generated'] = true;
+        $validated['needs_regeneration'] = false;
+        $validated['is_oppmo_approved'] = $ppmp->status === 'READY_TO_PRINT';
+        $validated['generated_at'] = now()->toIso8601String();
+        $validated['generated_by_id'] = $user->id;
+        $validated['generated_by_name'] = $user->name;
+        if ($oldApp) {
+            $validated['old_app'] = $oldApp;
+        }
+
         $ppmp->update([
             'app_data' => $validated,
+        ]);
+
+        \App\Models\PpmpChangeLog::create([
+            'ppmp_id' => $ppmp->id,
+            'user_id' => $user->id,
+            'role' => $user->role,
+            'field_name' => 'Annual Procurement Plan (APP)',
+            'old_value' => $oldApp ? 'Previous APP Baseline' : '(none)',
+            'new_value' => 'Regenerated APP (' . count($validated['rows']) . ' item rows)',
+            'action' => 'app_generated',
         ]);
 
         AuditLog::log(
@@ -762,7 +965,7 @@ class PpmpController extends Controller
 
         return response()->json([
             'message' => 'Annual Procurement Plan (APP) data saved successfully.',
-            'ppmp' => $ppmp->fresh(['office.head', 'creator', 'items', 'signatures.user', 'attachments', 'routes']),
+            'ppmp' => $ppmp->fresh(['office.head', 'creator', 'items', 'signatures.user', 'attachments', 'routes', 'changeLogs.user']),
         ]);
     }
 }

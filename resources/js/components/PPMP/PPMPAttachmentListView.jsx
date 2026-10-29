@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { formatCurrency, formatDate } from '../UI/StatusBadge';
-import { Printer, ArrowLeft, Plus, Trash2, Edit3, Loader2, Sparkles, ShieldCheck, Truck, Lock, Leaf, CheckCircle2, ChevronRight, ChevronLeft, Eye, Layers, Copy, Check, Save } from 'lucide-react';
+import { Printer, ArrowLeft, Plus, Trash2, Edit3, Loader2, Sparkles, ShieldCheck, Truck, Lock, Leaf, CheckCircle2, ChevronRight, ChevronLeft, Eye, Layers, Copy, Check, Save, AlertTriangle } from 'lucide-react';
 import { ppmpService, procurementConditionService, otherTermService } from '../../services/api';
 import { GreenSpecDropdown } from './GreenSpecDropdown';
 import { useSignatureSettings } from '../../utils/signatureController';
@@ -56,18 +56,23 @@ export const getInitialAttachmentLists = (ppmp, procurementItems, savedData) => 
             resolvedDeliveryPeriod = ppmp.delivery_period;
         }
 
+        const ppmpAllocatedBudget = (item.estimated_budget !== undefined && item.estimated_budget !== null && item.estimated_budget !== '')
+            ? parseFloat(item.estimated_budget) || 0
+            : (procurementItems.length === 1 && ppmp?.total_budget ? parseFloat(ppmp.total_budget) || 0 : (parseFloat(ppmp?.total_budget) || 0));
+
         return {
             itemId: item.id !== undefined && item.id !== null ? item.id : idx,
             itemKey,
             itemNo: item.item_no || idx + 1,
             sourceDescription: item.description || '',
+            ppmpAllocatedBudget,
             officeName: itemSaved?.office_name || savedData?.office_name || ppmp?.implementing_unit || ppmp?.office?.name || 'Provincial Government of Davao del Sur',
             projectTitle: itemSaved?.project_title || item.description || ppmp?.title || '',
-            totalBudget: (itemSaved?.total_budget !== undefined && itemSaved?.total_budget !== null && itemSaved?.total_budget !== '')
-                ? itemSaved.total_budget
-                : (item.estimated_budget !== undefined && item.estimated_budget !== null && item.estimated_budget !== ''
-                    ? parseFloat(item.estimated_budget) || 0
-                    : (procurementItems.length === 1 && ppmp?.total_budget ? parseFloat(ppmp.total_budget) || 0 : 0)),
+            totalBudget: ppmpAllocatedBudget > 0
+                ? (itemSaved?.total_budget !== undefined && itemSaved?.total_budget !== null && itemSaved?.total_budget !== ''
+                    ? Math.min(parseFloat(itemSaved.total_budget) || 0, ppmpAllocatedBudget)
+                    : ppmpAllocatedBudget)
+                : (parseFloat(itemSaved?.total_budget) || 0),
             charges: itemSaved?.charges || defaultItemCharges,
             placeOfDelivery: itemSaved?.place_of_delivery || ppmp?.place_of_delivery || 'PGSO Warehouse/On-site',
             paymentMethod: itemSaved?.payment_method || ppmp?.payment_method || 'Staggered Delivery/Credit-basis',
@@ -510,6 +515,17 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
             return;
         }
 
+        // Validate that no attachment list exceeds the PPMP allocated budget
+        for (const list of attachmentLists) {
+            const listTotal = (list.rows || []).reduce((sum, r) => sum + (parseFloat(r.totalCost) || 0), 0);
+            const listBudget = parseFloat(list.ppmpAllocatedBudget !== undefined ? list.ppmpAllocatedBudget : list.totalBudget) || (parseFloat(ppmp?.total_budget) || 0);
+
+            if (listBudget > 0 && listTotal > (listBudget + 0.01)) {
+                alert(`Cannot save: The Total Cost (${formatCurrency(listTotal)}) of "${list.projectTitle || `Item #${list.itemNo}`}" exceeds the Allocated Budget (${formatCurrency(listBudget)}) from the PPMP data by ${formatCurrency(listTotal - listBudget)}.\n\nThe Total Cost of the PPMP List of Attachment must coincide with or be lower than the Allocated Budget.`);
+                return;
+            }
+        }
+
         const allListsMap = {
             ...(savedData?.attachment_lists || {}),
         };
@@ -596,9 +612,14 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
         setPendingPrint(true);
     };
 
-    // Calculate totals for active list
+    // Calculate totals and PPMP allocated budget for active list
+    const activePpmpBudget = parseFloat(activeList.ppmpAllocatedBudget !== undefined ? activeList.ppmpAllocatedBudget : activeList.totalBudget) || (parseFloat(ppmp?.total_budget) || 0);
     const activeCalculatedTotal = activeList.rows.reduce((sum, r) => sum + (parseFloat(r.totalCost) || 0), 0);
-    const activeDisplayTotalBudget = activeCalculatedTotal > 0 ? activeCalculatedTotal : (parseFloat(activeList.totalBudget) || 0);
+    const activeDisplayTotalBudget = activeCalculatedTotal > 0 ? activeCalculatedTotal : (parseFloat(activeList.totalBudget) || activePpmpBudget);
+    const isActiveOverBudget = activePpmpBudget > 0 && activeCalculatedTotal > (activePpmpBudget + 0.01);
+    const activeBudgetExcess = isActiveOverBudget ? activeCalculatedTotal - activePpmpBudget : 0;
+    const activeBudgetRemaining = activePpmpBudget > activeCalculatedTotal ? activePpmpBudget - activeCalculatedTotal : 0;
+    const isCoinciding = activePpmpBudget > 0 && Math.abs(activePpmpBudget - activeCalculatedTotal) <= 0.01;
 
     // Render single official printable attachment sheet
     const renderPrintSheet = (list, listIdx) => {
@@ -961,12 +982,17 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                             )}
                             <button
                                 type="button"
-                                disabled={saving}
+                                disabled={saving || isActiveOverBudget}
                                 onClick={handleGenerate}
-                                className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow transition cursor-pointer disabled:opacity-50"
+                                className={`flex items-center gap-1.5 px-4 py-2 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow transition ${
+                                    isActiveOverBudget
+                                        ? 'bg-rose-500/80 cursor-not-allowed'
+                                        : 'bg-blue-600 hover:bg-blue-700 cursor-pointer disabled:opacity-50'
+                                }`}
+                                title={isActiveOverBudget ? `Total cost exceeds Allocated Budget (${formatCurrency(activePpmpBudget)})` : 'Save PPMP List of Attachment'}
                             >
                                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                {saving ? 'Saving...' : (attachmentLists.length > 1 ? `Save Attachment (Item ${activeList.itemNo || activeItemIndex + 1})` : 'Save Attachment')}
+                                {saving ? 'Saving...' : isActiveOverBudget ? 'Over Budget' : (attachmentLists.length > 1 ? `Save Attachment (Item ${activeList.itemNo || activeItemIndex + 1})` : 'Save Attachment')}
                             </button>
                         </div>
                     ) : (
@@ -1081,7 +1107,9 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                             {attachmentLists.map((item, idx) => {
                                 const isSelected = !viewAllMode && activeItemIndex === idx;
-                                const itemBudget = parseFloat(item.totalBudget) || 0;
+                                const itemBudget = parseFloat(item.ppmpAllocatedBudget !== undefined ? item.ppmpAllocatedBudget : item.totalBudget) || (parseFloat(ppmp?.total_budget) || 0);
+                                const itemCalculated = (item.rows || []).reduce((sum, r) => sum + (parseFloat(r.totalCost) || 0), 0);
+                                const itemOverBudget = itemBudget > 0 && itemCalculated > (itemBudget + 0.01);
                                 const hasRows = item.rows && item.rows.some(r => r.description || r.qty);
 
                                 return (
@@ -1093,11 +1121,21 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                             setActiveItemIndex(idx);
                                         }}
                                         className={`p-3 rounded-xl text-left transition border flex items-start gap-3 cursor-pointer ${isSelected
-                                            ? 'bg-blue-50/90 border-blue-500 ring-2 ring-blue-500/20 shadow-xs'
-                                            : 'bg-slate-50/60 hover:bg-slate-50 border-slate-200 text-slate-700'
+                                            ? itemOverBudget
+                                                ? 'bg-rose-50 border-rose-500 ring-2 ring-rose-500/20 shadow-xs'
+                                                : 'bg-blue-50/90 border-blue-500 ring-2 ring-blue-500/20 shadow-xs'
+                                            : itemOverBudget
+                                                ? 'bg-rose-50/50 hover:bg-rose-50 border-rose-300 text-rose-900'
+                                                : 'bg-slate-50/60 hover:bg-slate-50 border-slate-200 text-slate-700'
                                         }`}
                                     >
-                                        <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                                        <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${
+                                            itemOverBudget
+                                                ? 'bg-rose-600 text-white'
+                                                : isSelected
+                                                    ? 'bg-blue-600 text-white'
+                                                    : 'bg-slate-200 text-slate-700'
+                                        }`}>
                                             {idx + 1}
                                         </span>
                                         <div className="min-w-0 flex-1">
@@ -1106,11 +1144,15 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                             </div>
                                             <div className="text-[11px] text-slate-500 font-mono mt-0.5 flex items-center justify-between">
                                                 <span>Budget: {formatCurrency(itemBudget)}</span>
-                                                {hasRows && (
+                                                {itemOverBudget ? (
+                                                    <span className="text-[10px] text-rose-600 font-bold flex items-center gap-0.5">
+                                                        <AlertTriangle className="w-3 h-3 text-rose-600" /> Over Budget
+                                                    </span>
+                                                ) : hasRows ? (
                                                     <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-0.5">
                                                         <CheckCircle2 className="w-3 h-3" /> Ready
                                                     </span>
-                                                )}
+                                                ) : null}
                                             </div>
                                         </div>
                                     </button>
@@ -1163,14 +1205,14 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                 <div>
                                     <div className="flex items-center justify-between mb-1">
                                         <label className="block font-bold text-slate-700">
-                                            Estimated Budget / Authorized Budget (ABC):
+                                            Estimated Budget / Authorized Budgetary Allocation (ABC):
                                         </label>
-                                        {activeCalculatedTotal > 0 && (
+                                        {activeCalculatedTotal > 0 && !isActiveOverBudget && Math.abs((parseFloat(activeList.totalBudget) || 0) - activeCalculatedTotal) > 0.01 && (
                                             <button
                                                 type="button"
                                                 onClick={() => updateActiveField('totalBudget', activeCalculatedTotal)}
                                                 className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer transition"
-                                                title="Sync Budget with computed sum of item breakdown rows"
+                                                title="Sync budget to coincide with computed sum of item breakdown rows"
                                             >
                                                 <Sparkles className="w-3 h-3 text-blue-500" />
                                                 Sync with Items Total ({formatCurrency(activeCalculatedTotal)})
@@ -1185,27 +1227,52 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                             type="number"
                                             step="0.01"
                                             min="0"
+                                            max={activePpmpBudget > 0 ? activePpmpBudget : undefined}
                                             value={activeList.totalBudget ?? ''}
-                                            onChange={(e) => updateActiveField('totalBudget', e.target.value === '' ? '' : e.target.value)}
-                                            className="w-full pl-7 pr-3 py-2 border border-slate-300 rounded-lg text-xs font-mono font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                            onChange={(e) => {
+                                                const val = e.target.value === '' ? '' : e.target.value;
+                                                if (val !== '' && activePpmpBudget > 0 && parseFloat(val) > activePpmpBudget) {
+                                                    alert(`The Estimated Budget cannot exceed the Allocated Budget from the PPMP data (${formatCurrency(activePpmpBudget)}).`);
+                                                    updateActiveField('totalBudget', activePpmpBudget);
+                                                    return;
+                                                }
+                                                updateActiveField('totalBudget', val);
+                                            }}
+                                            className={`w-full pl-7 pr-3 py-2 border rounded-lg text-xs font-mono font-bold focus:ring-2 focus:outline-none ${
+                                                isActiveOverBudget
+                                                    ? 'border-rose-400 bg-rose-50/50 text-rose-900 focus:ring-rose-500'
+                                                    : 'border-slate-300 focus:ring-blue-500'
+                                            }`}
                                             placeholder="0.00"
                                         />
                                     </div>
-                                    {activeCalculatedTotal > 0 && (
-                                        <div className="mt-1 flex items-center justify-between text-[10px]">
-                                            {Math.abs((parseFloat(activeList.totalBudget) || 0) - activeCalculatedTotal) < 0.01 ? (
-                                                <span className="text-emerald-700 font-medium flex items-center gap-1">
-                                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Matches item breakdown sum
+                                    <div className="mt-1 text-[11px]">
+                                        {isActiveOverBudget ? (
+                                            <div className="p-2 bg-rose-50 border border-rose-300 rounded-lg text-rose-800 font-bold flex items-center justify-between gap-2 mt-1">
+                                                <span className="flex items-center gap-1.5">
+                                                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                                                    <span>Total Cost ({formatCurrency(activeCalculatedTotal)}) exceeds Allocated Budget ({formatCurrency(activePpmpBudget)})</span>
                                                 </span>
-                                            ) : (
-                                                <span className="text-amber-700 font-medium flex items-center gap-1">
-                                                    <span>Breakdown Total: {formatCurrency(activeCalculatedTotal)}</span>
-                                                    <span className="text-slate-400">|</span>
-                                                    <span>Diff: {formatCurrency((parseFloat(activeList.totalBudget) || 0) - activeCalculatedTotal)}</span>
+                                                <span className="text-rose-700 shrink-0 font-extrabold font-mono">
+                                                    +{formatCurrency(activeBudgetExcess)} excess
                                                 </span>
-                                            )}
-                                        </div>
-                                    )}
+                                            </div>
+                                        ) : activeCalculatedTotal > 0 ? (
+                                            <div className="flex items-center justify-between text-[11px] pt-0.5">
+                                                {isCoinciding ? (
+                                                    <span className="text-emerald-700 font-bold flex items-center gap-1">
+                                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                                        Coincides with Allocated Budget ({formatCurrency(activeCalculatedTotal)})
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-blue-700 font-semibold flex items-center gap-1">
+                                                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+                                                        Total Cost ({formatCurrency(activeCalculatedTotal)}) is lower than Allocated Budget ({formatCurrency(activePpmpBudget)}) | Unallocated: {formatCurrency(activeBudgetRemaining)}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        ) : null}
+                                    </div>
                                 </div>
 
                                 <div className="md:col-span-2">
@@ -1231,7 +1298,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                         PPMP List of Attachment Items (Breakdown for {activeList.projectTitle})
                                     </h3>
                                     <p className="text-[11px] text-slate-500 mt-0.5">
-                                        Enter items, units, quantities, and unit costs. Subtotals and grand totals compute automatically.
+                                        Enter items, units, quantities, and unit costs. The Total Cost must coincide with or be lower than the Allocated Budget (<strong className="font-mono">{formatCurrency(activePpmpBudget)}</strong>).
                                     </p>
                                 </div>
                                 <button
@@ -1242,6 +1309,24 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                     <Plus className="w-3.5 h-3.5" /> Add Item Row
                                 </button>
                             </div>
+
+                            {/* Over-budget Warning Alert */}
+                            {isActiveOverBudget && (
+                                <div className="p-3 bg-rose-50 border-2 border-rose-400 rounded-xl flex items-start gap-3 shadow-xs">
+                                    <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                                    <div className="text-xs">
+                                        <div className="font-extrabold text-rose-900 uppercase tracking-wide">
+                                            Budget Limit Exceeded
+                                        </div>
+                                        <p className="text-rose-800 mt-0.5 font-medium">
+                                            The Total Cost of this attachment list (<strong className="font-mono font-extrabold">{formatCurrency(activeCalculatedTotal)}</strong>) is higher than the Allocated Budget from the PPMP data (<strong className="font-mono font-extrabold">{formatCurrency(activePpmpBudget)}</strong>) by <strong className="font-mono font-black text-rose-900">+{formatCurrency(activeBudgetExcess)}</strong>.
+                                        </p>
+                                        <p className="text-rose-700 text-[11px] mt-1 font-semibold">
+                                            Please adjust quantities or unit costs so the total cost coincides with or is lower than the Allocated Budget. Saving is disabled until within budget.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="overflow-x-auto">
                                 <table className="w-full text-xs text-left border-collapse">
@@ -1339,29 +1424,36 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                     <div>
                                         <span className="text-xs text-slate-500 mr-2">Allocated Budget:</span>
                                         <span className="text-sm font-bold font-mono text-slate-800">
-                                            {formatCurrency(parseFloat(activeList.totalBudget) || 0)}
+                                            {formatCurrency(activePpmpBudget)}
                                         </span>
                                     </div>
                                     <div className="border-l border-slate-200 pl-4">
                                         <span className="text-xs text-slate-500 mr-2">Items Computed Total:</span>
-                                        <span className={`text-sm font-extrabold font-mono ${
-                                            (parseFloat(activeList.totalBudget) || 0) > 0 && Math.abs((parseFloat(activeList.totalBudget) || 0) - activeCalculatedTotal) > 0.01
-                                                ? 'text-amber-600'
-                                                : 'text-blue-900'
+                                        <span className={`text-sm font-mono ${
+                                            isActiveOverBudget
+                                                ? 'font-black text-rose-700 bg-rose-100 px-2.5 py-1 rounded-md border border-rose-300'
+                                                : isCoinciding
+                                                    ? 'font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200'
+                                                    : 'font-extrabold text-blue-900'
                                         }`}>
                                             {formatCurrency(activeCalculatedTotal)}
                                         </span>
                                     </div>
-                                    {activeCalculatedTotal > 0 && Math.abs((parseFloat(activeList.totalBudget) || 0) - activeCalculatedTotal) > 0.01 && (
+                                    {isActiveOverBudget ? (
+                                        <span className="px-2.5 py-1 bg-rose-100 text-rose-800 text-xs font-bold rounded-lg border border-rose-300 flex items-center gap-1">
+                                            <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                                            Exceeds Budget by {formatCurrency(activeBudgetExcess)}
+                                        </span>
+                                    ) : !isActiveOverBudget && activeCalculatedTotal > 0 && Math.abs((parseFloat(activeList.totalBudget) || 0) - activeCalculatedTotal) > 0.01 ? (
                                         <button
                                             type="button"
                                             onClick={() => updateActiveField('totalBudget', activeCalculatedTotal)}
-                                            className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 text-[11px] font-semibold rounded border border-amber-300 transition cursor-pointer"
-                                            title="Update Budget to match Computed Total"
+                                            className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-800 text-[11px] font-semibold rounded border border-blue-300 transition cursor-pointer"
+                                            title="Update Budget to coincide with Computed Total"
                                         >
                                             Set Budget to {formatCurrency(activeCalculatedTotal)}
                                         </button>
-                                    )}
+                                    ) : null}
                                 </div>
                             </div>
                         </div>
@@ -1720,12 +1812,17 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
 
                             <button
                                 type="button"
-                                disabled={saving}
+                                disabled={saving || isActiveOverBudget}
                                 onClick={handleGenerate}
-                                className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-md transition cursor-pointer disabled:opacity-50"
+                                className={`flex items-center justify-center gap-2 px-6 py-3 text-xs font-bold uppercase tracking-wider rounded-xl shadow-md transition ${
+                                    isActiveOverBudget
+                                        ? 'bg-rose-500/80 text-white cursor-not-allowed opacity-80'
+                                        : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer disabled:opacity-50'
+                                }`}
+                                title={isActiveOverBudget ? `Total cost exceeds Allocated Budget (${formatCurrency(activePpmpBudget)})` : 'Save PPMP List of Attachment'}
                             >
                                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                {saving ? 'Saving...' : (attachmentLists.length > 1 ? `Save Attachment (Item ${activeList.itemNo || activeItemIndex + 1})` : 'Save Attachment')}
+                                {saving ? 'Saving...' : isActiveOverBudget ? 'Total Exceeds Budget' : (attachmentLists.length > 1 ? `Save Attachment (Item ${activeList.itemNo || activeItemIndex + 1})` : 'Save Attachment')}
                             </button>
                         </div>
                     </div>

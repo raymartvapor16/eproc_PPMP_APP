@@ -194,13 +194,20 @@ export const SupportingDocsDropdown = ({
 
     return (
         <div className="relative inline-block w-full">
-            {/* Trigger Button */}
-            <button
+            {/* Trigger Container */}
+            <div
                 ref={triggerRef}
-                type="button"
-                disabled={disabled}
+                role="button"
+                tabIndex={disabled ? -1 : 0}
                 onClick={handleToggleOpen}
-                className={`w-full min-h-[38px] p-1.5 border rounded-lg text-left transition flex items-center justify-between gap-1.5 text-xs bg-white ${
+                onKeyDown={(e) => {
+                    if (disabled) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleToggleOpen();
+                    }
+                }}
+                className={`w-full min-h-[38px] p-1.5 border rounded-lg text-left transition flex items-center justify-between gap-1.5 text-xs bg-white select-none ${
                     isOpen
                         ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-xs'
                         : 'border-slate-300 hover:border-slate-400 shadow-2xs'
@@ -254,7 +261,7 @@ export const SupportingDocsDropdown = ({
                     )}
                     <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${isOpen ? 'rotate-180 text-blue-600' : ''}`} />
                 </div>
-            </button>
+            </div>
 
             {/* Render Dropdown Menu via Portal into document.body to avoid table overflow clipping and z-index issues */}
             {isOpen && coords && createPortal(

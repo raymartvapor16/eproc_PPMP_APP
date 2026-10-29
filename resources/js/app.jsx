@@ -9,20 +9,170 @@ import { PPMPDetailPage } from './pages/PPMP/PPMPDetailPage';
 import { PPMPFormPage } from './pages/PPMP/PPMPFormPage';
 import { PrivacyPolicyPage } from './pages/Privacy/PrivacyPolicyPage';
 import { MonitoringDashboard } from './pages/Monitoring/MonitoringDashboard';
+import { SupplierEvaluationDashboard } from './pages/SupplierEvaluation/SupplierEvaluationDashboard';
 import { SourceOfFundModal, FUND_SOURCES } from './components/PPMP/SourceOfFundModal';
 import { initDevToolsGuard } from './utils/devToolsGuard';
+import { Loader2 } from 'lucide-react';
+import { LandingPage } from './pages/Landing/LandingPage';
+import { UnauthorizedSystemAccessView, canUserAccessSystem } from './components/UI/UnauthorizedSystemAccessView';
+
+const ROUTE_STORAGE_KEY = 'eproc_active_route';
+const LAST_ACTIVE_SYSTEM_KEY = 'eproc_last_active_system';
+const DASHBOARD_PATH = '/eprocrementppmpapp';
+
+/**
+ * Determine initial last active system from sessionStorage or initial pathname
+ */
+const getInitialLastActiveSystem = () => {
+    try {
+        const stored = sessionStorage.getItem(LAST_ACTIVE_SYSTEM_KEY);
+        if (stored && ['dashboard', 'monitoring', 'supplierevaluation'].includes(stored)) {
+            return stored;
+        }
+    } catch (_) {}
+
+    const path = window.location.pathname.replace(/\/+$/, '') || '/';
+    if (path === '/monitoringsystem' || path.startsWith('/monitoring')) return 'monitoring';
+    if (path === '/supplierevaluation' || path.startsWith('/supplier-evaluation')) return 'supplierevaluation';
+    return 'dashboard';
+};
+
+/**
+ * Parse current browser URL pathname or fallback to sessionStorage route
+ */
+const parseRouteFromLocation = () => {
+    const path = window.location.pathname.replace(/\/+$/, '') || '/';
+
+    if (path === '/privacy') {
+        return { view: 'privacy', uuid: null };
+    }
+    if (path === '/monitoringsystem' || path.startsWith('/monitoring')) {
+        return { view: 'monitoring', uuid: null };
+    }
+    if (path === '/supplierevaluation' || path.startsWith('/supplier-evaluation')) {
+        return { view: 'supplierevaluation', uuid: null };
+    }
+    if (path === '/ppmps/create') {
+        return { view: 'create', uuid: null };
+    }
+
+    const editMatch = path.match(/^\/ppmps\/([a-zA-Z0-9_-]+)\/edit$/);
+    if (editMatch) {
+        return { view: 'edit', uuid: editMatch[1] };
+    }
+
+    const detailMatch = path.match(/^\/ppmps\/([a-zA-Z0-9_-]+)$/);
+    if (detailMatch) {
+        return { view: 'detail', uuid: detailMatch[1] };
+    }
+
+    if (path === '/ppmps') {
+        return { view: 'ppmps', uuid: null };
+    }
+
+    if (path === '/eprocrementppmpapp' || path === '/eprocurementppmpapp' || path === '/dashboard') {
+        return { view: 'dashboard', uuid: null };
+    }
+
+    if (path === '/login') {
+        return { view: 'login', uuid: null };
+    }
+
+    if (path === '/' || path === '/home') {
+        return { view: 'landing', uuid: null };
+    }
+
+    // Defensive fallback: check sessionStorage
+    try {
+        const saved = sessionStorage.getItem(ROUTE_STORAGE_KEY);
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed && typeof parsed.view === 'string') {
+                if (parsed.view === 'landing') {
+                    return { view: 'landing', uuid: null };
+                }
+                if (parsed.view === 'ppmps') {
+                    return { view: 'ppmps', uuid: null };
+                }
+                if ((parsed.view === 'detail' || parsed.view === 'edit') && parsed.uuid) {
+                    return { view: parsed.view, uuid: parsed.uuid };
+                }
+                if (parsed.view === 'dashboard') {
+                    return { view: 'dashboard', uuid: null };
+                }
+                if (parsed.view === 'supplierevaluation') {
+                    return { view: 'supplierevaluation', uuid: null };
+                }
+            }
+        }
+    } catch (_) {}
+
+    return { view: 'landing', uuid: null };
+};
+
+/**
+ * Synchronize browser URL and sessionStorage with current navigation state
+ */
+const syncUrlAndState = (view, uuid = null, replace = false) => {
+    let targetPath = '/';
+    if (view === 'landing') {
+        targetPath = '/';
+    } else if (view === 'dashboard' || view === 'login') {
+        targetPath = DASHBOARD_PATH;
+    } else if (view === 'ppmps') {
+        targetPath = '/ppmps';
+    } else if (view === 'detail' && uuid) {
+        targetPath = `/ppmps/${uuid}`;
+    } else if (view === 'edit' && uuid) {
+        targetPath = `/ppmps/${uuid}/edit`;
+    } else if (view === 'create') {
+        targetPath = '/ppmps/create';
+    } else if (view === 'privacy') {
+        targetPath = '/privacy';
+    } else if (view === 'monitoring') {
+        targetPath = '/monitoringsystem';
+    } else if (view === 'supplierevaluation') {
+        targetPath = '/supplierevaluation';
+    } else {
+        targetPath = '/';
+    }
+
+    if (window.location.pathname !== targetPath) {
+        if (replace) {
+            window.history.replaceState({ view, uuid }, '', targetPath);
+        } else {
+            window.history.pushState({ view, uuid }, '', targetPath);
+        }
+    }
+
+    try {
+        sessionStorage.setItem(ROUTE_STORAGE_KEY, JSON.stringify({ view, uuid }));
+    } catch (_) {}
+};
 
 export function App() {
+    const initialRoute = parseRouteFromLocation();
+
     const [user, setUser] = useState(() => window.App?.user || null);
     const [loading, setLoading] = useState(() => !window.App?.user && window.App !== undefined ? false : false);
     const [authErrorMessage, setAuthErrorMessage] = useState('');
+    const [lastActiveSystem, setLastActiveSystem] = useState(getInitialLastActiveSystem);
     const [currentView, setCurrentView] = useState(() => {
-        if (window.location.pathname === '/privacy') return 'privacy';
-        if (window.location.pathname === '/monitoringsystem' || window.location.pathname.startsWith('/monitoring')) return 'monitoring';
-        if (window.App?.user?.role === 'monitor') return 'monitoring';
-        return 'dashboard';
-    }); // dashboard, ppmps, create, detail, edit, privacy, monitoring
-    const [selectedPpmpUuid, setSelectedPpmpUuid] = useState(null);
+        const route = initialRoute.view;
+        const appUser = window.App?.user;
+        if (appUser) {
+            if (route === 'monitoring') return 'monitoring';
+            if (route === 'supplierevaluation') return 'supplierevaluation';
+            if (canUserAccessSystem(appUser, '/monitoringsystem') && !canUserAccessSystem(appUser, '/eprocrementppmpapp') && !canUserAccessSystem(appUser, '/supplierevaluation')) {
+                return 'monitoring';
+            }
+            if (canUserAccessSystem(appUser, '/supplierevaluation') && !canUserAccessSystem(appUser, '/eprocrementppmpapp') && !canUserAccessSystem(appUser, '/monitoringsystem')) {
+                return 'supplierevaluation';
+            }
+        }
+        return route;
+    }); // dashboard, ppmps, create, detail, edit, privacy, monitoring, supplierevaluation
+    const [selectedPpmpUuid, setSelectedPpmpUuid] = useState(() => initialRoute.uuid || null);
     const [currentPpmp, setCurrentPpmp] = useState(null);
     const [dashboardData, setDashboardData] = useState(null);
     const [selectedSourceOfFund, setSelectedSourceOfFund] = useState(FUND_SOURCES.GENERAL_FUND);
@@ -41,11 +191,27 @@ export function App() {
             const res = await authService.getProfile();
             const profileUser = res.data.user;
             setUser(profileUser);
-            if (profileUser?.role === 'monitor') {
+            const route = parseRouteFromLocation();
+            if (route.view === 'monitoring' && canUserAccessSystem(profileUser, '/monitoringsystem')) {
+                setLastActiveSystem('monitoring');
+                try { sessionStorage.setItem(LAST_ACTIVE_SYSTEM_KEY, 'monitoring'); } catch (_) {}
                 setCurrentView('monitoring');
-                if (window.location.pathname !== '/monitoringsystem') {
-                    window.history.replaceState({}, '', '/monitoringsystem');
-                }
+                syncUrlAndState('monitoring', null, true);
+            } else if (route.view === 'supplierevaluation' && canUserAccessSystem(profileUser, '/supplierevaluation')) {
+                setLastActiveSystem('supplierevaluation');
+                try { sessionStorage.setItem(LAST_ACTIVE_SYSTEM_KEY, 'supplierevaluation'); } catch (_) {}
+                setCurrentView('supplierevaluation');
+                syncUrlAndState('supplierevaluation', null, true);
+            } else if (!canUserAccessSystem(profileUser, '/eprocrementppmpapp') && canUserAccessSystem(profileUser, '/monitoringsystem')) {
+                setLastActiveSystem('monitoring');
+                try { sessionStorage.setItem(LAST_ACTIVE_SYSTEM_KEY, 'monitoring'); } catch (_) {}
+                setCurrentView('monitoring');
+                syncUrlAndState('monitoring', null, true);
+            } else if (!canUserAccessSystem(profileUser, '/eprocrementppmpapp') && canUserAccessSystem(profileUser, '/supplierevaluation')) {
+                setLastActiveSystem('supplierevaluation');
+                try { sessionStorage.setItem(LAST_ACTIVE_SYSTEM_KEY, 'supplierevaluation'); } catch (_) {}
+                setCurrentView('supplierevaluation');
+                syncUrlAndState('supplierevaluation', null, true);
             }
         } catch (e) {
             // Only clear user on actual 401 Unauthorized
@@ -66,7 +232,13 @@ export function App() {
         }
     };
 
-    const loadPpmpDetail = async (uuid) => {
+    const loadPpmpDetail = async (uuid, updateUrl = true) => {
+        if (!uuid) return false;
+        setSelectedPpmpUuid(uuid);
+        setCurrentView('detail');
+        if (updateUrl) {
+            syncUrlAndState('detail', uuid, false);
+        }
         try {
             const res = await ppmpService.getOne(uuid);
             const ppmpObj = res.data.ppmp;
@@ -74,30 +246,29 @@ export function App() {
                 ppmpObj.default_signatories = res.data.default_signatories;
             }
             setCurrentPpmp(ppmpObj);
-            setSelectedPpmpUuid(uuid);
-            setCurrentView('detail');
             return true;
         } catch (e) {
+            console.error('Failed to load PPMP details:', e);
             alert(e.response?.data?.message || 'Failed to load PPMP details.');
+            handleNavigate('ppmps', null, false);
             return false;
         }
     };
 
-    const handleNavigate = (view) => {
-        if (user?.role === 'monitor') {
-            setCurrentView('monitoring');
-            window.history.replaceState({}, '', '/monitoringsystem');
+    const handleNavigate = (view, targetUuid = null, pushHistory = true) => {
+        if (view === 'landing') {
+            syncUrlAndState('landing', null, !pushHistory);
+            setCurrentView('landing');
             return;
         }
         if (view === 'monitoring') {
-            // Strictly restricted to monitor role only
-            if (user?.role !== 'monitor') {
-                setCurrentView('dashboard');
-                window.history.replaceState({}, '', '/');
-                return;
-            }
-            window.history.pushState({}, '', '/monitoringsystem');
+            syncUrlAndState('monitoring', null, !pushHistory);
             setCurrentView('monitoring');
+            return;
+        }
+        if (view === 'supplierevaluation') {
+            syncUrlAndState('supplierevaluation', null, !pushHistory);
+            setCurrentView('supplierevaluation');
             return;
         }
         if (view === 'create') {
@@ -105,9 +276,7 @@ export function App() {
             return;
         }
         if (view === 'users') {
-            if (window.location.pathname !== '/') {
-                window.history.pushState({}, '', '/');
-            }
+            syncUrlAndState('dashboard', null, false);
             setCurrentView('dashboard');
             loadDashboard();
             setTimeout(() => {
@@ -115,31 +284,158 @@ export function App() {
             }, 50);
             return;
         }
-        if (view === 'dashboard' && window.location.pathname !== '/') {
-            window.history.pushState({}, '', '/');
+
+        if (view === 'detail') {
+            const uuid = targetUuid || selectedPpmpUuid;
+            if (uuid) {
+                loadPpmpDetail(uuid, pushHistory);
+                return;
+            }
+            view = 'ppmps';
         }
+
+        if (view === 'edit') {
+            const uuid = targetUuid || selectedPpmpUuid || currentPpmp?.uuid;
+            if (uuid) {
+                setSelectedPpmpUuid(uuid);
+                setCurrentView('edit');
+                syncUrlAndState('edit', uuid, !pushHistory);
+                if (!currentPpmp || currentPpmp.uuid !== uuid) {
+                    loadPpmpDetail(uuid, false);
+                }
+                return;
+            }
+            view = 'ppmps';
+        }
+
+        // Standard views: 'dashboard', 'ppmps'
+        syncUrlAndState(view, null, !pushHistory);
         setCurrentView(view);
-        if (view === 'dashboard') loadDashboard();
+        if (view === 'dashboard') {
+            loadDashboard();
+        }
     };
 
     const handleSelectSourceOfFund = (fund) => {
         setSelectedSourceOfFund(fund);
         setIsSourceOfFundModalOpen(false);
+        syncUrlAndState('create', null, false);
         setCurrentView('create');
     };
+
+    const handleReturnToDashboard = () => {
+        if (!user) {
+            syncUrlAndState('dashboard', null, false);
+            setCurrentView('login');
+            return;
+        }
+
+        const hasPpmp = canUserAccessSystem(user, '/eprocrementppmpapp');
+        const hasMonitoring = canUserAccessSystem(user, '/monitoringsystem');
+        const hasSupplierEval = canUserAccessSystem(user, '/supplierevaluation');
+
+        if (lastActiveSystem === 'supplierevaluation' && hasSupplierEval) {
+            syncUrlAndState('supplierevaluation', null, false);
+            setCurrentView('supplierevaluation');
+            return;
+        }
+
+        if (lastActiveSystem === 'monitoring' && hasMonitoring) {
+            syncUrlAndState('monitoring', null, false);
+            setCurrentView('monitoring');
+            return;
+        }
+
+        if (lastActiveSystem === 'dashboard' && hasPpmp) {
+            handleNavigate('dashboard', null, false);
+            return;
+        }
+
+        // Fallbacks based on access privileges
+        if (hasPpmp) {
+            handleNavigate('dashboard', null, false);
+        } else if (hasSupplierEval) {
+            syncUrlAndState('supplierevaluation', null, false);
+            setCurrentView('supplierevaluation');
+        } else if (hasMonitoring) {
+            syncUrlAndState('monitoring', null, false);
+            setCurrentView('monitoring');
+        } else {
+            handleNavigate('dashboard', null, false);
+        }
+    };
+
+    // Track last active system to ensure returning from portal home routes to user's dashboard and system URL
+    useEffect(() => {
+        if (['dashboard', 'ppmps', 'create', 'edit', 'detail'].includes(currentView)) {
+            setLastActiveSystem('dashboard');
+            try {
+                sessionStorage.setItem(LAST_ACTIVE_SYSTEM_KEY, 'dashboard');
+            } catch (_) {}
+        } else if (currentView === 'monitoring') {
+            setLastActiveSystem('monitoring');
+            try {
+                sessionStorage.setItem(LAST_ACTIVE_SYSTEM_KEY, 'monitoring');
+            } catch (_) {}
+        } else if (currentView === 'supplierevaluation') {
+            setLastActiveSystem('supplierevaluation');
+            try {
+                sessionStorage.setItem(LAST_ACTIVE_SYSTEM_KEY, 'supplierevaluation');
+            } catch (_) {}
+        }
+    }, [currentView]);
 
     const userRef = React.useRef(user);
     useEffect(() => {
         userRef.current = user;
     }, [user]);
 
+    // Restore PPMP details or list state on initial load / refresh
+    useEffect(() => {
+        if (!user) return;
+        if ((currentView === 'detail' || currentView === 'edit') && selectedPpmpUuid) {
+            syncUrlAndState(currentView, selectedPpmpUuid, true);
+            if (!currentPpmp || currentPpmp.uuid !== selectedPpmpUuid) {
+                loadPpmpDetail(selectedPpmpUuid, false);
+            }
+        } else if (currentView === 'ppmps') {
+            syncUrlAndState('ppmps', null, true);
+        } else if (currentView === 'create') {
+            syncUrlAndState('create', null, true);
+        } else if (currentView === 'dashboard') {
+            syncUrlAndState('dashboard', null, true);
+        } else if (currentView === 'monitoring') {
+            syncUrlAndState('monitoring', null, true);
+        } else if (currentView === 'supplierevaluation') {
+            syncUrlAndState('supplierevaluation', null, true);
+        } else if (currentView === 'landing') {
+            syncUrlAndState('landing', null, true);
+        }
+    }, [user?.id, currentView]);
+
     useEffect(() => {
         initDevToolsGuard();
         checkAuth();
 
         const handleUnauthorized = (e) => {
+            const currentRoute = parseRouteFromLocation();
             setUser(null);
-            setCurrentView('dashboard');
+            if (currentRoute.view === 'supplierevaluation') {
+                syncUrlAndState('supplierevaluation', null, true);
+                setCurrentView('supplierevaluation');
+            } else if (currentRoute.view === 'monitoring') {
+                syncUrlAndState('monitoring', null, true);
+                setCurrentView('monitoring');
+            } else if (currentRoute.view === 'privacy') {
+                syncUrlAndState('privacy', null, true);
+                setCurrentView('privacy');
+            } else if (currentRoute.view === 'landing') {
+                syncUrlAndState('landing', null, true);
+                setCurrentView('landing');
+            } else {
+                syncUrlAndState('dashboard', null, true);
+                setCurrentView('dashboard');
+            }
             if (e?.detail?.reason) {
                 setAuthErrorMessage(e.detail.reason);
             }
@@ -147,34 +443,69 @@ export function App() {
         window.addEventListener('auth:unauthorized', handleUnauthorized);
 
         const handleDevToolsUnauthorized = (e) => {
+            const currentRoute = parseRouteFromLocation();
             if (e?.detail?.message) {
                 setAuthErrorMessage(e.detail.message);
             }
             setUser(null);
-            setCurrentView('dashboard');
+            if (currentRoute.view === 'supplierevaluation') {
+                syncUrlAndState('supplierevaluation', null, true);
+                setCurrentView('supplierevaluation');
+            } else if (currentRoute.view === 'monitoring') {
+                syncUrlAndState('monitoring', null, true);
+                setCurrentView('monitoring');
+            } else if (currentRoute.view === 'privacy') {
+                syncUrlAndState('privacy', null, true);
+                setCurrentView('privacy');
+            } else if (currentRoute.view === 'landing') {
+                syncUrlAndState('landing', null, true);
+                setCurrentView('landing');
+            } else {
+                syncUrlAndState('dashboard', null, true);
+                setCurrentView('dashboard');
+            }
         };
         window.addEventListener('devtools:unauthorized', handleDevToolsUnauthorized);
 
         const handlePopState = () => {
             const currentUser = userRef.current;
-            if (window.location.pathname === '/privacy') {
+            const route = parseRouteFromLocation();
+
+            if (route.view === 'landing') {
+                setCurrentView('landing');
+                return;
+            }
+
+            if (route.view === 'privacy') {
                 setCurrentView('privacy');
-            } else if (window.location.pathname === '/monitoringsystem' || window.location.pathname.startsWith('/monitoring')) {
-                if (currentUser?.role === 'monitor') {
-                    setCurrentView('monitoring');
-                } else {
-                    // Non-monitor roles cannot access monitoring
-                    window.history.replaceState({}, '', '/');
-                    setCurrentView('dashboard');
+                return;
+            }
+
+            if (route.view === 'monitoring') {
+                setCurrentView('monitoring');
+                return;
+            }
+
+            if (route.view === 'supplierevaluation') {
+                setCurrentView('supplierevaluation');
+                return;
+            }
+
+            setCurrentView(route.view);
+            if (route.uuid) {
+                setSelectedPpmpUuid(route.uuid);
+                if (!currentPpmp || currentPpmp.uuid !== route.uuid) {
+                    loadPpmpDetail(route.uuid, false);
                 }
             } else {
-                if (currentUser?.role === 'monitor') {
-                    setCurrentView('monitoring');
-                    window.history.replaceState({}, '', '/monitoringsystem');
-                } else {
-                    setCurrentView('dashboard');
+                if (route.view !== 'detail' && route.view !== 'edit') {
+                    setSelectedPpmpUuid(null);
                 }
             }
+
+            try {
+                sessionStorage.setItem(ROUTE_STORAGE_KEY, JSON.stringify(route));
+            } catch (_) {}
         };
         window.addEventListener('popstate', handlePopState);
 
@@ -187,16 +518,9 @@ export function App() {
 
     useEffect(() => {
         if (!user) return;
-        if (user.role === 'monitor') {
+        if (user.role === 'monitor' && currentView === 'dashboard' && !canUserAccessSystem(user, '/eprocrementppmpapp')) {
             setCurrentView('monitoring');
-            if (window.location.pathname !== '/monitoringsystem') {
-                window.history.replaceState({}, '', '/monitoringsystem');
-            }
-        } else {
-            if (window.location.pathname === '/monitoringsystem') {
-                window.history.replaceState({}, '', '/');
-                setCurrentView('dashboard');
-            }
+            syncUrlAndState('monitoring', null, true);
         }
     }, [user?.id, user?.role]);
 
@@ -213,7 +537,7 @@ export function App() {
                 loadDashboard();
             } else if (currentView === 'detail' && selectedPpmpUuid) {
                 if (!e?.detail?.ppmpUuid || e.detail.ppmpUuid === selectedPpmpUuid) {
-                    loadPpmpDetail(selectedPpmpUuid);
+                    loadPpmpDetail(selectedPpmpUuid, false);
                 }
             }
         };
@@ -222,6 +546,7 @@ export function App() {
     }, [user, currentView, selectedPpmpUuid]);
 
     const handleLogout = async () => {
+        const activeSystem = currentView;
         try {
             await authService.logout();
         } catch (e) {
@@ -231,10 +556,25 @@ export function App() {
             setCurrentPpmp(null);
             setSelectedPpmpUuid(null);
             if (window.App) window.App.user = null;
-            if (window.location.pathname === '/monitoringsystem') {
-                window.history.replaceState({}, '', '/');
+
+            // Retain the respective system URL so the user remains on their current system after logout
+            if (activeSystem === 'supplierevaluation') {
+                syncUrlAndState('supplierevaluation', null, true);
+                setCurrentView('supplierevaluation');
+            } else if (activeSystem === 'monitoring') {
+                syncUrlAndState('monitoring', null, true);
+                setCurrentView('monitoring');
+            } else if (activeSystem === 'privacy') {
+                syncUrlAndState('privacy', null, true);
+                setCurrentView('privacy');
+            } else if (activeSystem === 'landing') {
+                syncUrlAndState('landing', null, true);
+                setCurrentView('landing');
+            } else {
+                // E-Procurement PPMP & APP System views (dashboard, ppmps, detail, create, edit)
+                syncUrlAndState('dashboard', null, true);
+                setCurrentView('dashboard');
             }
-            setCurrentView('dashboard');
         }
     };
 
@@ -247,14 +587,100 @@ export function App() {
         );
     }
 
+    if (currentView === 'landing') {
+        return (
+            <LandingPage
+                user={user}
+                onLaunchDashboard={handleReturnToDashboard}
+                onLaunchEproc={() => {
+                    if (user) {
+                        handleNavigate('dashboard');
+                    } else {
+                        syncUrlAndState('dashboard', null, false);
+                        setCurrentView('login');
+                    }
+                }}
+                onLaunchMonitoring={() => {
+                    if (user) {
+                        handleNavigate('monitoring');
+                    } else {
+                        syncUrlAndState('monitoring', null, false);
+                        setCurrentView('login');
+                    }
+                }}
+                onOpenLogin={() => {
+                    syncUrlAndState('dashboard', null, false);
+                    setCurrentView('login');
+                }}
+                onOpenPrivacy={() => {
+                    syncUrlAndState('privacy', null, false);
+                    setCurrentView('privacy');
+                }}
+                onLaunchSystem={(sys) => {
+                    const cleanPath = (sys?.link_url || '').replace(/\/+$/, '') || '/';
+                    if (cleanPath === '/monitoringsystem' || cleanPath.startsWith('/monitoring')) {
+                        if (user) {
+                            handleNavigate('monitoring');
+                        } else {
+                            syncUrlAndState('monitoring', null, false);
+                            setCurrentView('login');
+                        }
+                        return;
+                    }
+                    if (cleanPath === '/supplierevaluation' || cleanPath.startsWith('/supplier-evaluation')) {
+                        if (user) {
+                            handleNavigate('supplierevaluation');
+                        } else {
+                            syncUrlAndState('supplierevaluation', null, false);
+                            setCurrentView('login');
+                        }
+                        return;
+                    }
+                    if (cleanPath === '/privacy') {
+                        syncUrlAndState('privacy', null, false);
+                        setCurrentView('privacy');
+                        return;
+                    }
+                    if (cleanPath === '/ppmps') {
+                        if (user) {
+                            handleNavigate('ppmps');
+                        } else {
+                            syncUrlAndState('ppmps', null, false);
+                            setCurrentView('login');
+                        }
+                        return;
+                    }
+                    if (cleanPath === '/ppmps/create') {
+                        if (user) {
+                            handleNavigate('create');
+                        } else {
+                            syncUrlAndState('create', null, false);
+                            setCurrentView('login');
+                        }
+                        return;
+                    }
+                    if (user) {
+                        handleNavigate('dashboard');
+                    } else {
+                        syncUrlAndState('dashboard', null, false);
+                        setCurrentView('login');
+                    }
+                }}
+            />
+        );
+    }
+
     if (currentView === 'privacy') {
         return (
             <PrivacyPolicyPage
                 onBack={() => {
-                    if (window.location.pathname === '/privacy') {
-                        window.history.pushState({}, '', '/');
+                    if (user) {
+                        syncUrlAndState('dashboard', null, false);
+                        setCurrentView('dashboard');
+                    } else {
+                        syncUrlAndState('landing', null, false);
+                        setCurrentView('landing');
                     }
-                    setCurrentView('dashboard');
                 }}
             />
         );
@@ -263,48 +689,136 @@ export function App() {
     if (!user) {
         return (
             <LoginPage
+                targetSystem={currentView}
                 initialError={authErrorMessage}
+                onBackToLanding={() => {
+                    syncUrlAndState('landing', null, false);
+                    setCurrentView('landing');
+                }}
                 onLoginSuccess={(loggedInUser) => {
                     setAuthErrorMessage('');
                     setUser(loggedInUser);
                     if (window.App) {
                         window.App.user = loggedInUser;
                     }
-                    if (loggedInUser?.role === 'monitor') {
-                        window.history.pushState({}, '', '/monitoringsystem');
+
+                    const hasPpmp = canUserAccessSystem(loggedInUser, '/eprocrementppmpapp');
+                    const hasMonitoring = canUserAccessSystem(loggedInUser, '/monitoringsystem');
+                    const hasSupplierEval = canUserAccessSystem(loggedInUser, '/supplierevaluation');
+                    const route = parseRouteFromLocation();
+
+                    if (route.view === 'monitoring') {
+                        setLastActiveSystem('monitoring');
+                        try { sessionStorage.setItem(LAST_ACTIVE_SYSTEM_KEY, 'monitoring'); } catch (_) {}
+                        syncUrlAndState('monitoring', null, false);
+                        setCurrentView('monitoring');
+                        return;
+                    }
+                    if (route.view === 'supplierevaluation') {
+                        setLastActiveSystem('supplierevaluation');
+                        try { sessionStorage.setItem(LAST_ACTIVE_SYSTEM_KEY, 'supplierevaluation'); } catch (_) {}
+                        syncUrlAndState('supplierevaluation', null, false);
+                        setCurrentView('supplierevaluation');
+                        return;
+                    }
+
+                    if (hasPpmp) {
+                        setLastActiveSystem('dashboard');
+                        try { sessionStorage.setItem(LAST_ACTIVE_SYSTEM_KEY, 'dashboard'); } catch (_) {}
+                        if (route.view && route.view !== 'monitoring' && route.view !== 'supplierevaluation' && route.view !== 'landing') {
+                            if ((route.view === 'detail' || route.view === 'edit') && route.uuid) {
+                                setSelectedPpmpUuid(route.uuid);
+                                setCurrentView(route.view);
+                                loadPpmpDetail(route.uuid, false);
+                                return;
+                            }
+                            handleNavigate(route.view, null, false);
+                        } else {
+                            handleNavigate('dashboard', null, false);
+                        }
+                    } else if (hasSupplierEval) {
+                        setLastActiveSystem('supplierevaluation');
+                        try { sessionStorage.setItem(LAST_ACTIVE_SYSTEM_KEY, 'supplierevaluation'); } catch (_) {}
+                        syncUrlAndState('supplierevaluation', null, false);
+                        setCurrentView('supplierevaluation');
+                    } else if (hasMonitoring) {
+                        setLastActiveSystem('monitoring');
+                        try { sessionStorage.setItem(LAST_ACTIVE_SYSTEM_KEY, 'monitoring'); } catch (_) {}
+                        syncUrlAndState('monitoring', null, false);
                         setCurrentView('monitoring');
                     } else {
-                        if (window.location.pathname === '/monitoringsystem') {
-                            window.history.replaceState({}, '', '/');
-                        }
-                        setCurrentView('dashboard');
+                        setLastActiveSystem('dashboard');
+                        try { sessionStorage.setItem(LAST_ACTIVE_SYSTEM_KEY, 'dashboard'); } catch (_) {}
+                        handleNavigate('dashboard', null, false);
                     }
                 }}
                 onOpenPrivacy={() => {
-                    window.history.pushState({}, '', '/privacy');
+                    syncUrlAndState('privacy', null, false);
                     setCurrentView('privacy');
                 }}
             />
         );
     }
 
-    // Monitor role ONLY accesses the Monitoring Dashboard
-    if (user?.role === 'monitor') {
+    // Supplier Evaluation System Access Check
+    if (currentView === 'supplierevaluation') {
+        if (!canUserAccessSystem(user, '/supplierevaluation')) {
+            return (
+                <UnauthorizedSystemAccessView
+                    user={user}
+                    attemptedSystem="/supplierevaluation"
+                    onNavigate={handleNavigate}
+                    onLogout={handleLogout}
+                />
+            );
+        }
+
+        return (
+            <SupplierEvaluationDashboard
+                user={user}
+                onBackToPpmpSystem={canUserAccessSystem(user, '/eprocrementppmpapp') ? () => handleNavigate('dashboard') : null}
+                onNavigateToPortal={() => handleNavigate('landing')}
+                onLogout={handleLogout}
+                onUserUpdate={(updatedUser) => setUser(updatedUser)}
+            />
+        );
+    }
+
+    // Monitoring System Access Check
+    if (currentView === 'monitoring') {
+        if (!canUserAccessSystem(user, '/monitoringsystem')) {
+            return (
+                <UnauthorizedSystemAccessView
+                    user={user}
+                    attemptedSystem="/monitoringsystem"
+                    onNavigate={handleNavigate}
+                    onLogout={handleLogout}
+                />
+            );
+        }
+
         return (
             <MonitoringDashboard
                 user={user}
+                onBackToPpmpSystem={canUserAccessSystem(user, '/eprocrementppmpapp') ? () => handleNavigate('dashboard') : null}
+                onNavigateToPortal={() => handleNavigate('landing')}
                 onLogout={handleLogout}
             />
         );
     }
 
-    // Any other role (enduser, etc.) CANNOT access monitoring
-    if (currentView === 'monitoring') {
-        if (window.location.pathname === '/monitoringsystem') {
-            window.history.replaceState({}, '', '/');
+    // PPMP & APP System Access Check
+    if (['dashboard', 'ppmps', 'create', 'edit', 'detail'].includes(currentView)) {
+        if (!canUserAccessSystem(user, '/eprocrementppmpapp')) {
+            return (
+                <UnauthorizedSystemAccessView
+                    user={user}
+                    attemptedSystem="/eprocrementppmpapp"
+                    onNavigate={handleNavigate}
+                    onLogout={handleLogout}
+                />
+            );
         }
-        setCurrentView('dashboard');
-        return null;
     }
 
     return (
@@ -312,7 +826,7 @@ export function App() {
             user={user}
             activeTab={currentView}
             onNavigate={handleNavigate}
-            onSelectPpmp={(uuid) => loadPpmpDetail(uuid)}
+            onSelectPpmp={(uuid) => loadPpmpDetail(uuid, true)}
             onLogout={handleLogout}
             onUserUpdate={(updatedUser) => setUser(updatedUser)}
         >
@@ -320,7 +834,7 @@ export function App() {
                 <Dashboard
                     user={user}
                     data={dashboardData}
-                    onSelectPpmp={(uuid) => loadPpmpDetail(uuid)}
+                    onSelectPpmp={(uuid) => loadPpmpDetail(uuid, true)}
                     onNavigate={handleNavigate}
                     onReload={loadDashboard}
                 />
@@ -329,7 +843,7 @@ export function App() {
             {currentView === 'ppmps' && (
                 <PPMPListPage
                     user={user}
-                    onSelectPpmp={(uuid) => loadPpmpDetail(uuid)}
+                    onSelectPpmp={(uuid) => loadPpmpDetail(uuid, true)}
                     onNavigate={handleNavigate}
                 />
             )}
@@ -338,34 +852,50 @@ export function App() {
                 <PPMPFormPage
                     user={user}
                     initialSourceOfFund={selectedSourceOfFund}
-                    onBack={() => setCurrentView('dashboard')}
+                    onBack={() => handleNavigate('dashboard')}
                     onSaved={(newPpmp) => {
-                        loadPpmpDetail(newPpmp.uuid);
+                        loadPpmpDetail(newPpmp.uuid, true);
                         window.dispatchEvent(new CustomEvent('notifications:reload'));
                     }}
                 />
             )}
 
-            {currentView === 'edit' && currentPpmp && (
-                <PPMPFormPage
-                    user={user}
-                    initialPpmp={currentPpmp}
-                    onBack={() => setCurrentView('detail')}
-                    onSaved={(updated) => {
-                        loadPpmpDetail(updated.uuid);
-                        window.dispatchEvent(new CustomEvent('notifications:reload'));
-                    }}
-                />
+            {currentView === 'edit' && (
+                currentPpmp ? (
+                    <PPMPFormPage
+                        user={user}
+                        initialPpmp={currentPpmp}
+                        onBack={() => handleNavigate('detail', currentPpmp.uuid)}
+                        onSaved={(updated) => {
+                            loadPpmpDetail(updated.uuid, true);
+                            window.dispatchEvent(new CustomEvent('notifications:reload'));
+                        }}
+                    />
+                ) : (
+                    <div className="flex flex-col items-center justify-center min-h-[450px] py-20 text-slate-500">
+                        <Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-4" />
+                        <p className="text-sm font-semibold text-slate-700">Loading PPMP Editor...</p>
+                        <p className="text-xs text-slate-400 mt-1">Preparing form specifications</p>
+                    </div>
+                )
             )}
 
-            {currentView === 'detail' && currentPpmp && (
-                <PPMPDetailPage
-                    ppmp={currentPpmp}
-                    user={user}
-                    onBack={() => setCurrentView('ppmps')}
-                    onEdit={() => setCurrentView('edit')}
-                    onReload={(targetUuid) => loadPpmpDetail(targetUuid || currentPpmp.uuid)}
-                />
+            {currentView === 'detail' && (
+                currentPpmp ? (
+                    <PPMPDetailPage
+                        ppmp={currentPpmp}
+                        user={user}
+                        onBack={() => handleNavigate('ppmps')}
+                        onEdit={() => handleNavigate('edit', currentPpmp.uuid)}
+                        onReload={(targetUuid) => loadPpmpDetail(targetUuid || currentPpmp.uuid, false)}
+                    />
+                ) : (
+                    <div className="flex flex-col items-center justify-center min-h-[450px] py-20 text-slate-500">
+                        <Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-4" />
+                        <p className="text-sm font-semibold text-slate-700">Loading PPMP Details...</p>
+                        <p className="text-xs text-slate-400 mt-1">Retrieving procurement package and review status</p>
+                    </div>
+                )
             )}
 
             <SourceOfFundModal
@@ -381,3 +911,4 @@ const rootElement = document.getElementById('root');
 if (rootElement) {
     createRoot(rootElement).render(<App />);
 }
+

@@ -26,131 +26,155 @@ class DashboardController extends Controller
         $metrics = [];
         $recentPpmps = [];
 
+        $commonRecentRelations = [
+            'office',
+            'creator',
+            'signatures',
+            'attachments',
+            'monitoringProjects',
+        ];
+
         if ($user->isEndUser()) {
             $base = Ppmp::where('created_by', $user->id)->whereDoesntHave('children');
+            $byStatus = (clone $base)->selectRaw('status, count(*) as cnt')->groupBy('status')->pluck('cnt', 'status');
+            $c = fn (string $s): int => (int) ($byStatus[$s] ?? 0);
 
             $metrics = [
-                'draft' => (clone $base)->where('status', 'DRAFT')->count(),
-                'head_pending' => (clone $base)->where('status', 'HEAD_PENDING')->count(),
-                'head_returned' => (clone $base)->where('status', 'HEAD_RETURNED')->count(),
-                'ready_for_review' => (clone $base)->where('status', 'HEAD_APPROVED')->count(),
-                'in_review' => (clone $base)->whereIn('status', ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW'])->count(),
-                'returned_by_reviewer' => (clone $base)->whereIn('status', ['BUDGET_OFFICER_RETURNED', 'PACCO_RETURNED', 'OPPMO_RETURNED', 'TWG_RETURNED'])->count(),
-                'ready_to_print' => (clone $base)->where('status', 'READY_TO_PRINT')->count(),
-                'total' => (clone $base)->count(),
+                'draft' => $c('DRAFT'),
+                'head_pending' => $c('HEAD_PENDING'),
+                'head_returned' => $c('HEAD_RETURNED'),
+                'ready_for_review' => $c('HEAD_APPROVED'),
+                'in_review' => $c('BUDGET_OFFICER_REVIEW') + $c('PACCO_REVIEW') + $c('OPPMO_REVIEW') + $c('TWG_REVIEW'),
+                'returned_by_reviewer' => $c('BUDGET_OFFICER_RETURNED') + $c('PACCO_RETURNED') + $c('OPPMO_RETURNED') + $c('TWG_RETURNED'),
+                'ready_to_print' => $c('READY_TO_PRINT'),
+                'total' => (int) $byStatus->sum(),
             ];
 
             $endUserRecent = clone $base;
-            $recentPpmps = $endUserRecent->with(['office', 'signatures', 'items'])->latest('updated_at')->take(100)->get();
+            $recentPpmps = $endUserRecent->with(array_merge($commonRecentRelations, ['items']))->latest('updated_at')->take(100)->get();
         } elseif ($user->isHead()) {
             $base = Ppmp::where('office_id', $user->office_id)->whereDoesntHave('children');
+            $byStatus = (clone $base)->selectRaw('status, count(*) as cnt')->groupBy('status')->pluck('cnt', 'status');
+            $c = fn (string $s): int => (int) ($byStatus[$s] ?? 0);
 
             $metrics = [
-                'pending_endorsement' => (clone $base)->where('status', 'HEAD_PENDING')->count(),
-                'endorsed_approved' => (clone $base)->where('status', 'READY_TO_PRINT')->count(),
-                'returned' => (clone $base)->where('status', 'HEAD_RETURNED')->count(),
-                'total_office' => (clone $base)->count(),
+                'pending_endorsement' => $c('HEAD_PENDING'),
+                'endorsed_approved' => $c('READY_TO_PRINT'),
+                'returned' => $c('HEAD_RETURNED'),
+                'total_office' => (int) $byStatus->sum(),
             ];
 
             $headRecent = clone $base;
-            $recentPpmps = $headRecent->with(['creator', 'signatures'])->latest('updated_at')->take(100)->get();
+            $recentPpmps = $headRecent->with($commonRecentRelations)->latest('updated_at')->take(100)->get();
         } elseif ($user->isBudgetOfficer()) {
             $base = Ppmp::whereDoesntHave('children');
+            $byStatus = (clone $base)->selectRaw('status, count(*) as cnt')->groupBy('status')->pluck('cnt', 'status');
+            $c = fn (string $s): int => (int) ($byStatus[$s] ?? 0);
 
             $metrics = [
-                'pending_review' => (clone $base)->where('status', 'BUDGET_OFFICER_REVIEW')->count(),
-                'returned' => (clone $base)->where('status', 'BUDGET_OFFICER_RETURNED')->count(),
-                'approved' => (clone $base)->whereIn('status', ['OPPMO_REVIEW', 'TWG_REVIEW', 'HEAD_PENDING', 'READY_TO_PRINT'])->count(),
+                'pending_review' => $c('BUDGET_OFFICER_REVIEW'),
+                'returned' => $c('BUDGET_OFFICER_RETURNED'),
+                'approved' => $c('OPPMO_REVIEW') + $c('TWG_REVIEW') + $c('HEAD_PENDING') + $c('READY_TO_PRINT'),
             ];
 
             $budgetRecent = clone $base;
             $recentPpmps = $budgetRecent->whereIn('status', ['BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'OPPMO_REVIEW', 'TWG_REVIEW', 'HEAD_PENDING', 'READY_TO_PRINT'])
-                ->with(['office', 'creator', 'signatures'])
+                ->with($commonRecentRelations)
                 ->latest('updated_at')
                 ->take(100)
                 ->get();
         } elseif ($user->isOppmo()) {
             $base = Ppmp::whereDoesntHave('children');
+            $byStatus = (clone $base)->selectRaw('status, count(*) as cnt')->groupBy('status')->pluck('cnt', 'status');
+            $c = fn (string $s): int => (int) ($byStatus[$s] ?? 0);
 
             $metrics = [
-                'pending_review' => (clone $base)->where('status', 'OPPMO_REVIEW')->count(),
-                'returned' => (clone $base)->where('status', 'OPPMO_RETURNED')->count(),
-                'approved' => (clone $base)->whereIn('status', ['TWG_REVIEW', 'HEAD_PENDING', 'READY_TO_PRINT'])->count(),
+                'pending_review' => $c('OPPMO_REVIEW'),
+                'returned' => $c('OPPMO_RETURNED'),
+                'approved' => $c('TWG_REVIEW') + $c('HEAD_PENDING') + $c('READY_TO_PRINT'),
             ];
 
             $oppmoRecent = clone $base;
             $recentPpmps = $oppmoRecent->whereIn('status', ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'TWG_REVIEW', 'HEAD_PENDING', 'READY_TO_PRINT'])
-                ->with(['office', 'creator', 'signatures'])
+                ->with($commonRecentRelations)
                 ->latest('updated_at')
                 ->take(100)
                 ->get();
         } elseif ($user->isTwg()) {
             $base = Ppmp::whereDoesntHave('children');
+            $byStatus = (clone $base)->selectRaw('status, count(*) as cnt')->groupBy('status')->pluck('cnt', 'status');
+            $c = fn (string $s): int => (int) ($byStatus[$s] ?? 0);
 
             $metrics = [
-                'pending_review' => (clone $base)->where('status', 'TWG_REVIEW')->count(),
-                'returned' => (clone $base)->where('status', 'TWG_RETURNED')->count(),
-                'ready_to_print' => (clone $base)->where('status', 'READY_TO_PRINT')->count(),
+                'pending_review' => $c('TWG_REVIEW'),
+                'returned' => $c('TWG_RETURNED'),
+                'ready_to_print' => $c('READY_TO_PRINT'),
             ];
 
             $twgRecent = clone $base;
             $recentPpmps = $twgRecent->whereIn('status', ['TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'])
-                ->with(['office', 'creator', 'signatures'])
+                ->with($commonRecentRelations)
                 ->latest('updated_at')
                 ->take(100)
                 ->get();
         } elseif ($user->isPacco()) {
             $base = Ppmp::whereDoesntHave('children');
+            $byStatus = (clone $base)->selectRaw('status, count(*) as cnt')->groupBy('status')->pluck('cnt', 'status');
+            $c = fn (string $s): int => (int) ($byStatus[$s] ?? 0);
 
             $metrics = [
-                'pending_review' => (clone $base)->where('status', 'PACCO_REVIEW')->count(),
-                'returned' => (clone $base)->where('status', 'PACCO_RETURNED')->count(),
-                'approved' => (clone $base)->whereIn('status', ['OPPMO_REVIEW', 'TWG_REVIEW', 'HEAD_PENDING', 'READY_TO_PRINT'])->count(),
-                'ready_to_print' => (clone $base)->where('status', 'READY_TO_PRINT')->count(),
-                'total_review' => (clone $base)->whereNotIn('status', ['DRAFT'])->count(),
+                'pending_review' => $c('PACCO_REVIEW'),
+                'returned' => $c('PACCO_RETURNED'),
+                'approved' => $c('OPPMO_REVIEW') + $c('TWG_REVIEW') + $c('HEAD_PENDING') + $c('READY_TO_PRINT'),
+                'ready_to_print' => $c('READY_TO_PRINT'),
+                'total_review' => (int) $byStatus->except(['DRAFT'])->sum(),
             ];
 
             $paccoRecent = clone $base;
             $recentPpmps = $paccoRecent->where(function ($q) {
                 $q->whereIn('status', ['PACCO_REVIEW', 'PACCO_RETURNED'])
-                    ->orWhereNotNull('pacco_approved_at')
+                    ->orWhereHas('milestones', fn($mq) => $mq->whereNotNull('pacco_approved_at'))
                     ->orWhere('source_of_fund', 'like', '%trust%');
             })
-                ->with(['office', 'creator', 'signatures'])
+                ->with($commonRecentRelations)
                 ->latest('updated_at')
                 ->take(100)
                 ->get();
         } elseif ($user->isSuperAdmin()) {
             // Super Admin: Full Executive Overview & Analytics
             $base = Ppmp::whereDoesntHave('children');
+            $statusRows = (clone $base)->toBase()->selectRaw('status, count(*) as cnt, sum(total_budget) as budget_sum')->groupBy('status')->get()->keyBy('status');
+            $c = fn (string $s): int => (int) ($statusRows[$s]->cnt ?? 0);
 
             $metrics = [
-                'total_ppmps' => (clone $base)->count(),
-                'total_budget' => (float) ((clone $base)->sum('total_budget') ?? 0),
-                'draft' => (clone $base)->where('status', 'DRAFT')->count(),
-                'head_pending' => (clone $base)->where('status', 'HEAD_PENDING')->count(),
-                'in_review' => (clone $base)->whereIn('status', ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW'])->count(),
-                'ready_to_print' => (clone $base)->where('status', 'READY_TO_PRINT')->count(),
-                'pending_amendments' => Ppmp::where('amendment_status', 'PENDING_APPROVAL')->count(),
+                'total_ppmps' => (int) $statusRows->sum('cnt'),
+                'total_budget' => (float) $statusRows->sum('budget_sum'),
+                'draft' => $c('DRAFT'),
+                'head_pending' => $c('HEAD_PENDING'),
+                'in_review' => $c('BUDGET_OFFICER_REVIEW') + $c('PACCO_REVIEW') + $c('OPPMO_REVIEW') + $c('TWG_REVIEW'),
+                'ready_to_print' => $c('READY_TO_PRINT'),
+                'pending_amendments' => Ppmp::whereHas('amendment', fn($aq) => $aq->where('amendment_status', 'PENDING_APPROVAL'))->count(),
             ];
 
             $superRecent = clone $base;
-            $recentPpmps = $superRecent->with(['office', 'creator', 'signatures'])->latest('updated_at')->take(100)->get();
+            $recentPpmps = $superRecent->with($commonRecentRelations)->latest('updated_at')->take(100)->get();
 
             $adminAnalytics = $this->buildAdminAnalytics($base, $metrics);
         } else {
             // Admin role: Specialized management for Users, Amended/Supplemental, System Logs, PPMP List
             $base = Ppmp::whereDoesntHave('children');
+            $statusRows = (clone $base)->toBase()->selectRaw('status, count(*) as cnt, sum(total_budget) as budget_sum')->groupBy('status')->get()->keyBy('status');
+            $c = fn (string $s): int => (int) ($statusRows[$s]->cnt ?? 0);
 
             $metrics = [
-                'total_ppmps' => (clone $base)->count(),
-                'total_budget' => (float) ((clone $base)->sum('total_budget') ?? 0),
-                'draft' => (clone $base)->where('status', 'DRAFT')->count(),
-                'head_pending' => (clone $base)->where('status', 'HEAD_PENDING')->count(),
-                'in_review' => (clone $base)->whereIn('status', ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW'])->count(),
-                'ready_to_print' => (clone $base)->where('status', 'READY_TO_PRINT')->count(),
-                'pending_amendments' => Ppmp::where('amendment_status', 'PENDING_APPROVAL')->count(),
-                'total_amendments' => Ppmp::whereNotNull('amendment_status')->count(),
+                'total_ppmps' => (int) $statusRows->sum('cnt'),
+                'total_budget' => (float) $statusRows->sum('budget_sum'),
+                'draft' => $c('DRAFT'),
+                'head_pending' => $c('HEAD_PENDING'),
+                'in_review' => $c('BUDGET_OFFICER_REVIEW') + $c('PACCO_REVIEW') + $c('OPPMO_REVIEW') + $c('TWG_REVIEW'),
+                'ready_to_print' => $c('READY_TO_PRINT'),
+                'pending_amendments' => Ppmp::whereHas('amendment', fn($aq) => $aq->where('amendment_status', 'PENDING_APPROVAL'))->count(),
+                'total_amendments' => Ppmp::whereHas('amendment', fn($aq) => $aq->whereNotNull('amendment_status'))->count(),
                 'total_users' => User::count(),
                 'pending_users' => User::where('is_active', false)->where('approval_status', '!=', 'rejected')->count(),
                 'active_users' => User::where('is_active', true)->where('approval_status', '!=', 'rejected')->count(),
@@ -158,10 +182,10 @@ class DashboardController extends Controller
                 'total_logs' => AuditLog::count(),
             ];
 
-            $recentPpmps = (clone $base)->with(['office', 'creator', 'signatures'])->latest('updated_at')->take(100)->get();
+            $recentPpmps = (clone $base)->with($commonRecentRelations)->latest('updated_at')->take(100)->get();
 
-            $pendingAmendments = Ppmp::with(['office', 'creator', 'attachments'])
-                ->where('amendment_status', 'PENDING_APPROVAL')
+            $pendingAmendments = Ppmp::with($commonRecentRelations)
+                ->whereHas('amendment', fn($aq) => $aq->where('amendment_status', 'PENDING_APPROVAL'))
                 ->latest('updated_at')
                 ->get();
 
@@ -169,10 +193,26 @@ class DashboardController extends Controller
         }
 
         // Recent Routing Actions
-        $recentRoutes = PpmpRoute::with(['ppmp', 'fromUser', 'toUser'])
+        $recentRoutes = PpmpRoute::with([
+            'ppmp.attachments',
+            'ppmp.monitoringProjects',
+            'fromUser',
+            'toUser',
+        ])
             ->latest('id')
             ->take(8)
             ->get();
+
+        $allDashboardPpmps = collect($recentPpmps)
+            ->merge($pendingAmendments ?? [])
+            ->merge($recentRoutes->pluck('ppmp')->filter());
+        $returnedRecent = $allDashboardPpmps
+            ->filter(fn ($p) => $p && str_ends_with($p->status ?? '', '_RETURNED'))
+            ->unique('id')
+            ->values();
+        if ($returnedRecent->isNotEmpty()) {
+            \Illuminate\Database\Eloquent\Collection::make($returnedRecent->all())->load(['reviews.reviewer', 'routes.fromUser']);
+        }
 
         $signatories = $user->isAdmin() ? PpmpSignatory::latest('id')->get() : [];
         $users = ($user->isSuperAdmin() || $user->isAdminRole()) ? User::with('office')->orderBy('name')->get() : [];
@@ -200,6 +240,7 @@ class DashboardController extends Controller
     {
         // 1. Fiscal years distinct breakdown
         $fiscalYears = (clone $base)
+            ->toBase()
             ->selectRaw('fiscal_year, count(*) as count, sum(total_budget) as total_budget')
             ->groupBy('fiscal_year')
             ->orderByDesc('fiscal_year')
@@ -222,23 +263,24 @@ class DashboardController extends Controller
             $byFiscalYear[$yearKey] = $this->computeAnalyticsForScope($base, $yearKey);
         }
 
-        // 4. Compliance Summary (Pre-proc conference & competitive vs alternative)
-        $preProcItems = PpmpItem::whereHas('ppmp', function ($q) {
+        // 4. Compliance Summary (Pre-proc conference & competitive vs alternative) in a single pass
+        $complianceRow = PpmpItem::whereHas('ppmp', function ($q) {
             $q->whereDoesntHave('children');
-        })->where('pre_proc_conference', true);
-
-        $competitiveItems = PpmpItem::whereHas('ppmp', function ($q) {
-            $q->whereDoesntHave('children');
-        })->where(function ($q) {
-            $q->where('procurement_mode', 'LIKE', '%Competitive%')
-              ->orWhere('procurement_mode', 'LIKE', '%Bidding%');
-        });
+        })
+            ->toBase()
+            ->selectRaw('
+                SUM(CASE WHEN pre_proc_conference = 1 THEN 1 ELSE 0 END) as pre_proc_count,
+                SUM(CASE WHEN pre_proc_conference = 1 THEN estimated_budget ELSE 0 END) as pre_proc_budget,
+                SUM(CASE WHEN procurement_mode LIKE "%Competitive%" OR procurement_mode LIKE "%Bidding%" THEN 1 ELSE 0 END) as competitive_count,
+                SUM(CASE WHEN procurement_mode LIKE "%Competitive%" OR procurement_mode LIKE "%Bidding%" THEN estimated_budget ELSE 0 END) as competitive_budget
+            ')
+            ->first();
 
         $compliance = [
-            'pre_proc_count' => (clone $preProcItems)->count(),
-            'pre_proc_budget' => (float) ((clone $preProcItems)->sum('estimated_budget') ?? 0),
-            'competitive_count' => (clone $competitiveItems)->count(),
-            'competitive_budget' => (float) ((clone $competitiveItems)->sum('estimated_budget') ?? 0),
+            'pre_proc_count' => (int) ($complianceRow->pre_proc_count ?? 0),
+            'pre_proc_budget' => (float) ($complianceRow->pre_proc_budget ?? 0),
+            'competitive_count' => (int) ($complianceRow->competitive_count ?? 0),
+            'competitive_budget' => (float) ($complianceRow->competitive_budget ?? 0),
         ];
 
         return array_merge($overall, [
@@ -258,18 +300,27 @@ class DashboardController extends Controller
             $scopedBase->where('fiscal_year', $fiscalYear);
         }
 
+        $statusRows = (clone $scopedBase)
+            ->toBase()
+            ->selectRaw('status, count(*) as cnt, sum(total_budget) as budget_sum')
+            ->groupBy('status')
+            ->get()
+            ->keyBy('status');
+        $c = fn (string $s): int => (int) ($statusRows[$s]->cnt ?? 0);
+
         $scopedMetrics = [
-            'total_ppmps' => (clone $scopedBase)->count(),
-            'total_budget' => (float) ((clone $scopedBase)->sum('total_budget') ?? 0),
-            'draft' => (clone $scopedBase)->where('status', 'DRAFT')->count(),
-            'head_pending' => (clone $scopedBase)->where('status', 'HEAD_PENDING')->count(),
-            'in_review' => (clone $scopedBase)->whereIn('status', ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW'])->count(),
-            'ready_to_print' => (clone $scopedBase)->where('status', 'READY_TO_PRINT')->count(),
-            'pending_amendments' => (clone $scopedBase)->where('amendment_status', 'PENDING_APPROVAL')->count(),
+            'total_ppmps' => (int) $statusRows->sum('cnt'),
+            'total_budget' => (float) $statusRows->sum('budget_sum'),
+            'draft' => $c('DRAFT'),
+            'head_pending' => $c('HEAD_PENDING'),
+            'in_review' => $c('BUDGET_OFFICER_REVIEW') + $c('PACCO_REVIEW') + $c('OPPMO_REVIEW') + $c('TWG_REVIEW'),
+            'ready_to_print' => $c('READY_TO_PRINT'),
+            'pending_amendments' => (clone $scopedBase)->whereHas('amendment', fn($aq) => $aq->where('amendment_status', 'PENDING_APPROVAL'))->count(),
         ];
 
         // 1. Budget distribution by office
         $budgetByOffice = (clone $scopedBase)
+            ->toBase()
             ->join('offices', 'ppmps.office_id', '=', 'offices.id')
             ->selectRaw('offices.id, offices.code, offices.name, count(ppmps.id) as ppmp_count, sum(ppmps.total_budget) as total_budget')
             ->groupBy('offices.id', 'offices.code', 'offices.name')
@@ -285,75 +336,21 @@ class DashboardController extends Controller
                 ];
             });
 
-        // 2. Procurement Mode breakdown from items
-        $procurementModes = PpmpItem::whereHas('ppmp', function ($q) use ($fiscalYear) {
+        // 2. Procurement Mode, 4. Source of Fund, 5. Project Type, and 6. Monthly Spending Schedule
+        // Computed in a single lightweight pass over scoped items instead of 4 separate correlated subquery scans per fiscal year
+        $items = PpmpItem::whereHas('ppmp', function ($q) use ($fiscalYear) {
             $q->whereDoesntHave('children');
             if ($fiscalYear) {
                 $q->where('fiscal_year', $fiscalYear);
             }
         })
-            ->selectRaw('procurement_mode, count(*) as item_count, sum(estimated_budget) as total_amount')
-            ->whereNotNull('procurement_mode')
-            ->where('procurement_mode', '!=', '')
-            ->groupBy('procurement_mode')
-            ->orderByDesc('total_amount')
-            ->get()
-            ->map(function ($row) {
-                return [
-                    'mode' => $row->procurement_mode,
-                    'item_count' => (int) $row->item_count,
-                    'total_amount' => (float) $row->total_amount,
-                ];
-            });
+            ->toBase()
+            ->get(['id', 'procurement_mode', 'source_of_fund', 'project_type', 'start_date', 'end_date', 'estimated_budget', 'created_at']);
 
-        // 3. Status Distribution for Visual Analytics
-        $statusDistribution = [
-            ['status' => 'DRAFT', 'label' => 'Drafts', 'count' => $scopedMetrics['draft'], 'color' => '#64748b'],
-            ['status' => 'HEAD_PENDING', 'label' => 'Pending Office Head', 'count' => $scopedMetrics['head_pending'], 'color' => '#f59e0b'],
-            ['status' => 'IN_REVIEW', 'label' => 'Under Review (PBO/PACCO/OPPMO/TWG)', 'count' => $scopedMetrics['in_review'], 'color' => '#6366f1'],
-            ['status' => 'READY_TO_PRINT', 'label' => 'Ready to Print / Approved', 'count' => $scopedMetrics['ready_to_print'], 'color' => '#10b981'],
-            ['status' => 'PENDING_AMENDMENTS', 'label' => 'Pending Amendments', 'count' => $scopedMetrics['pending_amendments'], 'color' => '#a855f7'],
-        ];
+        $modeBuckets = [];
+        $fundBuckets = [];
+        $typeBuckets = [];
 
-        // 4. Source of Fund Distribution
-        $fundSources = PpmpItem::whereHas('ppmp', function ($q) use ($fiscalYear) {
-            $q->whereDoesntHave('children');
-            if ($fiscalYear) {
-                $q->where('fiscal_year', $fiscalYear);
-            }
-        })
-            ->selectRaw('COALESCE(NULLIF(source_of_fund, ""), "General Fund") as source, count(*) as count, sum(estimated_budget) as total_amount')
-            ->groupBy('source')
-            ->orderByDesc('total_amount')
-            ->get()
-            ->map(function ($row) {
-                return [
-                    'source' => $row->source,
-                    'count' => (int) $row->count,
-                    'total_amount' => (float) $row->total_amount,
-                ];
-            });
-
-        // 5. Project Type Distribution (Goods, Infra, Consulting)
-        $projectTypes = PpmpItem::whereHas('ppmp', function ($q) use ($fiscalYear) {
-            $q->whereDoesntHave('children');
-            if ($fiscalYear) {
-                $q->where('fiscal_year', $fiscalYear);
-            }
-        })
-            ->selectRaw('COALESCE(NULLIF(project_type, ""), "Goods") as ptype, count(*) as count, sum(estimated_budget) as total_amount')
-            ->groupBy('ptype')
-            ->orderByDesc('total_amount')
-            ->get()
-            ->map(function ($row) {
-                return [
-                    'project_type' => $row->ptype,
-                    'count' => (int) $row->count,
-                    'total_amount' => (float) $row->total_amount,
-                ];
-            });
-
-        // 6. Monthly Spending Schedule (Jan to Dec)
         $monthNames = [1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr', 5 => 'May', 6 => 'Jun', 7 => 'Jul', 8 => 'Aug', 9 => 'Sep', 10 => 'Oct', 11 => 'Nov', 12 => 'Dec'];
         $monthlySchedule = [];
         for ($m = 1; $m <= 12; $m++) {
@@ -365,15 +362,28 @@ class DashboardController extends Controller
             ];
         }
 
-        $items = PpmpItem::whereHas('ppmp', function ($q) use ($fiscalYear) {
-            $q->whereDoesntHave('children');
-            if ($fiscalYear) {
-                $q->where('fiscal_year', $fiscalYear);
-            }
-        })->get(['id', 'start_date', 'end_date', 'estimated_budget', 'created_at']);
-
         foreach ($items as $item) {
             $budget = (float) $item->estimated_budget;
+
+            $mode = trim((string) ($item->procurement_mode ?? ''));
+            if ($mode !== '') {
+                $modeBuckets[$mode] ??= ['mode' => $mode, 'item_count' => 0, 'total_amount' => 0.0];
+                $modeBuckets[$mode]['item_count']++;
+                $modeBuckets[$mode]['total_amount'] += $budget;
+            }
+
+            $fund = trim((string) ($item->source_of_fund ?? ''));
+            $fundKey = $fund !== '' ? $fund : 'General Fund';
+            $fundBuckets[$fundKey] ??= ['source' => $fundKey, 'count' => 0, 'total_amount' => 0.0];
+            $fundBuckets[$fundKey]['count']++;
+            $fundBuckets[$fundKey]['total_amount'] += $budget;
+
+            $ptype = trim((string) ($item->project_type ?? ''));
+            $ptypeKey = $ptype !== '' ? $ptype : 'Goods';
+            $typeBuckets[$ptypeKey] ??= ['project_type' => $ptypeKey, 'count' => 0, 'total_amount' => 0.0];
+            $typeBuckets[$ptypeKey]['count']++;
+            $typeBuckets[$ptypeKey]['total_amount'] += $budget;
+
             $matchedMonths = [];
             $combined = ($item->start_date ?? '') . ' ' . ($item->end_date ?? '');
             preg_match_all('/\b([1-9]|1[0-2])\/\d{4}\b/', $combined, $matches);
@@ -383,7 +393,7 @@ class DashboardController extends Controller
                 }
             }
             if (empty($matchedMonths)) {
-                $createdMonth = (int) ($item->created_at ? $item->created_at->format('n') : 1);
+                $createdMonth = $item->created_at ? (int) date('n', strtotime((string) $item->created_at)) : 1;
                 $matchedMonths[$createdMonth] = true;
             }
             $monthCount = count($matchedMonths);
@@ -396,6 +406,19 @@ class DashboardController extends Controller
             }
         }
 
+        $procurementModes = collect($modeBuckets)->sortByDesc('total_amount')->values();
+        $fundSources = collect($fundBuckets)->sortByDesc('total_amount')->values();
+        $projectTypes = collect($typeBuckets)->sortByDesc('total_amount')->values();
+
+        // 3. Status Distribution for Visual Analytics
+        $statusDistribution = [
+            ['status' => 'DRAFT', 'label' => 'Drafts', 'count' => $scopedMetrics['draft'], 'color' => '#64748b'],
+            ['status' => 'HEAD_PENDING', 'label' => 'Pending Office Head', 'count' => $scopedMetrics['head_pending'], 'color' => '#f59e0b'],
+            ['status' => 'IN_REVIEW', 'label' => 'Under Review (PBO/PACCO/OPPMO/TWG)', 'count' => $scopedMetrics['in_review'], 'color' => '#6366f1'],
+            ['status' => 'READY_TO_PRINT', 'label' => 'Ready to Print / Approved', 'count' => $scopedMetrics['ready_to_print'], 'color' => '#10b981'],
+            ['status' => 'PENDING_AMENDMENTS', 'label' => 'Pending Amendments', 'count' => $scopedMetrics['pending_amendments'], 'color' => '#a855f7'],
+        ];
+
         // 7. Quarterly Totals
         $quarterlySchedule = [
             'Q1' => ['label' => 'Q1 (Jan - Mar)', 'amount' => $monthlySchedule[1]['amount'] + $monthlySchedule[2]['amount'] + $monthlySchedule[3]['amount'], 'count' => $monthlySchedule[1]['count'] + $monthlySchedule[2]['count'] + $monthlySchedule[3]['count']],
@@ -404,15 +427,31 @@ class DashboardController extends Controller
             'Q4' => ['label' => 'Q4 (Oct - Dec)', 'amount' => $monthlySchedule[10]['amount'] + $monthlySchedule[11]['amount'] + $monthlySchedule[12]['amount'], 'count' => $monthlySchedule[10]['count'] + $monthlySchedule[11]['count'] + $monthlySchedule[12]['count']],
         ];
 
-        // 8. Top Procurement Projects (High-Value Items)
-        $topProjects = PpmpItem::with(['ppmp.office'])
-            ->whereHas('ppmp', function ($q) use ($fiscalYear) {
+        // 8. Top Procurement Projects (High-Value Items) - single joined query without N+1 Eloquent $with relations
+        $topProjects = PpmpItem::whereHas('ppmp', function ($q) use ($fiscalYear) {
                 $q->whereDoesntHave('children');
                 if ($fiscalYear) {
                     $q->where('fiscal_year', $fiscalYear);
                 }
             })
-            ->orderByDesc('estimated_budget')
+            ->toBase()
+            ->join('ppmps', 'ppmp_items.ppmp_id', '=', 'ppmps.id')
+            ->leftJoin('offices', 'ppmps.office_id', '=', 'offices.id')
+            ->select([
+                'ppmp_items.id',
+                'ppmp_items.description',
+                'ppmp_items.estimated_budget',
+                'ppmp_items.procurement_mode',
+                'ppmp_items.project_type',
+                'ppmp_items.source_of_fund',
+                'ppmp_items.ppmp_id',
+                'ppmps.source_of_fund as ppmp_source_of_fund',
+                'ppmps.fiscal_year as ppmp_fiscal_year',
+                'ppmps.title as ppmp_title',
+                'offices.code as office_code',
+                'offices.name as office_name',
+            ])
+            ->orderByDesc('ppmp_items.estimated_budget')
             ->take(8)
             ->get()
             ->map(function ($it) {
@@ -422,24 +461,24 @@ class DashboardController extends Controller
                     'estimated_budget' => (float) $it->estimated_budget,
                     'procurement_mode' => $it->procurement_mode ?? 'Not Specified',
                     'project_type' => $it->project_type ?? 'Goods',
-                    'source_of_fund' => $it->source_of_fund ?? ($it->ppmp?->source_of_fund ?? 'General Fund'),
-                    'office_code' => $it->ppmp?->office?->code ?? 'N/A',
-                    'office_name' => $it->ppmp?->office?->name ?? 'N/A',
-                    'fiscal_year' => $it->ppmp?->fiscal_year ?? '2026',
+                    'source_of_fund' => $it->source_of_fund ?? ($it->ppmp_source_of_fund ?? 'General Fund'),
+                    'office_code' => $it->office_code ?? 'N/A',
+                    'office_name' => $it->office_name ?? 'N/A',
+                    'fiscal_year' => $it->ppmp_fiscal_year ?? '2026',
                     'ppmp_id' => $it->ppmp_id,
-                    'ppmp_title' => $it->ppmp?->title ?? '',
+                    'ppmp_title' => $it->ppmp_title ?? '',
                 ];
             });
 
-        // 9. Detailed Workflow Stages
+        // 9. Detailed Workflow Stages (reusing grouped $statusRows counts)
         $workflowStages = [
-            ['stage' => 'DRAFT', 'label' => 'End-User Drafting', 'count' => (clone $scopedBase)->where('status', 'DRAFT')->count(), 'color' => '#64748b'],
-            ['stage' => 'HEAD_PENDING', 'label' => 'Office Head Approval', 'count' => (clone $scopedBase)->where('status', 'HEAD_PENDING')->count(), 'color' => '#f59e0b'],
-            ['stage' => 'BUDGET_OFFICER_REVIEW', 'label' => 'Provincial Budget (PBO)', 'count' => (clone $scopedBase)->where('status', 'BUDGET_OFFICER_REVIEW')->count(), 'color' => '#3b82f6'],
-            ['stage' => 'PACCO_REVIEW', 'label' => 'Accounting Office (PACCO)', 'count' => (clone $scopedBase)->where('status', 'PACCO_REVIEW')->count(), 'color' => '#06b6d4'],
-            ['stage' => 'OPPMO_REVIEW', 'label' => 'Procurement Management (OPPMO)', 'count' => (clone $scopedBase)->where('status', 'OPPMO_REVIEW')->count(), 'color' => '#8b5cf6'],
-            ['stage' => 'TWG_REVIEW', 'label' => 'Technical Working Group (TWG)', 'count' => (clone $scopedBase)->where('status', 'TWG_REVIEW')->count(), 'color' => '#ec4899'],
-            ['stage' => 'READY_TO_PRINT', 'label' => 'Cleared / Ready to Print', 'count' => (clone $scopedBase)->where('status', 'READY_TO_PRINT')->count(), 'color' => '#10b981'],
+            ['stage' => 'DRAFT', 'label' => 'End-User Drafting', 'count' => $c('DRAFT'), 'color' => '#64748b'],
+            ['stage' => 'HEAD_PENDING', 'label' => 'Office Head Approval', 'count' => $c('HEAD_PENDING'), 'color' => '#f59e0b'],
+            ['stage' => 'BUDGET_OFFICER_REVIEW', 'label' => 'Provincial Budget (PBO)', 'count' => $c('BUDGET_OFFICER_REVIEW'), 'color' => '#3b82f6'],
+            ['stage' => 'PACCO_REVIEW', 'label' => 'Accounting Office (PACCO)', 'count' => $c('PACCO_REVIEW'), 'color' => '#06b6d4'],
+            ['stage' => 'OPPMO_REVIEW', 'label' => 'Procurement Management (OPPMO)', 'count' => $c('OPPMO_REVIEW'), 'color' => '#8b5cf6'],
+            ['stage' => 'TWG_REVIEW', 'label' => 'Technical Working Group (TWG)', 'count' => $c('TWG_REVIEW'), 'color' => '#ec4899'],
+            ['stage' => 'READY_TO_PRINT', 'label' => 'Cleared / Ready to Print', 'count' => $c('READY_TO_PRINT'), 'color' => '#10b981'],
         ];
 
         return [

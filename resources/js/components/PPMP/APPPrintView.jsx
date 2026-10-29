@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { formatCurrency, formatDate } from '../UI/StatusBadge';
-import { Printer, ArrowLeft, Plus, Trash2, Edit3, Loader2, Sparkles, ShieldCheck, History, X, Eye } from 'lucide-react';
+import { Printer, ArrowLeft, Plus, Trash2, Edit3, Loader2, Sparkles, ShieldCheck, History, X, Eye, AlertCircle, RefreshCw } from 'lucide-react';
 import { ppmpService } from '../../services/api';
 import { formatDescription6Words, formatMonthYear, toMonthInputValue, MonthRangeInput } from './ProcurementPlanTable';
 import { useSignatureSettings } from '../../utils/signatureController';
@@ -35,13 +35,17 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
         : isEnabled('app');
 
     const savedData = ppmp?.app_data || null;
+    const needsRegeneration = Boolean(savedData?.needs_regeneration);
+    const hasValidSavedData = Boolean(savedData?.rows && Array.isArray(savedData.rows) && savedData.rows.length > 0 && !needsRegeneration);
 
-    const isTwgDone = Boolean(ppmp?.twg_approved_at || ppmp?.signatures?.some(s => s.role === 'twg'));
-    const isOppmoAuthorized = (user?.role === 'oppmo' && isTwgDone);
+    const isTwgSkipped = Boolean(ppmp?.amendment_type === 'AMENDMENT' && ppmp?.amendment_scope === 'PPMP_APP');
+    const isTwgDone = Boolean(isTwgSkipped || ppmp?.twg_approved_at || ppmp?.signatures?.some(s => s.role === 'twg'));
+    const isOppmoAuthorized = (user?.role === 'oppmo' && isTwgDone && (ppmp?.status === 'OPPMO_REVIEW' || ppmp?.status === 'READY_TO_PRINT'));
     const allowEdit = canEdit && (isOppmoAuthorized || ['admin', 'super_admin'].includes(user?.role));
 
-    const [isEditing, setIsEditing] = useState(!savedData && allowEdit);
+    const [isEditing, setIsEditing] = useState((!hasValidSavedData || needsRegeneration) && allowEdit);
     const [saving, setSaving] = useState(false);
+    const [showOldAppModal, setShowOldAppModal] = useState(false);
 
     // Form states
     const [fiscalYear, setFiscalYear] = useState(
@@ -179,16 +183,62 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
         return 'Goods';
     };
 
+    // Helper to resolve End-User or Implementing Unit cell:
+    // If PPMP has program data -> "(Implementing Office / Unit data) - (Program data)"
+    // If no program data -> "Implementing Office / Unit data"
+    const resolveEndUser = (ppmpData, fallback = 'Implementing Unit') => {
+        const implementingOffice = (ppmpData?.implementing_unit || ppmpData?.office?.name || '').trim();
+        const program = (ppmpData?.program_name ? String(ppmpData.program_name) : '').trim();
+
+        if (implementingOffice && program) {
+            return `${implementingOffice} - ${program}`;
+        }
+        if (implementingOffice) {
+            return implementingOffice;
+        }
+        if (program) {
+            return program;
+        }
+        return fallback;
+    };
+
+    // Tracker number for PPMP
+    const trackerNo = ppmp?.tracking_number || ppmp?.ppmp_number || '';
+
+    // Helper to format Remarks / Procurement Strategy with Tracker Number (without "Tracker No.:" label)
+    const buildRemarksWithTracker = (itemRemarks) => {
+        const trackerStr = trackerNo ? String(trackerNo).trim() : '';
+        let existingStr = itemRemarks ? String(itemRemarks).trim() : '';
+
+        // Strip any existing "Tracker No.:" or "Tracker No:" prefix
+        if (existingStr) {
+            existingStr = existingStr.replace(/^Tracker No\.?:?\s*/i, '').trim();
+        }
+
+        if (trackerStr && existingStr) {
+            if (existingStr.toLowerCase() === trackerStr.toLowerCase()) {
+                return trackerStr;
+            }
+            if (existingStr.toLowerCase().includes(trackerStr.toLowerCase())) {
+                return existingStr;
+            }
+            return `${trackerStr}\n${existingStr}`;
+        }
+
+        return trackerStr || existingStr;
+    };
+
     // Initial rows based on PPMP items or existing saved data
     const [rows, setRows] = useState(() => {
         const items = ppmp?.items || [];
         const nonHeaderItems = items.filter(i => !i.is_header);
 
-        const defaultEndUser = (ppmp?.program_name && String(ppmp.program_name).trim() !== '')
-            ? String(ppmp.program_name).trim()
-            : (ppmp?.implementing_unit || ppmp?.office?.name || 'Implementing Unit');
+        const defaultEndUser = resolveEndUser(ppmp);
 
-        if (savedData?.rows && Array.isArray(savedData.rows) && savedData.rows.length > 0) {
+        if (hasValidSavedData) {
+            const unit = (ppmp?.implementing_unit || ppmp?.office?.name || '').trim();
+            const prog = (ppmp?.program_name ? String(ppmp.program_name) : '').trim();
+
             return savedData.rows.map((row, idx) => {
                 const matchingItem = nonHeaderItems[idx] || nonHeaderItems.find(i => (i.id && i.id === row.id) || (i.description && i.description === row.projectTitle));
                 const expectedType = resolveProjectType(matchingItem, ppmp);
@@ -197,15 +247,39 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                 const isKnownType = ['goods', 'infrastructure', 'infrastructure projects', 'consulting', 'consulting services']
                     .includes(currentValLower);
 
+                let updatedRow = { ...row };
+
                 // If generalDescription is empty, was previously the item description / ppmp title, or is not a recognized project type:
                 if (!isKnownType) {
-                    return {
-                        ...row,
-                        generalDescription: expectedType,
-                    };
+                    updatedRow.generalDescription = expectedType;
                 }
 
-                return row;
+                // Sync End-User / Implementing Unit cell
+                const currentEndUser = String(row.endUser || '').trim();
+                if (
+                    !currentEndUser ||
+                    currentEndUser.toLowerCase() === 'implementing unit' ||
+                    (prog && currentEndUser.toLowerCase() === prog.toLowerCase()) ||
+                    (unit && prog && currentEndUser.toLowerCase() === unit.toLowerCase())
+                ) {
+                    updatedRow.endUser = defaultEndUser;
+                }
+
+                // Ensure Remarks includes the tracker number and strips "Tracker No.:" prefix
+                const rawRemarks = updatedRow.procurementStrategy !== undefined && updatedRow.procurementStrategy !== null
+                    ? String(updatedRow.procurementStrategy).trim()
+                    : '';
+                const cleanedRemarks = rawRemarks.replace(/^Tracker No\.?:?\s*/i, '').trim();
+
+                if (!cleanedRemarks) {
+                    updatedRow.procurementStrategy = buildRemarksWithTracker(matchingItem?.remarks);
+                } else if (trackerNo && !cleanedRemarks.toLowerCase().includes(trackerNo.toLowerCase())) {
+                    updatedRow.procurementStrategy = buildRemarksWithTracker(cleanedRemarks);
+                } else {
+                    updatedRow.procurementStrategy = cleanedRemarks;
+                }
+
+                return updatedRow;
             });
         }
 
@@ -222,7 +296,7 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                 endDate: item.end_date ? formatMonthYear(item.end_date) : '',
                 sourceOfFund: item.source_of_fund || 'General Fund',
                 estimatedBudget: item.estimated_budget || 0,
-                procurementStrategy: item.remarks || '',
+                procurementStrategy: buildRemarksWithTracker(item.remarks),
             }));
         }
 
@@ -239,10 +313,42 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                 endDate: '',
                 sourceOfFund: 'General Fund',
                 estimatedBudget: ppmp?.total_budget || 0,
-                procurementStrategy: '',
+                procurementStrategy: buildRemarksWithTracker(''),
             }
         ];
     });
+
+    // Helper to reload/sync rows fresh from PPMP items
+    const reloadRowsFromPpmp = () => {
+        const items = ppmp?.items || [];
+        const nonHeaderItems = items.filter(i => !i.is_header);
+        const defaultEndUser = resolveEndUser(ppmp);
+
+        if (nonHeaderItems.length > 0) {
+            const freshRows = nonHeaderItems.map((item, idx) => ({
+                id: item.id || idx + 1,
+                projectTitle: ppmp?.account_code ? `${ppmp.account_code}\n${item.description}` : item.description,
+                endUser: defaultEndUser,
+                generalDescription: resolveProjectType(item, ppmp),
+                modeOfProcurement: item.procurement_mode || 'Public Bidding',
+                earlyProcurement: item.pre_proc_conference ? 'YES' : 'NO',
+                criteria: 'LCRB',
+                startDate: item.start_date ? formatMonthYear(item.start_date) : '',
+                endDate: item.end_date ? formatMonthYear(item.end_date) : '',
+                sourceOfFund: item.source_of_fund || 'General Fund',
+                estimatedBudget: item.estimated_budget || 0,
+                procurementStrategy: buildRemarksWithTracker(item.remarks),
+            }));
+            setRows(freshRows);
+        }
+    };
+
+    // When PPMP changes or requires regeneration, automatically sync rows from latest PPMP items
+    useEffect(() => {
+        if (needsRegeneration) {
+            reloadRowsFromPpmp();
+        }
+    }, [ppmp?.updated_at, needsRegeneration]);
 
     const handleUpdateRow = (index, field, value) => {
         const updated = [...rows];
@@ -251,9 +357,7 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
     };
 
     const handleAddRow = () => {
-        const defaultEndUser = (ppmp?.program_name && String(ppmp.program_name).trim() !== '')
-            ? String(ppmp.program_name).trim()
-            : (ppmp?.implementing_unit || ppmp?.office?.name || '');
+        const defaultEndUser = resolveEndUser(ppmp, '');
 
         setRows([
             ...rows,
@@ -269,7 +373,7 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                 endDate: '',
                 sourceOfFund: 'General Fund',
                 estimatedBudget: '',
-                procurementStrategy: '',
+                procurementStrategy: buildRemarksWithTracker(''),
             }
         ]);
     };
@@ -328,6 +432,17 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
 
     return (
         <div className="bg-white min-h-screen font-sans text-black">
+            <style>{`
+                @media print {
+                    @page {
+                        size: landscape;
+                        margin: 0 !important;
+                    }
+                    body {
+                        padding: 8mm !important;
+                    }
+                }
+            `}</style>
             {/* Top Toolbar (Hidden when printing) */}
             <div className="no-print bg-slate-900 text-white px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
                 <div className="flex items-center gap-3">
@@ -402,6 +517,51 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
 
             {/* Container */}
             <div className="p-4 sm:p-8 max-w-[1600px] mx-auto">
+                {needsRegeneration && allowEdit && (
+                    <div className="mb-5 p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex flex-col md:flex-row md:items-center justify-between gap-3 no-print shadow-xs">
+                        <div className="flex items-center gap-2.5">
+                            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+                            <div>
+                                <span className="font-bold text-amber-950 block">Annual Procurement Plan (APP) Regeneration Required</span>
+                                <span className="text-[11px] text-amber-800">
+                                    Changes were made on this amended/supplemental PPMP. Fresh items and budgets have been loaded from the PPMP. As OPPMO Reviewer, please review the lines and click <strong>Save & View Printable APP</strong> to generate the updated official APP. The previous APP is safely preserved.
+                                </span>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button
+                                type="button"
+                                onClick={reloadRowsFromPpmp}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-400 rounded-lg text-xs font-bold transition cursor-pointer shadow-2xs"
+                                title="Reload latest line items directly from the PPMP"
+                            >
+                                <RefreshCw className="w-3.5 h-3.5 text-amber-800" />
+                                <span>Re-fetch PPMP Items</span>
+                            </button>
+                            {savedData?.old_app && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowOldAppModal(true)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold transition cursor-pointer shadow-2xs"
+                                >
+                                    <History className="w-3.5 h-3.5 text-amber-700" />
+                                    <span>View Previous APP</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
+                {needsRegeneration && !allowEdit && (
+                    <div className="mb-5 p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-center gap-2.5 no-print shadow-xs">
+                        <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+                        <div>
+                            <span className="font-bold text-amber-950 block">Changes Detected in PPMP (Read-Only Preview)</span>
+                            <span className="text-[11px] text-amber-800">
+                                Modifications were made on this PPMP. The official Annual Procurement Plan (APP) is pending regeneration by the OPPMO Reviewer.
+                            </span>
+                        </div>
+                    </div>
+                )}
                 {isEditing ? (
                     /* EDIT / CUSTOMIZE FORM MODE */
                     <div className="space-y-6">
@@ -566,13 +726,23 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                         Pre-filled from PPMP data. Edit any row or add more projects as needed.
                                     </p>
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={handleAddRow}
-                                    className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer"
-                                >
-                                    <Plus className="w-3.5 h-3.5" /> Add Project Row
-                                </button>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <button
+                                        type="button"
+                                        onClick={reloadRowsFromPpmp}
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer"
+                                        title="Reload and overwrite rows with latest PPMP items and budgets"
+                                    >
+                                        <RefreshCw className="w-3.5 h-3.5 text-amber-800" /> Re-fetch from PPMP
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleAddRow}
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-lg text-xs font-bold uppercase tracking-wider transition cursor-pointer"
+                                    >
+                                        <Plus className="w-3.5 h-3.5" /> Add Project Row
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="overflow-x-auto">
@@ -686,11 +856,12 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                                     />
                                                 </td>
                                                 <td className="border border-slate-200 p-1">
-                                                    <input
-                                                        type="text"
+                                                    <textarea
+                                                        rows={2}
                                                         value={row.procurementStrategy || ''}
                                                         onChange={(e) => handleUpdateRow(idx, 'procurementStrategy', e.target.value)}
                                                         className="w-full p-1 border border-slate-200 rounded text-xs"
+                                                        placeholder={trackerNo || 'Remarks...'}
                                                     />
                                                 </td>
                                                 <td className="border border-slate-200 p-1 text-center">
@@ -850,7 +1021,7 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                         <td className="border border-black px-1 py-1 align-top text-right font-mono font-bold">
                                             {row.estimatedBudget ? formatCurrency(row.estimatedBudget) : '—'}
                                         </td>
-                                        <td className="border border-black px-1 py-1 align-top text-center">
+                                        <td className="border border-black px-1 py-1 align-top text-center whitespace-pre-wrap">
                                             {row.procurementStrategy}
                                         </td>
                                     </tr>
@@ -960,6 +1131,80 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                 )}
             </div>
 
+            {/* Modal for viewing Previous APP Baseline */}
+            {showOldAppModal && savedData?.old_app && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs no-print">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-slate-300 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                        <div className="bg-slate-900 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800 shrink-0">
+                            <div className="flex items-center gap-2.5">
+                                <History className="w-5 h-5 text-indigo-400" />
+                                <div>
+                                    <h3 className="text-sm font-bold uppercase tracking-wider text-white">
+                                        Previous APP Baseline (Preserved)
+                                    </h3>
+                                    <p className="text-[11px] text-slate-400">
+                                        Archived Annual Procurement Plan before revision modifications
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowOldAppModal(false)}
+                                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6 overflow-y-auto overflow-x-auto flex-1 bg-slate-50">
+                            <table className="w-full text-left text-xs border border-slate-300 bg-white shadow-xs rounded">
+                                <thead className="bg-slate-100 text-slate-900 border-b border-slate-300 font-bold text-[11px]">
+                                    <tr className="divide-x divide-slate-300">
+                                        <th className="p-2 w-10 text-center">#</th>
+                                        <th className="p-2 min-w-[200px]">Project Title</th>
+                                        <th className="p-2">End-User</th>
+                                        <th className="p-2">General Description</th>
+                                        <th className="p-2">Mode of Procurement</th>
+                                        <th className="p-2 text-right">Estimated Budget</th>
+                                        <th className="p-2 min-w-[150px]">Remarks / Tracker</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200">
+                                    {Array.isArray(savedData.old_app.rows) && savedData.old_app.rows.length > 0 ? (
+                                        savedData.old_app.rows.map((r, i) => (
+                                            <tr key={i} className="divide-x divide-slate-200 hover:bg-slate-50">
+                                                <td className="p-2 text-center font-mono">{i + 1}</td>
+                                                <td className="p-2 font-semibold whitespace-pre-wrap">{r.projectTitle}</td>
+                                                <td className="p-2">{r.endUser}</td>
+                                                <td className="p-2">{r.generalDescription}</td>
+                                                <td className="p-2">{r.modeOfProcurement}</td>
+                                                <td className="p-2 text-right font-mono font-bold text-blue-900">
+                                                    {formatCurrency(r.estimatedBudget)}
+                                                </td>
+                                                <td className="p-2 text-slate-600 whitespace-pre-wrap">{r.procurementStrategy || '—'}</td>
+                                            </tr>
+                                        ))
+                                    ) : (
+                                        <tr>
+                                            <td colSpan={7} className="p-4 text-center text-slate-500 italic">
+                                                No previous APP line items recorded in baseline.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="p-3 bg-slate-100 border-t border-slate-200 flex justify-end">
+                            <button
+                                type="button"
+                                onClick={() => setShowOldAppModal(false)}
+                                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs rounded transition cursor-pointer"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

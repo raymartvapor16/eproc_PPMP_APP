@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Send, Sparkles, Building2, User, FileText, Banknote, ShieldAlert, CheckCircle2, Layers } from 'lucide-react';
-import { monitoringService } from '../../services/api';
+import { monitoringService, procurementModeService } from '../../services/api';
 
 export const PimsPublishModal = ({
     isOpen,
@@ -12,6 +12,21 @@ export const PimsPublishModal = ({
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [modesList, setModesList] = useState([]);
+
+    useEffect(() => {
+        let isMounted = true;
+        procurementModeService.getAll({ active_only: 1 })
+            .then((res) => {
+                if (isMounted && Array.isArray(res.data)) {
+                    setModesList(res.data);
+                }
+            })
+            .catch(() => {});
+        return () => {
+            isMounted = false;
+        };
+    }, []);
 
     const [formData, setFormData] = useState({
         project_title: '',
@@ -38,11 +53,7 @@ export const PimsPublishModal = ({
                     detectedCategory = 'INFRA';
                 }
                 if (firstItem.procurement_mode) {
-                    if (firstItem.procurement_mode.toLowerCase().includes('bidding') || firstItem.procurement_mode.toLowerCase().includes('cb')) {
-                        detectedMode = 'CB';
-                    } else {
-                        detectedMode = firstItem.procurement_mode;
-                    }
+                    detectedMode = firstItem.procurement_mode;
                 }
             }
 
@@ -62,7 +73,7 @@ export const PimsPublishModal = ({
             setFormData({
                 project_title: '',
                 category: 'GOODS_CONSULTING',
-                procurement_mode: 'SVP',
+                procurement_mode: modesList[0]?.name || 'Competitive Bidding (RA 12009)',
                 abc_amount: '',
                 pr_number: '',
                 pims_pr_id: '',
@@ -226,13 +237,16 @@ export const PimsPublishModal = ({
                                 style={{ color: '#000000' }}
                                 className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 focus:outline-none transition font-semibold text-black"
                             >
-                                <option value="SVP" style={{ color: '#000000' }}>Small Value Procurement (SVP)</option>
-                                <option value="CB" style={{ color: '#000000' }}>Competitive Bidding (CB / Public Bidding)</option>
-                                <option value="DIRECT_CONTRACTING" style={{ color: '#000000' }}>Direct Contracting</option>
-                                <option value="REPEAT_ORDER" style={{ color: '#000000' }}>Repeat Order</option>
-                                <option value="SHOPPING" style={{ color: '#000000' }}>Shopping (Section 52.1b)</option>
-                                <option value="NEGOTIATED" style={{ color: '#000000' }}>Negotiated Procurement (Two-Failed Biddings, etc.)</option>
-                                <option value="AGENCY_TO_AGENCY" style={{ color: '#000000' }}>Agency-to-Agency</option>
+                                {formData.procurement_mode && !modesList.some((m) => m.name === formData.procurement_mode) && (
+                                    <option value={formData.procurement_mode} style={{ color: '#000000' }}>
+                                        {formData.procurement_mode}
+                                    </option>
+                                )}
+                                {modesList.map((mode) => (
+                                    <option key={mode.id} value={mode.name} style={{ color: '#000000' }}>
+                                        {mode.name}
+                                    </option>
+                                ))}
                             </select>
                         </div>
                     </div>

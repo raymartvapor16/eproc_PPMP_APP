@@ -34,7 +34,10 @@ import {
     Info,
     RefreshCw,
     Layers,
+    Globe,
+    Activity,
 } from 'lucide-react';
+import { canUserAccessSystem } from '../UI/UnauthorizedSystemAccessView';
 import { SignaturePadModal } from '../UI/SignaturePadModal';
 
 export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout, onUserUpdate, children }) => {
@@ -648,7 +651,7 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                         <button
                             onClick={() => onNavigate('ppmps')}
                             className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
-                                activeTab === 'ppmps'
+                                activeTab === 'ppmps' || activeTab === 'detail' || activeTab === 'edit'
                                     ? 'bg-blue-600 text-white shadow-xs'
                                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
                             }`}
@@ -670,6 +673,28 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                 Prepare New PPMP
                             </button>
                         )}
+
+                        <div className="ml-auto flex items-center gap-2">
+                            {canUserAccessSystem(user, '/monitoringsystem') && (
+                                <button
+                                    onClick={() => onNavigate('monitoring')}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold text-emerald-300 hover:text-emerald-100 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30 transition cursor-pointer"
+                                    title="Switch to OPPMO Real-Time Monitoring System"
+                                >
+                                    <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span>OPPMO Monitoring System</span>
+                                </button>
+                            )}
+
+                            <button
+                                onClick={() => onNavigate('landing')}
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-700 transition cursor-pointer"
+                                title="Visit Public Portal Landing Page"
+                            >
+                                <Globe className="w-4 h-4 text-amber-400" />
+                                Portal Home
+                            </button>
+                        </div>
                     </div>
                 </nav>
 
@@ -678,13 +703,17 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                     <div className="md:hidden bg-slate-800 border-t border-slate-700 p-4 space-y-2">
                         <button
                             onClick={() => { onNavigate('dashboard'); setMobileMenuOpen(false); }}
-                            className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 rounded"
+                            className={`w-full text-left px-3 py-2 text-xs font-semibold rounded ${
+                                activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'text-slate-200 hover:bg-slate-700'
+                            }`}
                         >
                             Dashboard
                         </button>
                         <button
                             onClick={() => { onNavigate('ppmps'); setMobileMenuOpen(false); }}
-                            className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 rounded"
+                            className={`w-full text-left px-3 py-2 text-xs font-semibold rounded ${
+                                activeTab === 'ppmps' || activeTab === 'detail' || activeTab === 'edit' ? 'bg-blue-600 text-white' : 'text-slate-200 hover:bg-slate-700'
+                            }`}
                         >
                             PPMP Management List
                         </button>
@@ -696,6 +725,22 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                 Prepare New PPMP
                             </button>
                         )}
+                        {canUserAccessSystem(user, '/monitoringsystem') && (
+                            <button
+                                onClick={() => { onNavigate('monitoring'); setMobileMenuOpen(false); }}
+                                className="w-full text-left px-3 py-2 text-xs font-bold text-emerald-300 hover:bg-slate-700 rounded flex items-center gap-2 border-t border-slate-700 pt-2"
+                            >
+                                <Activity className="w-4 h-4 text-emerald-400" />
+                                <span>Switch to OPPMO Monitoring</span>
+                            </button>
+                        )}
+                        <button
+                            onClick={() => { onNavigate('landing'); setMobileMenuOpen(false); }}
+                            className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-700 rounded flex items-center gap-2 border-t border-slate-700 pt-2"
+                        >
+                            <Globe className="w-4 h-4 text-amber-400" />
+                            <span>Portal Home</span>
+                        </button>
                     </div>
                 )}
             </header>
@@ -873,7 +918,7 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
 
                             <div>
                                 <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
-                                    Residential
+                                    User Address
                                 </label>
                                 <div className="relative">
                                     <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-3" />

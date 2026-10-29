@@ -51,9 +51,16 @@ return new class extends Migration
                 'ARCHIVED'
             ])->default('DRAFT')->index();
 
-            // Milestones
+            $table->timestamps();
+        });
+
+        // 1.1 PPMP Milestones (Normalized workflow milestone & receipt timestamps)
+        Schema::create('ppmp_milestones', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('ppmp_id')->unique()->constrained('ppmps')->cascadeOnDelete();
             $table->timestamp('prepared_at')->nullable();
             $table->timestamp('head_submitted_at')->nullable();
+            $table->timestamp('head_received_at')->nullable();
             $table->timestamp('head_approved_at')->nullable();
             $table->timestamp('review_submitted_at')->nullable();
             $table->timestamp('budget_received_at')->nullable();
@@ -65,7 +72,24 @@ return new class extends Migration
             $table->timestamp('twg_received_at')->nullable();
             $table->timestamp('twg_approved_at')->nullable();
             $table->timestamp('ready_to_print_at')->nullable();
+            $table->timestamp('enduser_received_at')->nullable();
+            $table->timestamp('admin_received_at')->nullable();
+            $table->timestamps();
+        });
 
+        // 1.2 PPMP Amendments & Supplementals (Normalized amendment & supplemental request details)
+        Schema::create('ppmp_amendments', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('ppmp_id')->unique()->constrained('ppmps')->cascadeOnDelete();
+            $table->string('amendment_status', 30)->nullable()->index();
+            $table->string('requested_amendment_type', 50)->nullable();
+            $table->text('requested_amendment_reason')->nullable();
+            $table->string('requested_amendment_scope', 50)->nullable();
+            $table->string('amendment_type', 50)->nullable();
+            $table->text('amendment_reason')->nullable();
+            $table->string('amendment_scope', 50)->nullable();
+            $table->timestamp('amendment_requested_at')->nullable();
+            $table->timestamp('amendment_approved_at')->nullable();
             $table->timestamps();
         });
 
@@ -207,6 +231,8 @@ return new class extends Migration
         Schema::dropIfExists('ppmp_reviews');
         Schema::dropIfExists('ppmp_attachments');
         Schema::dropIfExists('ppmp_items');
+        Schema::dropIfExists('ppmp_amendments');
+        Schema::dropIfExists('ppmp_milestones');
         Schema::dropIfExists('ppmps');
     }
 };

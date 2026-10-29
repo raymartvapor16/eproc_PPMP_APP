@@ -43,14 +43,18 @@ import {
     Truck,
     Leaf,
     FileCheck2,
+    Layers,
+    Tags,
 } from 'lucide-react';
 import { FundSourcesManagement } from '../../components/Dashboard/FundSourcesManagement';
+import { ProcurementModesManagement } from '../../components/Dashboard/ProcurementModesManagement';
 import { ProcurementConditionsManagement } from '../../components/Dashboard/ProcurementConditionsManagement';
 import { OtherTermsManagement } from '../../components/Dashboard/OtherTermsManagement';
 import { SupportingDocumentsManagement } from '../../components/Dashboard/SupportingDocumentsManagement';
 import { SignatoriesManagement } from '../../components/Dashboard/SignatoriesManagement';
 import { CreateUserModal } from '../../components/Dashboard/CreateUserModal';
 import { UserSignatureModal } from '../../components/Dashboard/UserSignatureModal';
+import { UserSystemAccessModal } from '../../components/Dashboard/UserSystemAccessModal';
 
 export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) => {
     // Current Active Tab: 'users' | 'amendments' | 'logs' | 'ppmps' | 'fund_sources' | 'conditions' | 'other_terms' | 'supporting_docs' | 'signatories'
@@ -86,6 +90,7 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
 
     // Modals for User management
     const [passwordModalUser, setPasswordModalUser] = useState(null);
+    const [systemAccessModalUser, setSystemAccessModalUser] = useState(null);
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [savingPassword, setSavingPassword] = useState(false);
@@ -703,6 +708,19 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
 
                 <button
                     type="button"
+                    onClick={() => setActiveTab('procurement_modes')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
+                        activeTab === 'procurement_modes'
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                >
+                    <Tags className="w-4 h-4" />
+                    <span>Modes of Procurement</span>
+                </button>
+
+                <button
+                    type="button"
                     onClick={() => setActiveTab('conditions')}
                     className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
                         activeTab === 'conditions'
@@ -901,6 +919,46 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                                                 {u.designation}
                                                             </div>
                                                         )}
+                                                        {/* Systems Access Badges */}
+                                                        {(() => {
+                                                            let systems = [];
+                                                            if (Array.isArray(u.accessible_systems)) {
+                                                                systems = u.accessible_systems;
+                                                            } else if (typeof u.accessible_systems === 'string') {
+                                                                try {
+                                                                    systems = JSON.parse(u.accessible_systems);
+                                                                } catch (_) {
+                                                                    systems = [];
+                                                                }
+                                                            }
+                                                            if (!systems || systems.length === 0) return null;
+                                                            return (
+                                                                <div className="flex flex-wrap gap-1 mt-1.5 max-w-[160px]">
+                                                                    {systems.map((sys) => {
+                                                                        let label = 'System';
+                                                                        let color = 'bg-slate-100 text-slate-700 border-slate-200';
+                                                                        if (sys === '/eprocrementppmpapp' || sys === '/eprocurementppmpapp') {
+                                                                            label = 'PPMP/APP';
+                                                                            color = 'bg-blue-50 text-blue-700 border-blue-200';
+                                                                        } else if (sys === '/monitoringsystem' || sys.startsWith('/monitoring')) {
+                                                                            label = 'Monitoring';
+                                                                            color = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                                                                        } else if (sys === '/supplierevaluation' || sys.startsWith('/supplier-evaluation')) {
+                                                                            label = 'Supplier Eval';
+                                                                            color = 'bg-amber-50 text-amber-800 border-amber-200';
+                                                                        }
+                                                                        return (
+                                                                            <span
+                                                                                key={sys}
+                                                                                className={`px-1.5 py-0.2 rounded text-[9px] font-bold border tracking-tight ${color}`}
+                                                                            >
+                                                                                {label}
+                                                                            </span>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            );
+                                                        })()}
                                                     </td>
                                                     <td className="p-3">
                                                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -1032,6 +1090,14 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                                                             <Key className="w-3 h-3" /> Pass
                                                                         </button>
                                                                     )}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setSystemAccessModalUser(u)}
+                                                                        className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded text-[11px] font-bold transition cursor-pointer shadow-2xs"
+                                                                        title="Manage Digital Systems Access Permissions"
+                                                                    >
+                                                                        <Layers className="w-3 h-3 text-purple-600" /> Systems
+                                                                    </button>
                                                                 </>
                                                             )}
                                                         </div>
@@ -1566,6 +1632,13 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
             )}
 
             {/* ══════════════════════════════════════════════════════════════════ */}
+            {/* TAB 5B: MODES OF PROCUREMENT (RA 12009 MASTERLIST)                */}
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            {activeTab === 'procurement_modes' && (
+                <ProcurementModesManagement />
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════════ */}
             {/* TAB 6: PROCUREMENT CONDITIONS & DELIVERY TERMS                    */}
             {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'conditions' && (
@@ -1802,6 +1875,23 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 onSuccess={(newUser, msg) => {
                     setUsersList(prev => [newUser, ...prev]);
                     setUserFeedback({ type: 'success', text: msg || 'User created successfully.' });
+                }}
+            />
+
+            {/* Manage Systems Access Modal */}
+            <UserSystemAccessModal
+                isOpen={!!systemAccessModalUser}
+                onClose={() => setSystemAccessModalUser(null)}
+                targetUser={systemAccessModalUser}
+                onSuccess={(updatedUser) => {
+                    setUsersList(prev =>
+                        prev.map(item => (item.id === updatedUser.id ? { ...item, ...updatedUser } : item))
+                    );
+                    setUserFeedback({
+                        type: 'success',
+                        text: `System access permissions for "${updatedUser.name}" have been updated successfully.`,
+                    });
+                    setTimeout(() => setUserFeedback({ type: '', text: '' }), 4000);
                 }}
             />
 

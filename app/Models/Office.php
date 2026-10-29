@@ -33,6 +33,21 @@ class Office extends Model
         return $this->hasMany(Ppmp::class, 'office_id');
     }
 
+    public function supplierEvaluations()
+    {
+        return $this->hasMany(SupplierEvaluation::class, 'office_id');
+    }
+
+    public function supplierAuthorizes()
+    {
+        return $this->hasMany(SupplierAuthorize::class, 'office_id');
+    }
+
+    public function getAbbreviationAttribute(): ?string
+    {
+        return $this->code;
+    }
+
     public function getEffectiveHeadUser(): ?User
     {
         if ($this->head_user_id) {

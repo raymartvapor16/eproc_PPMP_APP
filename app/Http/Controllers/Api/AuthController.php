@@ -108,7 +108,7 @@ class AuthController extends Controller
         $rules = [
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users,email',
-            'role' => 'required|string|in:end_user,head,budget_officer,oppmo,twg,authorized_staff,pacco',
+            'role' => 'required|string|in:end_user,head,budget_officer,oppmo,twg,authorized_staff,pacco,pgso,presentative_staff',
             'phone_number' => 'required|string|max:30',
             'address' => 'required|string|max:500',
             'password' => 'required|string|min:6|confirmed',
@@ -117,14 +117,14 @@ class AuthController extends Controller
             'signature' => 'required|string',
         ];
 
-        if ($request->input('role') === 'authorized_staff') {
+        if (in_array($request->input('role'), ['authorized_staff', 'presentative_staff'], true)) {
             $rules['authorization_letter'] = 'required|file|mimes:pdf|max:20480';
         }
 
         $validated = $request->validate($rules);
 
         $authorizationLetterPath = null;
-        if ($validated['role'] === 'authorized_staff' && $request->hasFile('authorization_letter')) {
+        if (in_array($validated['role'], ['authorized_staff', 'presentative_staff'], true) && $request->hasFile('authorization_letter')) {
             $uploadedLetter = $request->file('authorization_letter');
 
             // Verify PDF Magic Bytes (%PDF-)
@@ -161,6 +161,20 @@ class AuthController extends Controller
             }
         }
 
+        $accessibleSystems = $request->input('accessible_systems');
+        if (is_string($accessibleSystems)) {
+            $decoded = json_decode($accessibleSystems, true);
+            if (is_array($decoded)) {
+                $accessibleSystems = $decoded;
+            } else {
+                $accessibleSystems = array_filter(array_map('trim', explode(',', $accessibleSystems)));
+            }
+        }
+        if (!is_array($accessibleSystems) || empty($accessibleSystems)) {
+            $accessibleSystems = ['/eprocrementppmpapp'];
+        }
+        $accessibleSystems = array_values(array_unique($accessibleSystems));
+
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
@@ -174,6 +188,7 @@ class AuthController extends Controller
             'authorization_letter_path' => $authorizationLetterPath,
             'is_active' => false,
             'approval_status' => 'pending',
+            'accessible_systems' => $accessibleSystems,
         ]);
 
         AuditLog::log(

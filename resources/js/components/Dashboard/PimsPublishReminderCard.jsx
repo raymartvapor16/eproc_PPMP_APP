@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { StatusBadge, formatCurrency } from '../UI/StatusBadge';
 import { PimsPublishModal } from '../Monitoring/PimsPublishModal';
+import { monitoringService } from '../../services/api';
 
 const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -119,6 +120,7 @@ export const getPimsReminderInfo = (startSchedule, customDate = null) => {
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1; // 1-12
     const currentDay = now.getDate();
+    const currentMonthName = MONTH_NAMES[currentMonth - 1];
 
     const lastDayOfMonth = new Date(currentYear, currentMonth, 0).getDate();
     const daysLeftInMonth = lastDayOfMonth - currentDay;
@@ -130,41 +132,12 @@ export const getPimsReminderInfo = (startSchedule, customDate = null) => {
     const targetMonth = startSchedule.primary.month;
     const monthName = startSchedule.primary.monthName;
 
-    const isSameYear = currentYear === targetYear;
-    const isSameMonth = isSameYear && currentMonth === targetMonth;
-    const isMonthBefore = isSameYear && currentMonth === targetMonth - 1;
-    const isPastTarget = currentYear > targetYear || (isSameYear && currentMonth > targetMonth);
+    // Difference in months between target schedule and current date
+    const monthsDiff = (targetYear - currentYear) * 12 + (targetMonth - currentMonth);
 
-    // 1. High-priority URGENT: Nearly end of month during the target month OR month before
-    if ((isSameMonth || isMonthBefore) && isNearEndOfMonth) {
-        return {
-            isUrgent: true,
-            isNearEnd: true,
-            level: 'URGENT',
-            badgeText: 'Nearly End of Month',
-            daysLeft: daysLeftInMonth,
-            monthName,
-            title: `Nearly End of the Month — Publish PPMP to PIMS!`,
-            message: `Start of Procurement Activity is scheduled for ${monthName} ${targetYear}. With ${daysLeftInMonth} day${daysLeftInMonth === 1 ? '' : 's'} remaining this month, please publish this PPMP on the PIMS system immediately so procurement can proceed on schedule.`,
-        };
-    }
-
-    // 2. Target Month Active (earlier in the month)
-    if (isSameMonth) {
-        return {
-            isUrgent: false,
-            isNearEnd: false,
-            level: 'ACTIVE_MONTH',
-            badgeText: 'Active Procurement Month',
-            daysLeft: daysLeftInMonth,
-            monthName,
-            title: `Procurement Month is Here (${monthName} ${targetYear})`,
-            message: `Start of Procurement Activity is scheduled for this month (${monthName}). Please ensure this PPMP is published on the PIMS system before the end of the month.`,
-        };
-    }
-
-    // 3. Month Overdue / Past Target
-    if (isPastTarget) {
+    // 1. Month Overdue / Past Target (monthsDiff < 0)
+    // E.g. target was September, but current month is October or later
+    if (monthsDiff < 0) {
         return {
             isUrgent: true,
             isNearEnd: isNearEndOfMonth,
@@ -172,26 +145,60 @@ export const getPimsReminderInfo = (startSchedule, customDate = null) => {
             badgeText: 'Activity Month Elapsed',
             daysLeft: daysLeftInMonth,
             monthName,
-            title: `Procurement Start Month has Arrived (${monthName} ${targetYear})`,
-            message: `The scheduled Start of Procurement Activity was ${monthName} ${targetYear}. If you have not yet published this PPMP on the PIMS system, please do so as soon as possible.`,
+            targetYear,
+            title: `Procurement Start Month has Elapsed (${monthName} ${targetYear})`,
+            message: `The scheduled Start of Procurement Activity was ${monthName} ${targetYear}. If this PPMP has not yet been published to the PIMS system, please publish it as soon as possible.`,
         };
     }
 
-    // 4. Upcoming Next Month (earlier in month before)
-    if (isMonthBefore) {
+    // 2. Target Month is NOW (monthsDiff === 0)
+    if (monthsDiff === 0) {
+        if (isNearEndOfMonth) {
+            // High-priority URGENT: Current month IS the scheduled activity month AND it is near the end of this month
+            return {
+                isUrgent: true,
+                isNearEnd: true,
+                level: 'URGENT',
+                badgeText: 'Nearly End of Month',
+                daysLeft: daysLeftInMonth,
+                monthName,
+                targetYear,
+                title: `Nearly End of ${monthName} — Publish PPMP to PIMS!`,
+                message: `Start of Procurement Activity is scheduled for this month (${monthName} ${targetYear}). With ${daysLeftInMonth} day${daysLeftInMonth === 1 ? '' : 's'} remaining in ${monthName}, please publish this PPMP on the PIMS system immediately so procurement can proceed on schedule.`,
+            };
+        }
+
+        // Target Month Active (earlier in the target month, e.g. Days 1-19)
+        return {
+            isUrgent: false,
+            isNearEnd: false,
+            level: 'ACTIVE_MONTH',
+            badgeText: 'Active Procurement Month',
+            daysLeft: daysLeftInMonth,
+            monthName,
+            targetYear,
+            title: `Procurement Month is Here (${monthName} ${targetYear})`,
+            message: `Start of Procurement Activity is scheduled for this month (${monthName} ${targetYear}). Please ensure this PPMP is published on the PIMS system before the end of the month.`,
+        };
+    }
+
+    // 3. Upcoming Next Month (monthsDiff === 1)
+    // E.g. Today is October 2026, and target is November 2026
+    if (monthsDiff === 1) {
         return {
             isUrgent: false,
             isNearEnd: false,
             level: 'UPCOMING_SOON',
-            badgeText: 'Upcoming Next Month',
+            badgeText: `Starts Next Month (${monthName})`,
             daysLeft: daysLeftInMonth,
             monthName,
+            targetYear,
             title: `Procurement Starts Next Month (${monthName} ${targetYear})`,
-            message: `Start of Procurement Activity begins next month in ${monthName}. Plan ahead to publish this PPMP to the PIMS system before the end of the month.`,
+            message: `Start of Procurement Activity is scheduled for next month in ${monthName} ${targetYear}. Current month is ${currentMonthName} ${currentYear}. You can review and prepare this PPMP to publish on the PIMS system when ${monthName} begins.`,
         };
     }
 
-    // 5. Future Scheduled
+    // 4. Future Scheduled (monthsDiff > 1)
     return {
         isUrgent: false,
         isNearEnd: false,
@@ -199,8 +206,9 @@ export const getPimsReminderInfo = (startSchedule, customDate = null) => {
         badgeText: `Scheduled: ${monthName} ${targetYear}`,
         daysLeft: daysLeftInMonth,
         monthName,
+        targetYear,
         title: `Scheduled for ${monthName} ${targetYear}`,
-        message: `Procurement activity is planned for ${monthName} ${targetYear}. You will be reminded near the end of the month to publish this PPMP on the PIMS system.`,
+        message: `Procurement activity is planned for ${monthName} ${targetYear}. Reminders will become active as the scheduled procurement period approaches.`,
     };
 };
 
@@ -240,9 +248,48 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
         };
     }, []);
 
-    const handlePublishClick = (ppmp) => {
-        if (publishedMap[ppmp.uuid]) {
-            // Unmark published PPMP
+    // Keep publishedMap clean with backend truth
+    useEffect(() => {
+        if (!ppmps || ppmps.length === 0) return;
+        setPublishedMap((prev) => {
+            let changed = false;
+            const next = { ...prev };
+            ppmps.forEach((p) => {
+                if (p.is_published_to_pims === false && next[p.uuid]) {
+                    delete next[p.uuid];
+                    changed = true;
+                } else if (p.is_published_to_pims === true && !next[p.uuid]) {
+                    next[p.uuid] = {
+                        publishedAt: p.pims_published_at || new Date().toISOString(),
+                    };
+                    changed = true;
+                }
+            });
+            if (changed) {
+                try {
+                    localStorage.setItem('pims_published_ppmps', JSON.stringify(next));
+                } catch (e) {}
+                return next;
+            }
+            return prev;
+        });
+    }, [ppmps]);
+
+    const handlePublishClick = async (ppmp) => {
+        const isCurrentlyPublished = ppmp.is_published_to_pims !== undefined
+            ? Boolean(ppmp.is_published_to_pims)
+            : Boolean(publishedMap[ppmp.uuid]);
+
+        if (isCurrentlyPublished) {
+            if (!window.confirm(`Are you sure you want to unmark PPMP "${ppmp.tracking_number || ppmp.title}" as published to PIMS?`)) {
+                return;
+            }
+            try {
+                await monitoringService.unpublishPims({ ppmp_uuid: ppmp.uuid });
+            } catch (err) {
+                console.error('Failed to unpublish on backend', err);
+            }
+
             setPublishedMap((prev) => {
                 const next = { ...prev };
                 delete next[ppmp.uuid];
@@ -253,6 +300,9 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
                 }
                 return next;
             });
+
+            window.dispatchEvent(new CustomEvent('monitoring:updated'));
+            window.dispatchEvent(new CustomEvent('pims:published'));
         } else {
             // Prompt modal to capture what enduser is procuring and start monitoring
             setSelectedPpmpForPublish(ppmp);
@@ -269,14 +319,16 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
             if (!schedule) return;
 
             const reminderInfo = getPimsReminderInfo(schedule);
-            const isPublished = Boolean(publishedMap[ppmp.uuid]);
+            const isPublished = ppmp.is_published_to_pims !== undefined
+                ? Boolean(ppmp.is_published_to_pims)
+                : Boolean(publishedMap[ppmp.uuid]);
 
             list.push({
                 ppmp,
                 schedule,
                 reminderInfo,
                 isPublished,
-                publishedAt: publishedMap[ppmp.uuid]?.publishedAt || null,
+                publishedAt: ppmp.pims_published_at || publishedMap[ppmp.uuid]?.publishedAt || null,
             });
         });
 
@@ -298,6 +350,13 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
     const urgentCount = reminderItems.filter((i) => !i.isPublished && i.reminderInfo.isUrgent).length;
     const pendingCount = reminderItems.filter((i) => !i.isPublished).length;
     const publishedCount = reminderItems.filter((i) => i.isPublished).length;
+
+    // Auto-switch away from urgent tab if there are no urgent items
+    useEffect(() => {
+        if (urgentCount === 0 && activeTab === 'urgent') {
+            setActiveTab('pending');
+        }
+    }, [urgentCount, activeTab]);
 
     // Current month info
     const now = new Date();
@@ -500,10 +559,16 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
                                                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider ${
                                                             isUrgent
                                                                 ? 'bg-rose-100 text-rose-800 border border-rose-300 animate-pulse'
+                                                                : reminderInfo.level === 'UPCOMING_SOON'
+                                                                ? 'bg-sky-100 text-sky-800 border border-sky-300'
                                                                 : 'bg-amber-100 text-amber-800 border border-amber-300'
                                                         }`}
                                                     >
-                                                        {isUrgent ? <AlertTriangle className="w-3 h-3 text-rose-600" /> : <Clock className="w-3 h-3 text-amber-600" />}
+                                                        {isUrgent ? (
+                                                            <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                                        ) : (
+                                                            <Clock className={`w-3 h-3 ${reminderInfo.level === 'UPCOMING_SOON' ? 'text-sky-600' : 'text-amber-600'}`} />
+                                                        )}
                                                         {reminderInfo.badgeText}
                                                     </span>
                                                 )}
@@ -528,6 +593,8 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
                                                         ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800'
                                                         : isUrgent
                                                         ? 'bg-amber-100/70 border-amber-300 text-amber-950 font-medium'
+                                                        : reminderInfo.level === 'UPCOMING_SOON'
+                                                        ? 'bg-sky-50/80 border-sky-200 text-sky-950 font-medium'
                                                         : 'bg-blue-50/70 border-blue-200 text-blue-900'
                                                 }`}
                                             >
@@ -535,6 +602,8 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
                                                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                                                 ) : isUrgent ? (
                                                     <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                                ) : reminderInfo.level === 'UPCOMING_SOON' ? (
+                                                    <Calendar className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
                                                 ) : (
                                                     <Bell className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                                                 )}

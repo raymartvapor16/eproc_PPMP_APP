@@ -226,6 +226,14 @@ export const SourceOfFundModal = ({ isOpen, onClose, onSelect }) => {
                                                     BAC-TWG
                                                 </span>
                                                 <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-200 font-semibold">
+                                                    OPPMO (Generate APP)
+                                                </span>
+                                                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200 font-semibold">
+                                                    Head (Approval)
+                                                </span>
+                                                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                                                 <span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-200 font-semibold">
                                                     Ready to Print
                                                 </span>

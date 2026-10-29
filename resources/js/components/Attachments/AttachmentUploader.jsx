@@ -9,8 +9,16 @@ export const AttachmentUploader = ({
     canUpload = false,
     canDelete = false,
     onAttachmentChanged,
+    requestLetterAttachmentId = null,
 }) => {
-    const currentAttachments = ppmp?.attachments || [];
+    const isRequestLetter = (att) => {
+        if (!att) return false;
+        if (att.attachment_type === 'REQUEST_LETTER') return true;
+        if (requestLetterAttachmentId && (att.id === requestLetterAttachmentId || att.uuid === requestLetterAttachmentId)) return true;
+        return false;
+    };
+
+    const currentAttachments = (ppmp?.attachments || []).filter(a => !isRequestLetter(a));
 
     // Collect attachments from earlier / parent / baseline PPMPs (e.g. Supplemental, Amended, Annual)
     const historicalAttachments = React.useMemo(() => {
@@ -18,7 +26,7 @@ export const AttachmentUploader = ({
         const seenUuids = new Set(currentAttachments.map(a => a.uuid || a.id));
 
         (historicalPpmps || []).forEach((histPpmp) => {
-            const atts = histPpmp?.attachments || [];
+            const atts = (histPpmp?.attachments || []).filter(a => !isRequestLetter(a));
             atts.forEach((att) => {
                 const key = att.uuid || att.id;
                 if (!seenUuids.has(key)) {
@@ -31,7 +39,7 @@ export const AttachmentUploader = ({
             });
         });
         return list;
-    }, [currentAttachments, historicalPpmps]);
+    }, [currentAttachments, historicalPpmps, requestLetterAttachmentId]);
 
     const isMarketScopingAttached = React.useMemo(() => {
         const checkAtt = (att) => {
@@ -450,8 +458,6 @@ export const AttachmentUploader = ({
                         >
                             <option value="MARKET_SCOPING">Market Scoping PDF (Mandatory Requirement)</option>
                             <option value="SUPPORTING_DOC">General Supporting Document</option>
-                            <option value="APP_DOCUMENT">Annual Procurement Plan (APP) PDF</option>
-                            <option value="ATTACHMENT_LIST_DOC">PPMP List of Attachment PDF</option>
                         </select>
                     </div>
 

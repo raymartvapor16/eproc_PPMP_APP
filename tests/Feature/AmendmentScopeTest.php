@@ -93,8 +93,8 @@ class AmendmentScopeTest extends TestCase
         ]);
 
         $response->assertStatus(200);
-        $this->assertDatabaseHas('ppmps', [
-            'id' => $this->ppmpReady->id,
+        $this->assertDatabaseHas('ppmp_amendments', [
+            'ppmp_id' => $this->ppmpReady->id,
             'amendment_status' => 'PENDING_APPROVAL',
             'requested_amendment_scope' => 'PPMP_APP',
             'requested_amendment_type' => 'SUPPLEMENTAL',
@@ -113,8 +113,8 @@ class AmendmentScopeTest extends TestCase
         ]);
 
         $response->assertStatus(200);
-        $this->assertDatabaseHas('ppmps', [
-            'id' => $this->ppmpReady->id,
+        $this->assertDatabaseHas('ppmp_amendments', [
+            'ppmp_id' => $this->ppmpReady->id,
             'amendment_status' => 'PENDING_APPROVAL',
             'requested_amendment_scope' => 'ATTACHMENT_LIST',
         ]);

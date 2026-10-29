@@ -20,12 +20,16 @@ class NotificationController extends Controller
 
         // If user is a Department/Office Head or Authorized Staff, ensure notifications are synced for their office
         if ($user && $user->isHead() && $user->office_id) {
-            // Auto-heal office head_user_id link if needed
-            Office::where('id', $user->office_id)
-                ->whereNull('head_user_id')
-                ->update(['head_user_id' => $user->id]);
+            // Auto-heal office head_user_id link if needed (only write when head_user_id is actually null)
+            if (!$user->relationLoaded('office') || !$user->office || $user->office->head_user_id === null) {
+                Office::where('id', $user->office_id)
+                    ->whereNull('head_user_id')
+                    ->update(['head_user_id' => $user->id]);
+            }
 
-            $officePpmps = Ppmp::where('office_id', $user->office_id)
+            $officePpmps = Ppmp::without(['milestones', 'amendment'])
+                ->select(['id', 'uuid', 'tracking_number', 'ppmp_number', 'title', 'status', 'office_id'])
+                ->where('office_id', $user->office_id)
                 ->whereIn('status', [
                     'HEAD_PENDING',
                     'READY_TO_PRINT',
@@ -39,92 +43,104 @@ class NotificationController extends Controller
                 ->take(30)
                 ->get();
 
-            foreach ($officePpmps as $p) {
-                $idLabel = $p->tracking_number ?: ($p->ppmp_number ? "PPMP {$p->ppmp_number}" : "PPMP #{$p->id}");
+            if ($officePpmps->isNotEmpty()) {
+                // Batch-fetch existing notifications for these PPMPs in a single query to avoid N+1 loop
+                $existingByPpmp = SystemNotification::where('user_id', $user->id)
+                    ->whereIn('ppmp_id', $officePpmps->pluck('id'))
+                    ->select(['ppmp_id', 'title'])
+                    ->get()
+                    ->groupBy('ppmp_id');
 
-                if ($p->status === 'HEAD_PENDING') {
-                    $exists = SystemNotification::where('user_id', $user->id)
-                        ->where('ppmp_id', $p->id)
-                        ->where('title', 'like', '%Approval%')
-                        ->exists();
+                foreach ($officePpmps as $p) {
+                    $idLabel = $p->tracking_number ?: ($p->ppmp_number ? "PPMP {$p->ppmp_number}" : "PPMP #{$p->id}");
+                    $existingTitles = ($existingByPpmp->get($p->id) ?? collect())->pluck('title');
 
-                    if (!$exists) {
-                        SystemNotification::notify(
-                            $user->id,
-                            'PPMP Awaiting Office Head Approval',
-                            "PPMP {$idLabel} ({$p->title}) is awaiting your official review and approval.",
-                            $p->id,
-                            'warning'
+                    if ($p->status === 'HEAD_PENDING') {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Approval') !== false);
+
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Awaiting Office Head Approval',
+                                "PPMP {$idLabel} ({$p->title}) is awaiting your official review and approval.",
+                                $p->id,
+                                'warning'
+                            );
+                        }
+                    } elseif ($p->status === 'READY_TO_PRINT') {
+                        $exists = $existingTitles->contains(
+                            fn ($t) => stripos((string) $t, 'Approved') !== false || stripos((string) $t, 'Ready to Print') !== false
                         );
-                    }
-                } elseif ($p->status === 'READY_TO_PRINT') {
-                    $exists = SystemNotification::where('user_id', $user->id)
-                        ->where('ppmp_id', $p->id)
-                        ->where(function ($q) {
-                            $q->where('title', 'like', '%Approved%')
-                              ->orWhere('title', 'like', '%Ready to Print%');
-                        })
-                        ->exists();
 
-                    if (!$exists) {
-                        SystemNotification::notify(
-                            $user->id,
-                            'PPMP Approved & Ready to Print',
-                            "PPMP {$idLabel} ({$p->title}) has received all required endorsements and is now READY TO PRINT.",
-                            $p->id,
-                            'success'
-                        );
-                    }
-                } elseif ($p->status === 'HEAD_RETURNED') {
-                    $exists = SystemNotification::where('user_id', $user->id)
-                        ->where('ppmp_id', $p->id)
-                        ->where('title', 'like', '%Returned%')
-                        ->exists();
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Approved & Ready to Print',
+                                "PPMP {$idLabel} ({$p->title}) has received all required endorsements and is now READY TO PRINT.",
+                                $p->id,
+                                'success'
+                            );
+                        }
+                    } elseif ($p->status === 'HEAD_RETURNED') {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Returned') !== false);
 
-                    if (!$exists) {
-                        SystemNotification::notify(
-                            $user->id,
-                            'PPMP Returned to End-User',
-                            "PPMP {$idLabel} ({$p->title}) was returned for revisions.",
-                            $p->id,
-                            'info'
-                        );
-                    }
-                } elseif (in_array($p->status, ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW'])) {
-                    $stageName = match ($p->status) {
-                        'BUDGET_OFFICER_REVIEW' => 'Provincial Budget Office (PBO)',
-                        'PACCO_REVIEW' => 'Provincial Accounting Office (PACCO)',
-                        'OPPMO_REVIEW' => 'OPPMO Review',
-                        'TWG_REVIEW' => 'BAC-Technical Working Group (TWG)',
-                        default => 'Review',
-                    };
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Returned to End-User',
+                                "PPMP {$idLabel} ({$p->title}) was returned for revisions.",
+                                $p->id,
+                                'info'
+                            );
+                        }
+                    } elseif (in_array($p->status, ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW'])) {
+                        $stageName = match ($p->status) {
+                            'BUDGET_OFFICER_REVIEW' => 'Provincial Budget Office (PBO)',
+                            'PACCO_REVIEW' => 'Provincial Accounting Office (PACCO)',
+                            'OPPMO_REVIEW' => 'OPPMO Review',
+                            'TWG_REVIEW' => 'BAC-Technical Working Group (TWG)',
+                            default => 'Review',
+                        };
 
-                    $exists = SystemNotification::where('user_id', $user->id)
-                        ->where('ppmp_id', $p->id)
-                        ->where('title', 'like', "%{$stageName}%")
-                        ->exists();
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, $stageName) !== false);
 
-                    if (!$exists) {
-                        SystemNotification::notify(
-                            $user->id,
-                            "PPMP Under {$stageName}",
-                            "PPMP {$idLabel} ({$p->title}) submitted by your office is currently undergoing review at {$stageName}.",
-                            $p->id,
-                            'info'
-                        );
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                "PPMP Under {$stageName}",
+                                "PPMP {$idLabel} ({$p->title}) submitted by your office is currently undergoing review at {$stageName}.",
+                                $p->id,
+                                'info'
+                            );
+                        }
                     }
                 }
             }
         }
 
         $query = SystemNotification::where('user_id', $user->id)
-            ->with(['ppmp:id,uuid,tracking_number,ppmp_number,title,status,amendment_status,office_id,created_by,admin_received_at,head_received_at,budget_received_at,oppmo_received_at,twg_received_at,enduser_received_at'])
+            ->with([
+                'ppmp:id,uuid,tracking_number,ppmp_number,title,status,office_id,implementing_unit,program_name,created_by,attachment_list_data,app_data',
+                'ppmp.milestones',
+                'ppmp.amendment',
+                'ppmp.attachments',
+                'ppmp.monitoringProjects',
+            ])
             ->latest('id');
 
         if ($request->boolean('all')) {
             $notifications = $query->take(100)->get();
         } else {
             $notifications = $query->take(20)->get();
+        }
+
+        $returnedNotifPpmps = $notifications
+            ->pluck('ppmp')
+            ->filter(fn ($p) => $p && str_ends_with($p->status ?? '', '_RETURNED'))
+            ->unique('id')
+            ->values();
+        if ($returnedNotifPpmps->isNotEmpty()) {
+            \Illuminate\Database\Eloquent\Collection::make($returnedNotifPpmps->all())->load(['reviews.reviewer', 'routes.fromUser']);
         }
 
         $unreadCount = SystemNotification::where('user_id', $user->id)

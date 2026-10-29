@@ -42,7 +42,7 @@ class UserController extends Controller
             return response()->json(['message' => 'Unauthorized. Only Super Admin can assign the Super Admin role.'], 403);
         }
 
-        $allowedRoles = ['end_user', 'head', 'budget_officer', 'oppmo', 'twg', 'authorized_staff', 'pacco', 'monitor', 'admin'];
+        $allowedRoles = ['end_user', 'head', 'budget_officer', 'oppmo', 'twg', 'authorized_staff', 'pacco', 'monitor', 'pgso', 'presentative_staff', 'admin'];
         if ($admin->isSuperAdmin()) {
             $allowedRoles[] = 'super_admin';
         }
@@ -57,6 +57,7 @@ class UserController extends Controller
             'phone_number' => ['nullable', 'string', 'max:50'],
             'address' => ['nullable', 'string', 'max:255'],
             'signature' => ['nullable', 'string'],
+            'signature_file' => ['nullable', 'file', 'mimes:png,jpg,jpeg', 'max:5120'],
         ]);
 
         $signaturePath = null;
@@ -75,11 +76,37 @@ class UserController extends Controller
             }
         } elseif ($request->hasFile('signature_file')) {
             $uploaded = $request->file('signature_file');
-            $ext = strtolower($uploaded->getClientOriginalExtension()) ?: 'png';
+            $ext = in_array(strtolower($uploaded->getClientOriginalExtension()), ['jpg', 'jpeg', 'png'], true)
+                ? strtolower($uploaded->getClientOriginalExtension())
+                : 'png';
+            $rawHeader = file_get_contents($uploaded->getRealPath(), false, null, 0, 8);
+            $isValidHeader = (
+                substr($rawHeader, 0, 3) === "\xFF\xD8\xFF" || // JPEG
+                substr($rawHeader, 0, 8) === "\x89PNG\r\n\x1a\n" // PNG
+            );
+            if (!$isValidHeader) {
+                return response()->json(['message' => 'Uploaded signature is not a valid PNG or JPEG image.'], 422);
+            }
             $filename = 'sig_' . \Illuminate\Support\Str::uuid() . '.' . $ext;
             $signaturePath = 'signatures/' . $filename;
             \Illuminate\Support\Facades\Storage::disk('local')->put($signaturePath, file_get_contents($uploaded->getRealPath()));
         }
+
+        $accessibleSystems = $request->input('accessible_systems');
+        if (is_string($accessibleSystems)) {
+            $decoded = json_decode($accessibleSystems, true);
+            $accessibleSystems = is_array($decoded) ? $decoded : array_filter(array_map('trim', explode(',', $accessibleSystems)));
+        }
+        if (!is_array($accessibleSystems) || empty($accessibleSystems)) {
+            if ($validated['role'] === 'monitor') {
+                $accessibleSystems = ['/monitoringsystem'];
+            } elseif (in_array($validated['role'], ['pgso', 'presentative_staff'], true)) {
+                $accessibleSystems = ['/supplierevaluation'];
+            } else {
+                $accessibleSystems = ['/eprocrementppmpapp'];
+            }
+        }
+        $accessibleSystems = array_values(array_unique($accessibleSystems));
 
         $user = User::create([
             'name' => $validated['name'],
@@ -93,6 +120,7 @@ class UserController extends Controller
             'signature_path' => $signaturePath,
             'is_active' => true,
             'approval_status' => 'approved',
+            'accessible_systems' => $accessibleSystems,
         ]);
 
         AuditLog::log(
@@ -126,6 +154,12 @@ class UserController extends Controller
             return response()->json(['message' => 'Unauthorized. Only Super Administrators can manage Super Administrator accounts.'], 403);
         }
 
+        $request->validate([
+            'signature' => ['nullable', 'string'],
+            'signature_data' => ['nullable', 'string'],
+            'signature_file' => ['nullable', 'file', 'mimes:png,jpg,jpeg', 'max:5120'],
+        ]);
+
         $signaturePath = null;
         $sigInput = $request->input('signature') ?? $request->input('signature_data');
         if (!empty($sigInput)) {
@@ -143,7 +177,17 @@ class UserController extends Controller
             }
         } elseif ($request->hasFile('signature_file')) {
             $uploaded = $request->file('signature_file');
-            $ext = strtolower($uploaded->getClientOriginalExtension()) ?: 'png';
+            $ext = in_array(strtolower($uploaded->getClientOriginalExtension()), ['jpg', 'jpeg', 'png'], true)
+                ? strtolower($uploaded->getClientOriginalExtension())
+                : 'png';
+            $rawHeader = file_get_contents($uploaded->getRealPath(), false, null, 0, 8);
+            $isValidHeader = (
+                substr($rawHeader, 0, 3) === "\xFF\xD8\xFF" || // JPEG
+                substr($rawHeader, 0, 8) === "\x89PNG\r\n\x1a\n" // PNG
+            );
+            if (!$isValidHeader) {
+                return response()->json(['message' => 'Uploaded signature is not a valid PNG or JPEG image.'], 422);
+            }
             $filename = 'sig_' . \Illuminate\Support\Str::uuid() . '.' . $ext;
             $signaturePath = 'signatures/' . $filename;
             \Illuminate\Support\Facades\Storage::disk('local')->put($signaturePath, file_get_contents($uploaded->getRealPath()));
@@ -398,7 +442,7 @@ class UserController extends Controller
             return response()->json(['message' => 'Unauthorized. Only Super Administrators can manage Super Administrator accounts.'], 403);
         }
 
-        $allowedRoles = ['end_user', 'head', 'budget_officer', 'oppmo', 'twg', 'authorized_staff', 'pacco', 'monitor', 'admin'];
+        $allowedRoles = ['end_user', 'head', 'budget_officer', 'oppmo', 'twg', 'authorized_staff', 'pacco', 'monitor', 'pgso', 'presentative_staff', 'admin'];
         if ($admin->isSuperAdmin()) {
             $allowedRoles[] = 'super_admin';
         }
@@ -433,14 +477,15 @@ class UserController extends Controller
         $currentUser = $request->user();
         $targetUser = User::findOrFail($id);
 
-        // Access Control: Allow self, admin, or official procurement signatories/reviewers
+        // Access Control: Allow self, admin, or official procurement/evaluation signatories/reviewers
         $isSelf = $currentUser->id === $targetUser->id;
-        $isAdmin = $currentUser->isAdmin();
-        $isOfficialSignatory = in_array($targetUser->role, ['head', 'budget_officer', 'oppmo', 'twg', 'admin', 'super_admin', 'authorized_staff', 'pacco'], true);
+        $isAdmin = $currentUser->isAdmin() || $currentUser->isPgso();
+        $isOfficialSignatory = in_array($targetUser->role, ['head', 'budget_officer', 'oppmo', 'twg', 'admin', 'super_admin', 'authorized_staff', 'presentative_staff', 'pacco', 'pgso'], true);
 
         if (!$isSelf && !$isAdmin && !$isOfficialSignatory) {
-            // If target user is a regular end user, check if they prepared a PPMP that the current user has rights to view
-            $sharesPpmp = \App\Models\PpmpSignature::where('user_id', $targetUser->id)
+            // Check if they signed a Supplier Digital Approval or prepared a PPMP
+            $sharesEvaluation = \App\Models\SupplierDigitalApproval::where('signed_by', $targetUser->id)->exists();
+            $sharesPpmp = $sharesEvaluation || \App\Models\PpmpSignature::where('user_id', $targetUser->id)
                 ->whereHas('ppmp', function ($q) use ($currentUser) {
                     if ($currentUser->isHead()) {
                         $q->where('office_id', $currentUser->office_id);
@@ -456,11 +501,23 @@ class UserController extends Controller
             }
         }
 
-        if (!$targetUser->signature_path || !\Illuminate\Support\Facades\Storage::disk('local')->exists($targetUser->signature_path)) {
+        if (!$targetUser->signature_path) {
             return response()->json(['message' => 'No signature on file.'], 404);
         }
 
-        $fullPath = \Illuminate\Support\Facades\Storage::disk('local')->path($targetUser->signature_path);
+        $fullPath = null;
+        if (\Illuminate\Support\Facades\Storage::disk('local')->exists($targetUser->signature_path)) {
+            $fullPath = \Illuminate\Support\Facades\Storage::disk('local')->path($targetUser->signature_path);
+        } else {
+            $legacyPath = 'C:/xampp/htdocs/finalize_system/Supplier_Evaluation/storage/app/private/' . ltrim($targetUser->signature_path, '/');
+            if (file_exists($legacyPath)) {
+                $fullPath = $legacyPath;
+            }
+        }
+
+        if (!$fullPath || !file_exists($fullPath)) {
+            return response()->json(['message' => 'No signature on file.'], 404);
+        }
 
         return response()->file($fullPath, [
             'Content-Type' => 'image/png',
@@ -497,6 +554,48 @@ class UserController extends Controller
             'Content-Disposition' => 'inline; filename="Authorization_Letter_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $targetUser->name) . '.pdf"',
             'Cache-Control' => 'private, max-age=3600',
             'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    /**
+     * Update user's permitted digital systems (Admin & Super Admin)
+     */
+    public function updateSystemAccess(Request $request, int $id): JsonResponse
+    {
+        $admin = $request->user();
+        if (!$admin->isAdmin()) {
+            return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
+        }
+
+        $targetUser = User::findOrFail($id);
+
+        if ($targetUser->isSuperAdmin() && !$admin->isSuperAdmin()) {
+            return response()->json(['message' => 'Unauthorized. Only Super Administrators can manage Super Administrator accounts.'], 403);
+        }
+
+        $validated = $request->validate([
+            'accessible_systems' => ['required', 'array'],
+            'accessible_systems.*' => ['string'],
+        ]);
+
+        $oldSystems = $targetUser->accessible_systems;
+        $cleanSystems = array_values(array_unique($validated['accessible_systems']));
+        $targetUser->update([
+            'accessible_systems' => $cleanSystems,
+        ]);
+
+        AuditLog::log(
+            'USER_SYSTEM_ACCESS_UPDATED',
+            'users',
+            $targetUser->id,
+            ['accessible_systems' => $oldSystems],
+            ['accessible_systems' => $cleanSystems],
+            $admin->id
+        );
+
+        return response()->json([
+            'message' => "System access permissions for {$targetUser->name} have been updated successfully.",
+            'user' => $targetUser->fresh(['office']),
         ]);
     }
 }

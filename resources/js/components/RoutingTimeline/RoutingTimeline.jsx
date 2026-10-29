@@ -1,6 +1,14 @@
 import React, { useState } from 'react';
 import { formatDate } from '../UI/StatusBadge';
-import { Clock, ExternalLink, X, ChevronRight, History, Printer } from 'lucide-react';
+import { Clock, ExternalLink, X, ChevronRight, History, Printer, Edit3 } from 'lucide-react';
+
+export const cleanFieldName = (field) => {
+    if (!field) return 'Field';
+    return String(field)
+        .replace(/[._]/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase())
+        .trim();
+};
 
 /**
  * Returns accurate recipient / next office information strictly following the official PPMP route flow:
@@ -21,7 +29,7 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
         ppmp?.items?.some(i => i.source_of_fund?.toLowerCase()?.includes('trust'))
     );
     const isAttachOnly = ppmp?.amendment_scope === 'ATTACHMENT_LIST';
-    const isPpmpAppOnly = ppmp?.amendment_scope === 'PPMP_APP';
+    const isPpmpAppOnly = ppmp?.amendment_type === 'AMENDMENT' && ppmp?.amendment_scope === 'PPMP_APP';
 
     // 1. Initial Draft Created -> next reviewing office upon submission
     if (action === 'DRAFT_CREATED') {
@@ -71,12 +79,12 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
         };
     }
 
-    // 4. Desk receipt by BAC-TWG -> next office is Office Head for final approval
+    // 4. Desk receipt by BAC-TWG -> next office is OPPMO to generate APP
     if (action === 'TWG_RECEIVED') {
         return {
-            name: ppmp?.office?.head?.name || 'Office Head',
-            role: 'head',
-            designation: ppmp?.office?.head?.designation || 'Office Head / Implementing Unit Head (Final Endorsement)',
+            name: route.to_user?.name || 'OPPMO REVIEW',
+            role: 'oppmo',
+            designation: route.to_user?.designation || 'Provincial Procurement Management Office (APP Generation)',
         };
     }
 
@@ -89,16 +97,25 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
         };
     }
 
-    // 6. BAC-TWG Approved -> routed to Office Head
+    // 6. BAC-TWG Approved -> routed back to OPPMO for APP generation
     if (action === 'TWG_APPROVED') {
         return {
-            name: ppmp?.office?.head?.name || 'Office Head',
-            role: 'head',
-            designation: ppmp?.office?.head?.designation || 'Office Head / Implementing Unit Head',
+            name: route.to_user?.name || 'OPPMO Reviewer',
+            role: 'oppmo',
+            designation: route.to_user?.designation || 'Provincial Procurement Management Office',
         };
     }
 
-    // 7. Office Head Approved or Ready to Print -> released to Implementing Unit / End User
+    // 7. OPPMO APP Generated -> forwarded to Office Head for approval
+    if (action === 'OPPMO_APP_GENERATED') {
+        return {
+            name: route.to_user?.name || ppmp?.office?.head?.name || 'Office Head',
+            role: 'head',
+            designation: route.to_user?.designation || ppmp?.office?.head?.designation || 'Office Head / Implementing Unit Head',
+        };
+    }
+
+    // 8. Office Head Approved or Ready to Print -> released to Implementing Unit / End User
     if (action === 'HEAD_APPROVED' || action === 'READY_TO_PRINT') {
         return {
             name: ppmp?.creator?.name || 'Implementing Unit / End User',
@@ -489,7 +506,7 @@ export const RoutingTimeline = ({
                                         // Classify the nature of the step
                                         const isReceiptCard = actionStr.endsWith('_RECEIVED') || actionStr === 'ADMIN_RECEIVED_REQUEST';
                                         const isSuspendedCard = actionStr.includes('RETURNED') || statusStr.includes('RETURNED') || actionStr.includes('REJECTED');
-                                        const isApprovedCard = !isReceiptCard && !isSuspendedCard && (actionStr.includes('APPROVED') || statusStr.includes('APPROVED') || actionStr === 'READY_TO_PRINT' || statusStr === 'READY_TO_PRINT');
+                                        const isApprovedCard = !isReceiptCard && !isSuspendedCard && (actionStr.includes('APPROVED') || statusStr.includes('APPROVED') || actionStr === 'OPPMO_APP_GENERATED' || actionStr === 'READY_TO_PRINT' || statusStr === 'READY_TO_PRINT');
                                         const isSubmissionCard = !isReceiptCard && !isSuspendedCard && !isApprovedCard;
 
                                         // Dot styling
@@ -547,15 +564,19 @@ export const RoutingTimeline = ({
                                                 case 'PACCO_RETURNED':
                                                     return 'Suspended & Returned by PACCO Reviewer';
                                                 case 'OPPMO_RECEIVED':
-                                                    return 'Received by OPPMO';
+                                                    return route.remarks?.includes('Annual Procurement Plan') || route.remarks?.includes('APP')
+                                                        ? 'Received by OPPMO (Awaiting APP Generation)'
+                                                        : 'Received by OPPMO';
                                                 case 'OPPMO_APPROVED':
                                                     return 'OPPMO Approved & Released to BAC-TWG';
+                                                case 'OPPMO_APP_GENERATED':
+                                                    return 'Annual Procurement Plan (APP) Generated & Released to Office Head';
                                                 case 'OPPMO_RETURNED':
                                                     return 'Suspended & Returned by OPPMO';
                                                 case 'TWG_RECEIVED':
                                                     return 'Received by BAC-TWG';
                                                 case 'TWG_APPROVED':
-                                                    return 'BAC-TWG Technical Review Approved & Released to Office Head';
+                                                    return 'BAC-TWG Technical Review Approved & Released to OPPMO';
                                                 case 'TWG_RETURNED':
                                                     return 'Suspended & Returned by BAC-TWG';
                                                 case 'READY_TO_PRINT':
@@ -747,21 +768,48 @@ export const RoutingTimeline = ({
                             )}
 
                             {/* Field Level Change Logs */}
-                            {changeLogs.length > 0 && (
+                            {activeChangeLogs.length > 0 && (
                                 <div className="mt-6 pt-5 border-t border-slate-200">
-                                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
-                                        Reviewer Field-Level Change Logs
-                                    </h4>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                                            <Edit3 className="w-4 h-4 text-amber-600" />
+                                            <span>Document Change Logs (Reviewer & Item Modifications)</span>
+                                        </h4>
+                                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold border border-amber-300">
+                                            {activeChangeLogs.length} {activeChangeLogs.length === 1 ? 'Change' : 'Changes'}
+                                        </span>
+                                    </div>
                                     <div className="space-y-2">
-                                        {changeLogs.map((log) => (
-                                            <div key={log.id} className="p-3 bg-amber-50/70 border border-amber-200 rounded-md text-xs">
-                                                <div className="flex items-center justify-between text-[11px] font-medium text-amber-900 mb-1">
-                                                    <span>Field modified: <strong>{log.field_name}</strong></span>
-                                                    <span>By {log.user?.name} ({log.role})</span>
+                                        {activeChangeLogs.map((log) => (
+                                            <div key={log.id} className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg text-xs shadow-2xs">
+                                                <div className="flex items-center justify-between text-[11px] font-medium text-amber-900 mb-1.5 flex-wrap gap-1">
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <span>Field: <strong className="text-slate-900 font-bold">{cleanFieldName(log.field_name)}</strong></span>
+                                                        {log.action && !['update', 'field_correction'].includes(log.action) && (
+                                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200/80 text-amber-950 border border-amber-300">
+                                                                {log.action}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900 uppercase">
+                                                            {log.role ? log.role.replace(/_/g, ' ') : 'Reviewer'}
+                                                        </span>
+                                                        <span className="text-slate-600 font-semibold">{log.user?.name || 'Authorized User'}</span>
+                                                        {log.created_at && (
+                                                            <span className="text-[10px] text-slate-400 font-mono">• {formatDate(log.created_at)}</span>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
-                                                    <div className="text-rose-700 line-through">Old: {log.old_value || '(empty)'}</div>
-                                                    <div className="text-emerald-800 font-semibold">New: {log.new_value}</div>
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono">
+                                                    <div className="p-1.5 bg-rose-50 border border-rose-200 rounded text-rose-800">
+                                                        <span className="text-[10px] font-sans font-bold uppercase text-rose-600 block">Previous:</span>
+                                                        <span className="line-through break-words">{log.old_value || '(none)'}</span>
+                                                    </div>
+                                                    <div className="p-1.5 bg-emerald-50 border border-emerald-200 rounded text-emerald-900 font-semibold">
+                                                        <span className="text-[10px] font-sans font-bold uppercase text-emerald-600 block">Updated / New:</span>
+                                                        <span className="break-words">{log.new_value || '(removed)'}</span>
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}

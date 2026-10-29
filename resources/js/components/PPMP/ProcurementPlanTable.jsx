@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { formatCurrency } from '../UI/StatusBadge';
 import { Plus, Trash2, FileCheck2 } from 'lucide-react';
 import { SupportingDocsDropdown } from './SupportingDocsDropdown';
-import { supportingDocumentService } from '../../services/api';
+import { supportingDocumentService, procurementModeService } from '../../services/api';
 
 /**
  * Automatically wraps long text so each line has at most 6 words,
@@ -207,6 +207,8 @@ export const MonthRangeInput = ({ value, onChange, className = "" }) => {
     );
 };
 
+const DEFAULT_DOCUMENTS = [];
+
 export const ProcurementPlanTable = ({
     items = [],
     isEditable = false,
@@ -222,26 +224,77 @@ export const ProcurementPlanTable = ({
     placeOfDelivery = '',
     paymentMethod = '',
     warrantyAndOtherTerms = '',
-    supportingDocuments = [],
+    supportingDocuments = DEFAULT_DOCUMENTS,
+    procurementModes = null,
 }) => {
     const [showProgramInput, setShowProgramInput] = useState(Boolean(programName && String(programName).trim()));
     const [docsList, setDocsList] = useState(supportingDocuments);
+    const [modesList, setModesList] = useState(Array.isArray(procurementModes) && procurementModes.length > 0 ? procurementModes : []);
+
+    useEffect(() => {
+        if (Array.isArray(procurementModes) && procurementModes.length > 0) {
+            setModesList(procurementModes);
+            return;
+        }
+
+        let isMounted = true;
+        const loadModes = () => {
+            procurementModeService.getAll({ active_only: 1 })
+                .then(res => {
+                    if (isMounted && Array.isArray(res.data)) {
+                        setModesList(res.data);
+                    }
+                })
+                .catch(() => {});
+        };
+
+        loadModes();
+
+        const handleModesChanged = () => {
+            if (isMounted) loadModes();
+        };
+        window.addEventListener('procurement-modes:changed', handleModesChanged);
+
+        return () => {
+            isMounted = false;
+            window.removeEventListener('procurement-modes:changed', handleModesChanged);
+        };
+    }, [procurementModes]);
 
     useEffect(() => {
         if (supportingDocuments && supportingDocuments.length > 0) {
             setDocsList(supportingDocuments);
             return;
         }
+
+        // Only editable mode requires the list of supporting documents for dropdown selection
+        if (!isEditable) {
+            return;
+        }
+
         let isMounted = true;
-        supportingDocumentService.getAll({ active_only: 1 })
-            .then(res => {
-                if (isMounted && Array.isArray(res.data)) {
-                    setDocsList(res.data);
-                }
-            })
-            .catch(() => {});
-        return () => { isMounted = false; };
-    }, [supportingDocuments]);
+        const loadDocs = () => {
+            supportingDocumentService.getAll({ active_only: 1 })
+                .then(res => {
+                    if (isMounted && Array.isArray(res.data)) {
+                        setDocsList(res.data);
+                    }
+                })
+                .catch(() => {});
+        };
+
+        loadDocs();
+
+        const handleDocsChanged = () => {
+            if (isMounted) loadDocs();
+        };
+        window.addEventListener('supporting-documents:changed', handleDocsChanged);
+
+        return () => {
+            isMounted = false;
+            window.removeEventListener('supporting-documents:changed', handleDocsChanged);
+        };
+    }, [isEditable, supportingDocuments]);
 
     useEffect(() => {
         if (programName && String(programName).trim()) {
@@ -460,24 +513,21 @@ export const ProcurementPlanTable = ({
                                             <td className="p-2">
                                                 {isEditable ? (
                                                     <select
-                                                        value={item.procurement_mode || 'Competitive Bidding (RA 12009)'}
+                                                        value={item.procurement_mode || (modesList[0]?.name || 'Competitive Bidding (RA 12009)')}
                                                         onChange={(e) => onUpdateItem(realIdx, 'procurement_mode', e.target.value)}
-                                                        className="w-full text-xs p-1 border border-slate-300 rounded bg-white"
+                                                        className="w-full text-xs p-1 border border-slate-300 rounded bg-white font-medium text-slate-800"
                                                     >
-                                                        <option value="Competitive Bidding (RA 12009)">Competitive Bidding (RA 12009)</option>
-                                                        <option value="Small Value Procurement (RA 12009)">Small Value Procurement (RA 12009)</option>
-                                                        <option value="Lease of Venue">Lease of Venue</option>
-                                                        <option value="CB Thru Framework (RA 12009)">CB Thru Framework (RA 12009)</option>
-                                                        <option value="Direct Contracting">Direct Contracting</option>
-                                                        <option value="Agency to Agency">Agency to Agency</option>
-                                                        <option value="Shopping B">Shopping B</option>
-                                                        <option value="POL">POL</option>
-                                                        <option value="Consulting">Consulting</option>
-                                                        <option value="Scholarly, Artistic work, Exclusive Technology and Media Services">Scholarly, Artistic work, Exclusive Technology and Media Services</option>
-                                                        <option value="Emergency Cases (RA 12009)">Emergency Cases (RA 12009)</option>
-                                                        <option value="Negotiated Procurement - Sagip Saka Under 11321">Negotiated Procurement - Sagip Saka Under 11321</option>
-                                                        <option value="Direct Acquisition Under RA 12009">Direct Acquisition Under RA 12009</option>
-                                                        <option value="A to A Thru RGP">A to A Thru RGP</option>
+                                                        {/* Preserve existing item value if inactive or not in current list */}
+                                                        {item.procurement_mode && !modesList.some((m) => m.name === item.procurement_mode) && (
+                                                            <option value={item.procurement_mode}>
+                                                                {item.procurement_mode} (Inactive)
+                                                            </option>
+                                                        )}
+                                                        {modesList.map((m) => (
+                                                            <option key={m.id || m.name} value={m.name}>
+                                                                {m.name}
+                                                            </option>
+                                                        ))}
                                                     </select>
                                                 ) : (
                                                     <span className="font-medium text-slate-800">{item.procurement_mode}</span>

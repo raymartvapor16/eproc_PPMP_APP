@@ -10,15 +10,19 @@ import { AdminVisualAnalytics } from '../../components/Dashboard/AdminVisualAnal
 import { AdminReportsView } from '../../components/Dashboard/AdminReportsView';
 import { AdminActivityLog } from '../../components/Dashboard/AdminActivityLog';
 import { FundSourcesManagement } from '../../components/Dashboard/FundSourcesManagement';
+import { ProcurementModesManagement } from '../../components/Dashboard/ProcurementModesManagement';
 import { ProcurementConditionsManagement } from '../../components/Dashboard/ProcurementConditionsManagement';
 import { OtherTermsManagement } from '../../components/Dashboard/OtherTermsManagement';
 import { SupportingDocumentsManagement } from '../../components/Dashboard/SupportingDocumentsManagement';
 import { SystemSettingsManagement } from '../../components/Dashboard/SystemSettingsManagement';
 import { SignatoriesManagement } from '../../components/Dashboard/SignatoriesManagement';
+import { PortalSystemsManagement } from '../../components/Dashboard/PortalSystemsManagement';
+import { OppmoTeamManagement } from '../../components/Dashboard/OppmoTeamManagement';
 import { isDeveloperModeActive } from '../../utils/devToolsGuard';
 import { AdminDashboard } from './AdminDashboard';
 import { CreateUserModal } from '../../components/Dashboard/CreateUserModal';
 import { UserSignatureModal } from '../../components/Dashboard/UserSignatureModal';
+import { UserSystemAccessModal } from '../../components/Dashboard/UserSystemAccessModal';
 import {
     PimsPublishReminderCard,
     getPpmpStartOfActivity,
@@ -60,6 +64,7 @@ import {
     Image as ImageIcon,
     PenTool,
     UserPlus,
+    Layers,
 } from 'lucide-react';
 
 export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) => {
@@ -90,11 +95,15 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
         window.addEventListener('developer_mode:changed', handleDevModeChange);
         window.addEventListener('admin:navigate_section', handleAdminNav);
         window.addEventListener('app:data_reload', handleDataReload);
+        window.addEventListener('pims:published', handleDataReload);
+        window.addEventListener('monitoring:updated', handleDataReload);
 
         return () => {
             window.removeEventListener('developer_mode:changed', handleDevModeChange);
             window.removeEventListener('admin:navigate_section', handleAdminNav);
             window.removeEventListener('app:data_reload', handleDataReload);
+            window.removeEventListener('pims:published', handleDataReload);
+            window.removeEventListener('monitoring:updated', handleDataReload);
         };
     }, [onReload]);
 
@@ -130,6 +139,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
     const [userActionFeedback, setUserActionFeedback] = useState({ type: '', text: '' });
     const [signaturePreviewUser, setSignaturePreviewUser] = useState(null);
     const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
+    const [selectedUserForSystems, setSelectedUserForSystems] = useState(null);
 
     // Office management & CSV/Excel Import state for Admin view
     const [officesList, setOfficesList] = useState(data?.offices || []);
@@ -219,7 +229,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 } else if (ppmpTab === 'OPPMO_APPROVED') {
                     if (!['TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp.status)) return false;
                 } else if (ppmpTab === 'TWG_APPROVED') {
-                    if (!['HEAD_PENDING', 'HEAD_RETURNED'].includes(ppmp.status)) return false;
+                    if (!['OPPMO_REVIEW', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp.status) || !ppmp.twg_approved_at) return false;
                 } else if (ppmp.status !== ppmpTab) {
                     return false;
                 }
@@ -686,6 +696,9 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
             if (adminSection === 'fund_sources') {
                 return <FundSourcesManagement />;
             }
+            if (adminSection === 'procurement_modes') {
+                return <ProcurementModesManagement />;
+            }
             if (adminSection === 'conditions') {
                 return <ProcurementConditionsManagement />;
             }
@@ -694,6 +707,12 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
             }
             if (adminSection === 'supporting_docs') {
                 return <SupportingDocumentsManagement />;
+            }
+            if (adminSection === 'portal_systems') {
+                return <PortalSystemsManagement />;
+            }
+            if (adminSection === 'oppmo_team') {
+                return <OppmoTeamManagement />;
             }
             if (adminSection === 'settings') {
                 return <SystemSettingsManagement />;
@@ -962,6 +981,35 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                                                 <span>{u.signature_path ? 'Signature' : 'Signature'}</span>
                                                                             </button>
                                                                         </div>
+
+                                                                        {/* Authorized Systems Badges */}
+                                                                        <div className="flex items-center gap-1 flex-wrap mt-1">
+                                                                            {u.role === 'super_admin' || u.role === 'admin' ? (
+                                                                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-purple-100 text-purple-800 text-[9.5px] font-bold border border-purple-200">
+                                                                                    <Shield className="w-2.5 h-2.5 text-purple-600" />
+                                                                                    All Systems (Full)
+                                                                                </span>
+                                                                            ) : Array.isArray(u.accessible_systems) && u.accessible_systems.length > 0 ? (
+                                                                                u.accessible_systems.map((url) => (
+                                                                                    <span
+                                                                                        key={url}
+                                                                                        className={`inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9.5px] font-bold border ${
+                                                                                            url === '/eprocrementppmpapp'
+                                                                                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                                                : url === '/monitoringsystem'
+                                                                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                                                : 'bg-amber-50 text-amber-700 border-amber-200'
+                                                                                        }`}
+                                                                                    >
+                                                                                        {url === '/eprocrementppmpapp' ? 'PPMP/APP' : url === '/monitoringsystem' ? 'Monitoring' : 'Portal'}
+                                                                                    </span>
+                                                                                ))
+                                                                            ) : (
+                                                                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 text-[9.5px] font-medium">
+                                                                                    {u.role === 'monitor' ? 'Monitoring' : 'PPMP/APP'}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
                                                                 </td>
                                                                 <td className="p-3">
@@ -1009,6 +1057,14 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                                                 >
                                                                                     <UserX className="w-3 h-3" /> Reject
                                                                                 </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => setSelectedUserForSystems(u)}
+                                                                                    className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded text-[11px] font-bold transition cursor-pointer"
+                                                                                    title="Configure Digital Systems Access"
+                                                                                >
+                                                                                    <Layers className="w-3 h-3" /> Systems
+                                                                                </button>
                                                                             </>
                                                                         ) : isRejected ? (
                                                                             <>
@@ -1051,6 +1107,14 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                                                     className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold transition cursor-pointer"
                                                                                 >
                                                                                     <Key className="w-3 h-3" /> Password
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => setSelectedUserForSystems(u)}
+                                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-[11px] font-bold transition cursor-pointer shadow-2xs"
+                                                                                    title="Edit Permitted Digital Systems (Face-to-Face Request)"
+                                                                                >
+                                                                                    <Layers className="w-3 h-3" /> Systems
                                                                                 </button>
                                                                             </>
                                                                         )}
@@ -1505,6 +1569,20 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     onSuccess={(newUser, msg) => {
                         setUsersList(prev => [newUser, ...prev]);
                         setUserActionFeedback({ type: 'success', text: msg || 'User created successfully.' });
+                    }}
+                />
+
+                {/* Manage User System Access Modal (Face-to-Face Request) */}
+                <UserSystemAccessModal
+                    isOpen={Boolean(selectedUserForSystems)}
+                    targetUser={selectedUserForSystems}
+                    onClose={() => setSelectedUserForSystems(null)}
+                    onSuccess={(updatedUser) => {
+                        setUsersList(prev => prev.map(u => u.id === updatedUser.id ? { ...u, ...updatedUser } : u));
+                        setUserActionFeedback({
+                            type: 'success',
+                            text: `Digital system access permissions for ${updatedUser.name} updated successfully.`
+                        });
                     }}
                 />
             </div>
@@ -2305,6 +2383,17 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                                     Password
                                                                 </button>
 
+                                                                {/* Manage Systems Access */}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setSelectedUserForSystems(u)}
+                                                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer"
+                                                                    title="Manage Digital Systems Access Permissions"
+                                                                >
+                                                                    <Layers className="w-3.5 h-3.5 text-purple-600" />
+                                                                    Systems
+                                                                </button>
+
                                                                 {/* Delete User */}
                                                                 {u.id !== user?.id && (
                                                                     <button
@@ -2821,8 +2910,8 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             },
                             {
                                 key: 'TWG_APPROVED',
-                                label: 'Forwarded to Office Head',
-                                count: recentPpmps.filter(p => ['HEAD_PENDING', 'HEAD_RETURNED'].includes(p.status)).length,
+                                label: 'Approved & Routed to OPPMO',
+                                count: recentPpmps.filter(p => ['OPPMO_REVIEW', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(p.status) && (p.twg_approved_at || p.signatures?.some(s => s.role === 'twg'))).length,
                                 activeClass: 'bg-amber-600 text-white border-amber-600 shadow-sm',
                                 inactiveClass: 'bg-amber-50/70 text-amber-900 border-amber-200 hover:bg-amber-100',
                                 activeBadge: 'bg-amber-800 text-amber-100',

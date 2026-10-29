@@ -18,6 +18,7 @@ import {
     Printer,
     CheckCircle,
     AlertCircle,
+    AlertTriangle,
     Building2,
     Calendar,
     Coins,
@@ -37,6 +38,81 @@ import {
     History,
     Download,
 } from 'lucide-react';
+
+const getRoleDisplayName = (role) => {
+    switch (role) {
+        case 'end_user': return 'End User / Project In-Charge';
+        case 'head': return 'Department / Office Head';
+        case 'authorized_staff': return 'Authorized Staff (Acting Head)';
+        case 'budget_officer': return 'Provincial Budget Officer';
+        case 'oppmo': return 'OPPMO / BAC Secretariat';
+        case 'twg': return 'BAC-TWG Evaluator';
+        case 'pacco': return 'PACCO Reviewer';
+        case 'monitor': return 'OPPMO Monitoring Officer';
+        case 'super_admin': return 'Super Administrator';
+        case 'admin': return 'Administrator';
+        default: return role ? role.replace(/_/g, ' ').toUpperCase() : 'Reviewer';
+    }
+};
+
+const getLatestSuspension = (ppmp, isSuspended) => {
+    if (!isSuspended || !ppmp) return null;
+
+    // 1. Backend calculated attribute
+    if (ppmp.latest_return_remarks && ppmp.latest_return_remarks.remarks) {
+        return {
+            remarks: ppmp.latest_return_remarks.remarks,
+            reviewerName: ppmp.latest_return_remarks.reviewer_name || null,
+            roleLabel: getRoleDisplayName(ppmp.latest_return_remarks.reviewer_role),
+            date: ppmp.latest_return_remarks.acted_at || null,
+        };
+    }
+
+    // 2. Reviews relation
+    const returnReviews = (ppmp.reviews || [])
+        .filter(r => r.action === 'return' || (r.status_after && r.status_after.includes('RETURNED')))
+        .sort((a, b) => new Date(b.acted_at || b.created_at || 0) - new Date(a.acted_at || a.created_at || 0));
+
+    if (returnReviews.length > 0 && returnReviews[0].remarks) {
+        const rev = returnReviews[0];
+        return {
+            remarks: rev.remarks,
+            reviewerName: rev.reviewer?.name || null,
+            roleLabel: getRoleDisplayName(rev.reviewer_role),
+            date: rev.acted_at || rev.created_at || null,
+        };
+    }
+
+    // 3. Routes relation
+    const returnRoutes = (ppmp.routes || [])
+        .filter(r => (r.action && r.action.includes('RETURNED')) || (r.status && r.status.includes('RETURNED')))
+        .sort((a, b) => new Date(b.acted_at || b.submitted_at || b.created_at || 0) - new Date(a.acted_at || a.submitted_at || a.created_at || 0));
+
+    if (returnRoutes.length > 0 && returnRoutes[0].remarks) {
+        const route = returnRoutes[0];
+        return {
+            remarks: route.remarks,
+            reviewerName: route.from_user?.name || null,
+            roleLabel: getRoleDisplayName(route.from_role),
+            date: route.acted_at || route.submitted_at || route.created_at || null,
+        };
+    }
+
+    // 4. Status-based fallback
+    let fallbackRole = 'Reviewer';
+    if (ppmp.status === 'HEAD_RETURNED') fallbackRole = 'Department / Office Head';
+    else if (ppmp.status === 'BUDGET_OFFICER_RETURNED') fallbackRole = 'Provincial Budget Officer';
+    else if (ppmp.status === 'PACCO_RETURNED') fallbackRole = 'PACCO Reviewer';
+    else if (ppmp.status === 'OPPMO_RETURNED') fallbackRole = 'OPPMO / BAC Secretariat';
+    else if (ppmp.status === 'TWG_RETURNED') fallbackRole = 'BAC-TWG Evaluator';
+
+    return {
+        remarks: ppmp.remarks || 'This procurement plan has been returned/suspended for revision. Please review your line items and attachments before resubmitting.',
+        reviewerName: null,
+        roleLabel: fallbackRole,
+        date: ppmp.updated_at || null,
+    };
+};
 
 export const PPMPDetailPage = ({
     ppmp,
@@ -200,10 +276,24 @@ export const PPMPDetailPage = ({
     );
 
     const hasApp = Boolean(
-        ppmp?.app_data ||
-        ppmp?.pre_submission_checks?.app_generated ||
-        localStorage.getItem(`ppmp_app_generated_${ppmp?.uuid}`)
+        !ppmp?.app_data?.needs_regeneration && (
+            ppmp?.app_data?.is_generated ||
+            (Array.isArray(ppmp?.app_data?.rows) && ppmp?.app_data?.rows.length > 0)
+        )
     );
+
+    const oldAppData = ppmp?.app_data?.old_app || ppmp?.parent?.app_data || null;
+    const hasOldApp = Boolean(oldAppData && (oldAppData.rows || oldAppData.is_generated || (typeof oldAppData === 'object' && Object.keys(oldAppData).length > 0)));
+
+    const oldAppPpmp = React.useMemo(() => {
+        if (!oldAppData) return null;
+        return {
+            ...ppmp,
+            title: `${ppmp.title} (Previous / Baseline APP)`,
+            app_data: oldAppData,
+            items: ppmp.parent?.items || ppmp.items,
+        };
+    }, [ppmp, oldAppData]);
 
     const hasMarketScoping = Boolean(
         ppmp?.pre_submission_checks?.market_scoping_attached ??
@@ -215,14 +305,34 @@ export const PPMPDetailPage = ({
     );
 
     const preSubmissionStatus = {
-        hasApp: Boolean(ppmp?.pre_submission_checks?.app_generated ?? hasApp),
+        hasApp: hasApp,
         hasAttachmentList: Boolean(ppmp?.pre_submission_checks?.attachment_list_generated ?? hasAttachmentList),
         hasMarketScoping: hasMarketScoping,
     };
     const isPreSubmissionReady = preSubmissionStatus.hasAttachmentList && preSubmissionStatus.hasMarketScoping;
 
-    const isTwgDone = Boolean(ppmp?.twg_approved_at || ppmp?.signatures?.some(s => s.role === 'twg'));
-    const canOppmoGenerateApp = (user?.role === 'oppmo' && isTwgDone) || ['admin', 'super_admin'].includes(user?.role);
+    const isTwgSkipped = Boolean(
+        (ppmp?.amendment_type === 'AMENDMENT' || ppmp?.amendment?.amendment_type === 'AMENDMENT') &&
+        (ppmp?.amendment_scope === 'PPMP_APP' || ppmp?.amendment?.amendment_scope === 'PPMP_APP')
+    );
+    const isTwgDone = Boolean(isTwgSkipped || ppmp?.twg_approved_at || ppmp?.signatures?.some(s => s.role === 'twg'));
+    const isOppmoReviewer = user?.role === 'oppmo' || ['admin', 'super_admin'].includes(user?.role);
+    const isOppmoPostTwgReview = isOppmoReviewer && isTwgDone && ppmp?.status === 'OPPMO_REVIEW';
+    const canOppmoGenerateApp = isOppmoPostTwgReview;
+
+    // View APP is only visible after the OPPMO Reviewer (who generates the APP) has approved the PPMP
+    const isOppmoAppApproved = Boolean(
+        hasApp &&
+        ['HEAD_PENDING', 'READY_TO_PRINT'].includes(ppmp?.status) &&
+        (
+            ppmp?.status === 'READY_TO_PRINT' ||
+            ppmp?.app_data?.is_oppmo_approved ||
+            ppmp?.app_data?.oppmo_approved_at ||
+            ppmp?.routes?.some(r => r.action === 'OPPMO_APP_GENERATED') ||
+            isTwgDone
+        )
+    );
+    const canViewApprovedApp = isOppmoAppApproved;
 
     const isCreator = ppmp.created_by === user.id;
     const isReadyToPrint = ppmp.status === 'READY_TO_PRINT';
@@ -284,7 +394,7 @@ export const PPMPDetailPage = ({
             <APPPrintView
                 ppmp={ppmp}
                 user={user}
-                canEdit={canEdit}
+                canEdit={isOppmoReviewer && canOppmoGenerateApp}
                 onBack={() => setIsAppView(false)}
                 onGenerated={(updatedPpmp) => {
                     if (onReload) onReload();
@@ -376,6 +486,9 @@ export const PPMPDetailPage = ({
                 return isTrustFund ? 'the PACCO Reviewer' : 'the Provincial Budget Officer';
         }
     };
+
+    const isSuspended = ['HEAD_RETURNED', 'BUDGET_OFFICER_RETURNED', 'PACCO_RETURNED', 'OPPMO_RETURNED', 'TWG_RETURNED'].includes(ppmp?.status) || (typeof ppmp?.status === 'string' && ppmp.status.endsWith('_RETURNED'));
+    const latestSuspension = getLatestSuspension(ppmp, isSuspended);
 
     const handleSubmitForReview = async () => {
         if (isAwaitingReceive(ppmp, user)) {
@@ -532,8 +645,9 @@ export const PPMPDetailPage = ({
     return (
         <div className="space-y-6">
             {/* Action Bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-                <div className="flex items-center gap-3">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
                     <button
                         onClick={onBack}
                         className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition"
@@ -588,6 +702,25 @@ export const PPMPDetailPage = ({
                         </button>
                     )}
 
+                    {/* OPPMO Reviewer Generate/Regenerate APP Action Button (Only after TWG review is complete) */}
+                    {canOppmoGenerateApp && (
+                        <button
+                            type="button"
+                            onClick={() => setIsAppView(true)}
+                            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm transition cursor-pointer ${
+                                ppmp?.app_data?.needs_regeneration
+                                    ? 'bg-amber-600 hover:bg-amber-700 text-white animate-pulse'
+                                    : hasApp
+                                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                            }`}
+                            title="Generate or update Annual Procurement Plan (APP)"
+                        >
+                            <FileText className="w-4 h-4" />
+                            {ppmp?.app_data?.needs_regeneration ? 'Regenerate APP' : (hasApp ? 'View / Edit APP' : 'Generate APP')}
+                        </button>
+                    )}
+
                     {/* READY_TO_PRINT Action Buttons */}
                     {isReadyToPrint && (
                         <>
@@ -615,13 +748,26 @@ export const PPMPDetailPage = ({
                                 <Printer className="w-4 h-4" />
                                 PRINT PPMP
                             </button>
-                            <button
-                                onClick={() => setIsAppView(true)}
-                                className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm transition cursor-pointer"
-                            >
-                                <Printer className="w-4 h-4" />
-                                PRINT APP
-                            </button>
+                            {canViewApprovedApp && (
+                                <button
+                                    onClick={() => setIsAppView(true)}
+                                    className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm transition cursor-pointer"
+                                >
+                                    <Printer className="w-4 h-4" />
+                                    PRINT APP
+                                </button>
+                            )}
+                            {hasOldApp && (
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedAppPpmp(oldAppPpmp)}
+                                    className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-700 hover:bg-indigo-600 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm transition cursor-pointer"
+                                    title="View Old / Previous Annual Procurement Plan (APP) baseline before this revision"
+                                >
+                                    <History className="w-4 h-4" />
+                                    OLD APP
+                                </button>
+                            )}
                             {hasAttachmentList && (
                                 <button
                                     type="button"
@@ -693,6 +839,39 @@ export const PPMPDetailPage = ({
                 </div>
             </div>
 
+            {/* Suspension / Return Remarks Banner */}
+            {isSuspended && latestSuspension && (
+                <div className="pt-3 border-t border-rose-100">
+                    <div className="p-3.5 bg-rose-50/90 border border-rose-200 rounded-xl text-xs space-y-2">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                                <span className="p-1 bg-rose-100 text-rose-700 rounded-md">
+                                    <AlertTriangle className="w-4 h-4" />
+                                </span>
+                                <span className="font-bold text-rose-950 uppercase tracking-wide text-[11px]">
+                                    Latest Suspension Remarks & Instructions
+                                </span>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-200/80 text-rose-900 border border-rose-300">
+                                    {latestSuspension.roleLabel}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] text-rose-700 font-medium">
+                                {latestSuspension.reviewerName && (
+                                    <span>Reviewer: <strong>{latestSuspension.reviewerName}</strong></span>
+                                )}
+                                {latestSuspension.date && (
+                                    <span className="text-rose-500 font-mono">• {formatDate(latestSuspension.date)}</span>
+                                )}
+                            </div>
+                        </div>
+                        <div className="p-3 bg-white border border-rose-200 rounded-lg text-xs text-rose-950 font-medium whitespace-pre-wrap leading-relaxed shadow-2xs">
+                            {latestSuspension.remarks}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+
             {/* Mandatory Pre-Submission Checklist Banner for DRAFT and Returned States */}
             {canSubmitForReview && ['DRAFT', 'HEAD_RETURNED', 'BUDGET_OFFICER_RETURNED', 'PACCO_RETURNED', 'OPPMO_RETURNED', 'TWG_RETURNED'].includes(ppmp.status) && (
                 <div className={`rounded-xl border-2 p-4 shadow-xs transition ${
@@ -728,27 +907,7 @@ export const PPMPDetailPage = ({
 
                         {/* Checklist items */}
                         <div className="flex flex-wrap items-center gap-2 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-200/60">
-                            {/* APP status indicator (shown if generated, or if authorized OPPMO can generate) */}
-                            {preSubmissionStatus.hasApp ? (
-                                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border bg-emerald-100/60 border-emerald-300 text-emerald-800">
-                                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                                    <span>APP Generated</span>
-                                </div>
-                            ) : (canOppmoGenerateApp ? (
-                                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border bg-white border-amber-300 text-amber-900">
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsAppView(true)}
-                                        className="text-amber-700 font-bold hover:underline cursor-pointer flex items-center gap-1.5"
-                                        title="Click to generate Annual Procurement Plan"
-                                    >
-                                        <FileText className="w-3.5 h-3.5 text-amber-600" />
-                                        <span>Generate APP</span>
-                                    </button>
-                                </div>
-                            ) : null)}
-
-                            {/* 2. PPMP List of Attachment */}
+                            {/* 1. PPMP List of Attachment */}
                             <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${
                                 preSubmissionStatus.hasAttachmentList
                                     ? 'bg-emerald-100/60 border-emerald-300 text-emerald-800'
@@ -1233,6 +1392,7 @@ export const PPMPDetailPage = ({
                         isReceiving={receiving}
                         onEdit={onEdit}
                         onOpenItemsModal={() => setIsItemsModalOpen(true)}
+                        onOpenApp={() => setIsAppView(true)}
                     />
 
                     {/* Create / Generate PPMP List of Attachment Button */}
@@ -1314,8 +1474,8 @@ export const PPMPDetailPage = ({
                         )}
                     </div>
 
-                    {/* Create / Generate APP (Annual Procurement Plan) Button */}
-                    {(hasApp || canOppmoGenerateApp) && (
+                    {/* Create / Generate APP (Annual Procurement Plan) Button — Only visible to OPPMO Reviewer during post-TWG OPPMO_REVIEW, or once OPPMO has generated APP and approved the PPMP */}
+                    {(canOppmoGenerateApp || canViewApprovedApp) && (
                         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 flex flex-col gap-2.5">
                             <div className="flex items-center gap-2">
                                 <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
@@ -1331,18 +1491,50 @@ export const PPMPDetailPage = ({
                                 </div>
                             </div>
 
-                            <button
-                                type="button"
-                                onClick={() => setIsAppView(true)}
-                                className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition shadow-sm cursor-pointer ${hasApp
-                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                            {/* Action / View Button */}
+                            {canOppmoGenerateApp ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAppView(true)}
+                                    className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition shadow-sm cursor-pointer ${
+                                        ppmp?.app_data?.needs_regeneration
+                                            ? 'bg-amber-600 hover:bg-amber-700 text-white animate-pulse'
+                                            : hasApp
+                                                ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                                                : 'bg-blue-600 hover:bg-blue-700 text-white'
                                     }`}
-                                title={isReadyToPrint ? "Generate and print official Annual Procurement Plan (APP) with Governor Approval" : (hasApp ? "View / Print official Annual Procurement Plan (APP)" : "Configure and create Annual Procurement Plan (APP)")}
-                            >
-                                <FileText className="w-4 h-4" />
-                                {hasApp ? (isReadyToPrint ? 'View / Print APP' : 'View APP Preview') : 'Create APP'}
-                            </button>
+                                    title="Configure and generate Official Annual Procurement Plan (APP)"
+                                >
+                                    <FileText className="w-4 h-4" />
+                                    <span>
+                                        {ppmp?.app_data?.needs_regeneration
+                                            ? 'Regenerate APP (Changes Detected)'
+                                            : (hasApp ? 'View / Edit APP' : 'Generate APP')}
+                                    </span>
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAppView(true)}
+                                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition shadow-sm cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white"
+                                    title={isReadyToPrint ? "Generate and print official Annual Procurement Plan (APP) with Governor Approval" : "View official Annual Procurement Plan (APP) preview"}
+                                >
+                                    <FileText className="w-4 h-4" />
+                                    <span>{isReadyToPrint ? 'View / Print APP' : 'View APP Preview'}</span>
+                                </button>
+                            )}
+
+                            {hasOldApp && (
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedAppPpmp(oldAppPpmp)}
+                                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold text-xs uppercase tracking-wider rounded-lg transition cursor-pointer"
+                                    title="View Old / Previous Annual Procurement Plan (APP) baseline before this revision"
+                                >
+                                    <History className="w-3.5 h-3.5 text-indigo-500" />
+                                    <span>View Old / Previous APP</span>
+                                </button>
+                            )}
                         </div>
                     )}
 
@@ -1436,6 +1628,7 @@ export const PPMPDetailPage = ({
                         canUpload={canUploadAttachment}
                         canDelete={canUploadAttachment}
                         onAttachmentChanged={onReload}
+                        requestLetterAttachmentId={requestLetterInfo?.attachment?.id || requestLetterInfo?.attachment?.uuid}
                     />
 
 
@@ -1522,18 +1715,20 @@ export const PPMPDetailPage = ({
                                             <Printer className="w-3.5 h-3.5" />
                                             Print PPMP
                                         </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setIsItemsModalOpen(false);
-                                                setIsAppView(true);
-                                            }}
-                                            className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition shadow-sm cursor-pointer"
-                                            title="Print official Annual Procurement Plan (APP)"
-                                        >
-                                            <Printer className="w-3.5 h-3.5" />
-                                            Print APP
-                                        </button>
+                                        {canViewApprovedApp && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setIsItemsModalOpen(false);
+                                                    setIsAppView(true);
+                                                }}
+                                                className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition shadow-sm cursor-pointer"
+                                                title="Print official Annual Procurement Plan (APP)"
+                                            >
+                                                <Printer className="w-3.5 h-3.5" />
+                                                Print APP
+                                            </button>
+                                        )}
                                     </div>
                                 ) : canEdit ? (
                                     <button
@@ -1860,10 +2055,17 @@ export const PPMPDetailPage = ({
 
             {/* Request Supplemental / Amend Modal */}
             {isAmendModalOpen && (
-                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
-                        {/* Header */}
-                        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                <div 
+                    className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-hidden"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget && !submittingAmend) {
+                            setIsAmendModalOpen(false);
+                        }
+                    }}
+                >
+                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        {/* Header (Sticky / Shrink-0) */}
+                        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0 border-b border-slate-800">
                             <div className="flex items-center gap-2.5">
                                 <div className="p-2 bg-amber-500/20 text-amber-400 rounded-lg">
                                     <RefreshCw className="w-5 h-5" />
@@ -1879,16 +2081,17 @@ export const PPMPDetailPage = ({
                             </div>
                             <button
                                 type="button"
+                                disabled={submittingAmend}
                                 onClick={() => setIsAmendModalOpen(false)}
-                                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition disabled:opacity-50 cursor-pointer"
                             >
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
 
-                        {/* Body Form */}
-                        <form onSubmit={handleAmendSubmit}>
-                            <div className="p-6 space-y-4">
+                        {/* Body Form with Flex Column and Scrollable Content */}
+                        <form onSubmit={handleAmendSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                            <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1 min-h-0">
                                 {amendError && (
                                     <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-medium">
                                         {amendError}
@@ -1896,28 +2099,30 @@ export const PPMPDetailPage = ({
                                 )}
 
                                 {/* Readonly Info: Tracker Number, PPMP No, Project Title */}
-                                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5 text-xs">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-slate-500 font-semibold">Tracking Number:</span>
-                                        <span className="font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">
-                                            {ppmp.tracking_number || ppmp.ppmp_number}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-slate-500 font-semibold">PPMP No:</span>
-                                        <span className="font-mono font-bold text-slate-800">
-                                            {ppmp.ppmp_number}
-                                        </span>
+                                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-500 font-semibold">Tracker:</span>
+                                            <span className="font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">
+                                                {ppmp.tracking_number || ppmp.ppmp_number}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-slate-500 font-semibold">PPMP No:</span>
+                                            <span className="font-mono font-bold text-slate-800">
+                                                {ppmp.ppmp_number}
+                                            </span>
+                                        </div>
                                     </div>
                                     <div>
-                                        <span className="text-slate-500 font-semibold block mb-0.5">Project Title:</span>
+                                        <span className="text-slate-500 font-semibold block text-[11px] mb-0.5">Project Title:</span>
                                         <span className="font-bold text-slate-900 leading-snug block">
                                             {ppmp.title}
                                         </span>
                                     </div>
                                 </div>
 
-                                 {/* Component to Change Selection */}
+                                {/* Component to Change Selection */}
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
                                         What to Change <span className="text-rose-500">*</span>
@@ -2074,13 +2279,13 @@ export const PPMPDetailPage = ({
                                 </div>
                             </div>
 
-                            {/* Modal Footer */}
-                            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5">
+                            {/* Modal Footer (Sticky / Shrink-0) */}
+                            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5 shrink-0">
                                 <button
                                     type="button"
                                     disabled={submittingAmend}
                                     onClick={() => setIsAmendModalOpen(false)}
-                                    className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 rounded-lg transition"
+                                    className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 rounded-lg transition cursor-pointer"
                                 >
                                     Cancel
                                 </button>

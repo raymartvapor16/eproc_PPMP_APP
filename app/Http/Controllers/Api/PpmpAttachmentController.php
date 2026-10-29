@@ -34,6 +34,7 @@ class PpmpAttachmentController extends Controller
             'HEAD_APPROVED',
             'HEAD_RETURNED',
             'BUDGET_OFFICER_RETURNED',
+            'PACCO_RETURNED',
             'OPPMO_RETURNED',
             'TWG_RETURNED',
         ]);
@@ -274,6 +275,7 @@ class PpmpAttachmentController extends Controller
             'HEAD_APPROVED',
             'HEAD_RETURNED',
             'BUDGET_OFFICER_RETURNED',
+            'PACCO_RETURNED',
             'OPPMO_RETURNED',
             'TWG_RETURNED',
         ]);

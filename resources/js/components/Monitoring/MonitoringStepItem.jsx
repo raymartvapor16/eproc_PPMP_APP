@@ -26,6 +26,7 @@ export const MonitoringStepItem = ({
     projectId,
     isBacDecision = false,
     isTechnicalCb = false,
+    canManage = true,
     onStepUpdated,
 }) => {
     const [isEditing, setIsEditing] = useState(false);
@@ -219,43 +220,45 @@ export const MonitoringStepItem = ({
                     </div>
 
                     {/* Quick Actions & Edit Toggle */}
-                    <div className="flex items-center gap-1 shrink-0 self-end sm:self-start">
-                        {step.status !== 'COMPLETED' && step.status !== 'APPROVED' && (
+                    {canManage && (
+                        <div className="flex items-center gap-1 shrink-0 self-end sm:self-start">
+                            {step.status !== 'COMPLETED' && step.status !== 'APPROVED' && (
+                                <button
+                                    type="button"
+                                    disabled={loading}
+                                    onClick={() => handleQuickStatus('COMPLETED')}
+                                    title="Mark Completed / Approved"
+                                    className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                                >
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span className="hidden sm:inline">Done</span>
+                                </button>
+                            )}
+
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing(!isEditing)}
+                                className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition cursor-pointer"
+                                title="Edit Step Details"
+                            >
+                                <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+
                             <button
                                 type="button"
                                 disabled={loading}
-                                onClick={() => handleQuickStatus('COMPLETED')}
-                                title="Mark Completed / Approved"
-                                className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                                onClick={handleDelete}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                title="Delete Step (Add/Delete supported across all divisions)"
                             >
-                                <Check className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Done</span>
+                                <Trash2 className="w-3.5 h-3.5" />
                             </button>
-                        )}
-
-                        <button
-                            type="button"
-                            onClick={() => setIsEditing(!isEditing)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition cursor-pointer"
-                            title="Edit Step Details"
-                        >
-                            <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
-                            type="button"
-                            disabled={loading}
-                            onClick={handleDelete}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                            title="Delete Step (Add/Delete supported across all divisions)"
-                        >
-                            <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                    </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Inline Editing Form */}
-                {isEditing && (
+                {canManage && isEditing && (
                     <div className="mt-4 pt-4 border-t border-slate-100 bg-slate-50/80 -mx-4 -mb-4 p-4 rounded-b-xl space-y-3">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
