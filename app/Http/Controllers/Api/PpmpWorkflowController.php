@@ -846,7 +846,7 @@ class PpmpWorkflowController extends Controller
             return response()->json(['message' => "PPMP is not awaiting OPPMO review."], 422);
         }
 
-        $isTwgSkipped = ($ppmp->amendment_type === 'AMENDMENT' && $ppmp->amendment_scope === 'PPMP_APP');
+        $isTwgSkipped = ($ppmp->amendment_scope === 'PPMP_APP');
         $isPostTwg = $isTwgSkipped || $ppmp->twg_approved_at !== null || $ppmp->signatures()->where('role', 'twg')->exists();
 
         if ($isPostTwg) {
@@ -1134,22 +1134,28 @@ class PpmpWorkflowController extends Controller
             return response()->json(['message' => "PPMP is not awaiting TWG review."], 422);
         }
 
-        if ($ppmp->amendment_type === 'AMENDMENT' && $ppmp->amendment_scope === 'PPMP_APP') {
+        if ($ppmp->amendment_scope === 'PPMP_APP') {
             return response()->json(['message' => 'BAC-TWG review is not applicable for this PPMP revision because the amendment scope is restricted to PPMP/APP only.'], 422);
         }
 
         DB::transaction(function () use ($ppmp, $user) {
             $now = now();
             $receivedAt = $ppmp->twg_received_at ?? $now;
+            $isAttachOnly = $ppmp->amendment_scope === 'ATTACHMENT_LIST';
+            $nextStatus = $isAttachOnly ? 'READY_TO_PRINT' : 'OPPMO_REVIEW';
 
-            $oppmoUsers = User::where('role', 'oppmo')->where('is_active', true)->get();
-
-            $ppmp->update([
-                'status' => 'OPPMO_REVIEW',
+            $updateData = [
+                'status' => $nextStatus,
                 'twg_approved_at' => $now,
                 'twg_received_at' => $receivedAt,
-                'oppmo_received_at' => null,
-            ]);
+            ];
+            if ($isAttachOnly) {
+                $updateData['ready_to_print_at'] = $now;
+                $updateData['enduser_received_at'] = null;
+            } else {
+                $updateData['oppmo_received_at'] = null;
+            }
+            $ppmp->update($updateData);
 
             // Mark incoming route as received
             $this->markLatestPendingRouteReceived($ppmp->id, $receivedAt);
@@ -1166,14 +1172,24 @@ class PpmpWorkflowController extends Controller
                 ]
             );
 
+            // Synchronize the approving TWG reviewer's name & designation into the PPMP list of attachment data
+            if (!empty($ppmp->attachment_list_data) && is_array($ppmp->attachment_list_data)) {
+                $attData = $ppmp->attachment_list_data;
+                $attData['approved_by_name'] = $user->name;
+                $attData['approved_by_position'] = $user->designation ?: 'BAC Technical Working Group (TWG) Member';
+                $ppmp->update(['attachment_list_data' => $attData]);
+            }
+
             PpmpReview::create([
                 'ppmp_id' => $ppmp->id,
                 'reviewer_id' => $user->id,
                 'reviewer_role' => 'twg',
                 'action' => 'approve',
-                'remarks' => 'BAC-TWG technical review approved. Routed back to OPPMO for APP generation.',
+                'remarks' => $isAttachOnly
+                    ? 'PPMP List of Attachment specifications verified and approved by BAC-TWG.'
+                    : 'BAC-TWG technical review approved. Routed back to OPPMO for APP generation.',
                 'status_before' => 'TWG_REVIEW',
-                'status_after' => 'OPPMO_REVIEW',
+                'status_after' => $nextStatus,
                 'submitted_at' => $ppmp->oppmo_approved_at ?? $now,
                 'received_at' => $receivedAt,
                 'acted_at' => $now,
@@ -1181,36 +1197,65 @@ class PpmpWorkflowController extends Controller
                 'user_agent' => request()->userAgent(),
             ]);
 
-            PpmpRoute::create([
-                'ppmp_id' => $ppmp->id,
-                'from_user_id' => $user->id,
-                'to_user_id' => $oppmoUsers->first()?->id,
-                'from_role' => 'twg',
-                'to_role' => 'oppmo',
-                'action' => 'TWG_APPROVED',
-                'status' => 'OPPMO_REVIEW',
-                'remarks' => 'BAC-TWG technical review approved. Routed back to OPPMO to generate Annual Procurement Plan (APP).',
-                'submitted_at' => $now,
-                'acted_at' => $now,
-            ]);
-
             $idLabel = $this->getPpmpIdentifier($ppmp);
 
-            foreach ($oppmoUsers as $oppmo) {
-                SystemNotification::notify(
-                    $oppmo->id,
-                    'PPMP Awaiting APP Generation',
-                    "PPMP {$idLabel} ({$ppmp->title}) has completed BAC-TWG technical review and was routed back to OPPMO for Annual Procurement Plan (APP) generation.",
-                    $ppmp->id,
-                    'info'
-                );
-            }
+            if ($isAttachOnly) {
+                PpmpRoute::create([
+                    'ppmp_id' => $ppmp->id,
+                    'from_user_id' => $user->id,
+                    'to_user_id' => $ppmp->created_by,
+                    'from_role' => 'twg',
+                    'to_role' => 'end_user',
+                    'action' => 'TWG_APPROVED_ATTACHMENT_LIST',
+                    'status' => 'READY_TO_PRINT',
+                    'remarks' => 'Updated PPMP List of Attachment evaluated and approved by BAC-TWG. Document is now READY TO PRINT.',
+                    'submitted_at' => $now,
+                    'acted_at' => $now,
+                ]);
 
-            AuditLog::log('PPMP_TWG_APPROVED', 'ppmps', $ppmp->id, null, ['status' => 'OPPMO_REVIEW'], $user->id);
+                SystemNotification::notify(
+                    $ppmp->created_by,
+                    'PPMP Approved & Ready to Print',
+                    "Congratulations! The updated List of Attachment for PPMP {$idLabel} ({$ppmp->title}) was approved by BAC-TWG ({$user->name}) and is now READY TO PRINT.",
+                    $ppmp->id,
+                    'success'
+                );
+
+                AuditLog::log('PPMP_TWG_APPROVED_ATTACHMENT_LIST', 'ppmps', $ppmp->id, null, ['target' => 'READY_TO_PRINT'], $user->id);
+            } else {
+                $oppmoUsers = User::where('role', 'oppmo')->where('is_active', true)->get();
+
+                PpmpRoute::create([
+                    'ppmp_id' => $ppmp->id,
+                    'from_user_id' => $user->id,
+                    'to_user_id' => $oppmoUsers->first()?->id,
+                    'from_role' => 'twg',
+                    'to_role' => 'oppmo',
+                    'action' => 'TWG_APPROVED',
+                    'status' => 'OPPMO_REVIEW',
+                    'remarks' => 'BAC-TWG technical review approved. Routed back to OPPMO to generate Annual Procurement Plan (APP).',
+                    'submitted_at' => $now,
+                    'acted_at' => $now,
+                ]);
+
+                foreach ($oppmoUsers as $oppmo) {
+                    SystemNotification::notify(
+                        $oppmo->id,
+                        'PPMP Awaiting APP Generation',
+                        "PPMP {$idLabel} ({$ppmp->title}) has completed BAC-TWG technical review and was routed back to OPPMO for Annual Procurement Plan (APP) generation.",
+                        $ppmp->id,
+                        'info'
+                    );
+                }
+
+                AuditLog::log('PPMP_TWG_APPROVED', 'ppmps', $ppmp->id, null, ['status' => 'OPPMO_REVIEW'], $user->id);
+            }
         });
 
         return response()->json([
-            'message' => 'PPMP approved by BAC-TWG and routed back to OPPMO for APP generation.',
+            'message' => $ppmp->fresh()->status === 'READY_TO_PRINT'
+                ? 'PPMP List of Attachment approved by BAC-TWG. Document is now READY TO PRINT.'
+                : 'PPMP approved by BAC-TWG and routed back to OPPMO for APP generation.',
             'ppmp' => $ppmp->fresh(['office.head', 'creator', 'signatures.user', 'routes.fromUser', 'routes.toUser']),
         ]);
     }
@@ -1232,7 +1277,7 @@ class PpmpWorkflowController extends Controller
             return response()->json(['message' => "PPMP is not awaiting TWG review."], 422);
         }
 
-        if ($ppmp->amendment_type === 'AMENDMENT' && $ppmp->amendment_scope === 'PPMP_APP') {
+        if ($ppmp->amendment_scope === 'PPMP_APP') {
             return response()->json(['message' => 'BAC-TWG review is not applicable for this PPMP revision because the amendment scope is restricted to PPMP/APP only.'], 422);
         }
 
@@ -1395,7 +1440,7 @@ class PpmpWorkflowController extends Controller
             $ppmp->update(['oppmo_received_at' => $now]);
             $this->markLatestPendingRouteReceived($ppmp->id, $now);
 
-            $isTwgSkipped = ($ppmp->amendment_type === 'AMENDMENT' && $ppmp->amendment_scope === 'PPMP_APP');
+            $isTwgSkipped = ($ppmp->amendment_scope === 'PPMP_APP');
             $isPostTwg = $isTwgSkipped || $ppmp->twg_approved_at !== null || $ppmp->signatures()->where('role', 'twg')->exists();
             $twgUser = User::where('role', 'twg')->where('is_active', true)->first();
             $headUser = $this->getTargetHeadUsers($ppmp->office_id)->first();
@@ -1637,6 +1682,78 @@ class PpmpWorkflowController extends Controller
         $scope = $ppmp->requested_amendment_scope ?: $ppmp->amendment_scope ?: 'ALL';
         $reason = $ppmp->requested_amendment_reason ?: $ppmp->amendment_reason;
         $now = now();
+
+        // Scope: ATTACHMENT_LIST only
+        // Does NOT create a new PPMP child in DRAFT because changes are strictly on the List of Attachment.
+        // The existing PPMP is reopened in DRAFT status so only the attachment list can be edited and submitted to BAC-TWG.
+        if ($scope === 'ATTACHMENT_LIST') {
+            $updatedPpmp = DB::transaction(function () use ($ppmp, $admin, $type, $scope, $reason, $now) {
+                // Clear existing BAC-TWG signature so TWG must re-evaluate and re-sign
+                PpmpSignature::where('ppmp_id', $ppmp->id)->where('role', 'twg')->delete();
+
+                // Clear approving TWG fields from attachment_list_data so TWG details will re-populate upon approval
+                if (!empty($ppmp->attachment_list_data) && is_array($ppmp->attachment_list_data)) {
+                    $attData = $ppmp->attachment_list_data;
+                    unset($attData['approved_by_name'], $attData['approved_by_position']);
+                    $ppmp->attachment_list_data = $attData;
+                }
+
+                // Update PPMP to DRAFT to allow List of Attachment edits
+                $ppmp->update([
+                    'status' => 'DRAFT',
+                    'amendment_status' => 'APPROVED',
+                    'amendment_type' => $type,
+                    'amendment_scope' => 'ATTACHMENT_LIST',
+                    'amendment_reason' => $reason,
+                    'amendment_approved_at' => $now,
+                    'twg_approved_at' => null,
+                    'twg_received_at' => null,
+                    'ready_to_print_at' => null,
+                    'enduser_received_at' => null,
+                    'attachment_list_data' => $ppmp->attachment_list_data,
+                ]);
+
+                // Mark incoming route as received
+                $this->markLatestPendingRouteReceived($ppmp->id, $ppmp->admin_received_at ?? $now);
+
+                // Log route to End User
+                PpmpRoute::create([
+                    'ppmp_id' => $ppmp->id,
+                    'from_user_id' => $admin->id,
+                    'to_user_id' => $ppmp->created_by,
+                    'from_role' => 'admin',
+                    'to_role' => 'end_user',
+                    'action' => 'ADMIN_APPROVED_' . $type,
+                    'status' => 'DRAFT',
+                    'remarks' => "{$type} (PPMP List of Attachment Only) approved by Administrator. Reopened in DRAFT for editing List of Attachment.",
+                    'submitted_at' => $now,
+                    'acted_at' => $now,
+                ]);
+
+                // Notify Creator
+                $idLabel = $this->getPpmpIdentifier($ppmp);
+                SystemNotification::notify(
+                    $ppmp->created_by,
+                    "{$type} Request Approved",
+                    "Your {$type} request (PPMP List of Attachment Only) for PPMP {$idLabel} was approved! You can now update the List of Attachment and submit for BAC-TWG review.",
+                    $ppmp->id,
+                    'success'
+                );
+
+                AuditLog::log('PPMP_AMENDMENT_APPROVED', 'ppmps', $ppmp->id, null, [
+                    'ppmp_id' => $ppmp->id,
+                    'scope' => 'ATTACHMENT_LIST',
+                    'type' => $type,
+                ], $admin->id);
+
+                return $ppmp;
+            });
+
+            return response()->json([
+                'message' => "{$type} request approved. PPMP List of Attachment reopened in DRAFT for editing.",
+                'ppmp' => $updatedPpmp->fresh(['office.head', 'creator', 'signatures.user', 'routes.fromUser', 'routes.toUser', 'parent']),
+            ]);
+        }
 
         $newPpmp = DB::transaction(function () use ($ppmp, $admin, $type, $scope, $reason, $now) {
             // Update amendment status on the baseline PPMP (only the root PPMP with no parent_id is the Annual PPMP)

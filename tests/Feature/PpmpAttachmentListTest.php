@@ -260,5 +260,64 @@ class PpmpAttachmentListTest extends TestCase
         $this->assertEquals('Date of Activity', $ppmp->attachment_list_data['delivery_period']);
         $this->assertEquals('10/2026', $item->delivery_period); // Item monthly schedule unchanged
     }
+
+    public function test_attachment_list_approved_by_fetches_approving_twg_reviewer(): void
+    {
+        $twgUser = User::create([
+            'name' => 'Engr. Juan Dela Cruz',
+            'email' => 'juan.twg@example.test',
+            'password' => Hash::make('password123'),
+            'role' => 'twg',
+            'designation' => 'BAC TWG Technical Evaluator',
+            'office_id' => $this->office->id,
+            'is_active' => true,
+        ]);
+
+        $ppmp = Ppmp::create([
+            'uuid' => (string) Str::uuid(),
+            'tracking_number' => 'TRK-2026-TWG-ATT-01',
+            'ppmp_number' => '5',
+            'office_id' => $this->office->id,
+            'created_by' => $this->creator->id,
+            'fiscal_year' => 2026,
+            'title' => 'Hardware Equipment Project',
+            'total_budget' => 45000.00,
+            'status' => 'TWG_REVIEW',
+            'attachment_list_data' => [
+                'is_generated' => true,
+                'project_title' => 'Hardware Equipment',
+                'prepared_by_name' => 'Maria',
+                'submitted_by_name' => 'Head',
+                'approved_by_name' => null,
+                'approved_by_position' => null,
+                'rows' => [
+                    ['id' => 1, 'unit' => 'unit', 'description' => 'Router', 'qty' => 1, 'unitCost' => 45000, 'totalCost' => 45000],
+                ],
+            ],
+        ]);
+
+        // When TWG approves the PPMP in workflow
+        $response = $this->actingAs($twgUser)->postJson("/api/ppmps/{$ppmp->uuid}/twg/approve");
+        $response->assertStatus(200);
+
+        $ppmp->refresh();
+
+        // Verify attachment_list_data now has the TWG reviewer's exact name and designation
+        $this->assertEquals('Engr. Juan Dela Cruz', $ppmp->attachment_list_data['approved_by_name']);
+        $this->assertEquals('BAC TWG Technical Evaluator', $ppmp->attachment_list_data['approved_by_position']);
+
+        // Verify that saving an attachment list as end-user strips any legacy Governor name
+        $this->actingAs($this->creator)->postJson("/api/ppmps/{$ppmp->uuid}/attachment-list", [
+            'approved_by_name' => 'HON. YVONNE R. CAGAS',
+            'approved_by_position' => 'PROVINCIAL GOVERNOR',
+            'rows' => [
+                ['id' => 1, 'unit' => 'unit', 'description' => 'Router', 'qty' => 1, 'unitCost' => 45000, 'totalCost' => 45000],
+            ],
+        ]);
+
+        $ppmp->refresh();
+        // Since TWG already approved, it retains the TWG signer's name
+        $this->assertEquals('Engr. Juan Dela Cruz', $ppmp->attachment_list_data['approved_by_name']);
+    }
 }
 

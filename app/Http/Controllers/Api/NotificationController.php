@@ -118,9 +118,327 @@ class NotificationController extends Controller
             }
         }
 
+        // If user is a PACCO Reviewer, ensure notifications are synced for Trust Fund & PACCO review items
+        if ($user && $user->isPacco()) {
+            $paccoPpmps = Ppmp::without(['milestones', 'amendment'])
+                ->select(['id', 'uuid', 'tracking_number', 'ppmp_number', 'title', 'status', 'office_id', 'source_of_fund'])
+                ->whereDoesntHave('children')
+                ->where(function ($q) {
+                    $q->whereIn('status', ['PACCO_REVIEW', 'PACCO_RETURNED'])
+                        ->orWhere('source_of_fund', 'like', '%trust%')
+                        ->orWhereHas('milestones', fn($mq) => $mq->whereNotNull('pacco_approved_at'));
+                })
+                ->latest('id')
+                ->take(30)
+                ->get();
+
+            if ($paccoPpmps->isNotEmpty()) {
+                $existingByPpmp = SystemNotification::where('user_id', $user->id)
+                    ->whereIn('ppmp_id', $paccoPpmps->pluck('id'))
+                    ->select(['ppmp_id', 'title'])
+                    ->get()
+                    ->groupBy('ppmp_id');
+
+                foreach ($paccoPpmps as $p) {
+                    $idLabel = $p->tracking_number ?: ($p->ppmp_number ? "PPMP {$p->ppmp_number}" : "PPMP #{$p->id}");
+                    $existingTitles = ($existingByPpmp->get($p->id) ?? collect())->pluck('title');
+
+                    if ($p->status === 'PACCO_REVIEW') {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'PACCO') !== false || stripos((string) $t, 'Review') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Awaiting PACCO Review',
+                                "PPMP {$idLabel} ({$p->title}) is awaiting your official review and certification.",
+                                $p->id,
+                                'warning'
+                            );
+                        }
+                    } elseif ($p->status === 'PACCO_RETURNED') {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Returned') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Returned by PACCO',
+                                "PPMP {$idLabel} ({$p->title}) was returned for revisions.",
+                                $p->id,
+                                'info'
+                            );
+                        }
+                    } elseif ($p->status === 'READY_TO_PRINT') {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Approved') !== false || stripos((string) $t, 'Ready to Print') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Approved & Ready to Print',
+                                "PPMP {$idLabel} ({$p->title}) has received all required endorsements and is now READY TO PRINT.",
+                                $p->id,
+                                'success'
+                            );
+                        }
+                    } else {
+                        // Submitted for review or progressing through subsequent pipeline
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Review') !== false || stripos((string) $t, 'Submitted') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Submitted for Review',
+                                "PPMP {$idLabel} ({$p->title}) is under PACCO review pipeline.",
+                                $p->id,
+                                'info'
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // If user is a Budget Officer, ensure notifications are synced for General Fund & Budget review items
+        if ($user && $user->isBudgetOfficer()) {
+            $budgetPpmps = Ppmp::without(['milestones', 'amendment'])
+                ->select(['id', 'uuid', 'tracking_number', 'ppmp_number', 'title', 'status', 'office_id', 'source_of_fund'])
+                ->whereDoesntHave('children')
+                ->where(function ($q) {
+                    $q->whereIn('status', ['BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED'])
+                        ->orWhereHas('milestones', fn($mq) => $mq->whereNotNull('budget_approved_at'));
+                })
+                ->latest('id')
+                ->take(30)
+                ->get();
+
+            if ($budgetPpmps->isNotEmpty()) {
+                $existingByPpmp = SystemNotification::where('user_id', $user->id)
+                    ->whereIn('ppmp_id', $budgetPpmps->pluck('id'))
+                    ->select(['ppmp_id', 'title'])
+                    ->get()
+                    ->groupBy('ppmp_id');
+
+                foreach ($budgetPpmps as $p) {
+                    $idLabel = $p->tracking_number ?: ($p->ppmp_number ? "PPMP {$p->ppmp_number}" : "PPMP #{$p->id}");
+                    $existingTitles = ($existingByPpmp->get($p->id) ?? collect())->pluck('title');
+
+                    if ($p->status === 'BUDGET_OFFICER_REVIEW') {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Budget') !== false || stripos((string) $t, 'Review') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Awaiting Budget Officer Review',
+                                "PPMP {$idLabel} ({$p->title}) is awaiting your official review and budget evaluation.",
+                                $p->id,
+                                'warning'
+                            );
+                        }
+                    } elseif ($p->status === 'BUDGET_OFFICER_RETURNED') {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Returned') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Returned by Budget Officer',
+                                "PPMP {$idLabel} ({$p->title}) was returned for revisions.",
+                                $p->id,
+                                'info'
+                            );
+                        }
+                    } elseif ($p->status === 'READY_TO_PRINT') {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Approved') !== false || stripos((string) $t, 'Ready to Print') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Approved & Ready to Print',
+                                "PPMP {$idLabel} ({$p->title}) has received all required endorsements and is now READY TO PRINT.",
+                                $p->id,
+                                'success'
+                            );
+                        }
+                    } else {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Review') !== false || stripos((string) $t, 'Submitted') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Submitted for Review',
+                                "PPMP {$idLabel} ({$p->title}) is under Provincial Budget Office review pipeline.",
+                                $p->id,
+                                'info'
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // If user is OPPMO / BAC Secretariat
+        if ($user && $user->isOppmo()) {
+            $oppmoPpmps = Ppmp::without(['milestones', 'amendment'])
+                ->select(['id', 'uuid', 'tracking_number', 'ppmp_number', 'title', 'status', 'office_id'])
+                ->whereIn('status', ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'READY_TO_PRINT'])
+                ->whereDoesntHave('children')
+                ->latest('id')
+                ->take(30)
+                ->get();
+
+            if ($oppmoPpmps->isNotEmpty()) {
+                $existingByPpmp = SystemNotification::where('user_id', $user->id)
+                    ->whereIn('ppmp_id', $oppmoPpmps->pluck('id'))
+                    ->select(['ppmp_id', 'title'])
+                    ->get()
+                    ->groupBy('ppmp_id');
+
+                foreach ($oppmoPpmps as $p) {
+                    $idLabel = $p->tracking_number ?: ($p->ppmp_number ? "PPMP {$p->ppmp_number}" : "PPMP #{$p->id}");
+                    $existingTitles = ($existingByPpmp->get($p->id) ?? collect())->pluck('title');
+
+                    if ($p->status === 'OPPMO_REVIEW') {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'OPPMO') !== false || stripos((string) $t, 'Review') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Awaiting OPPMO Review',
+                                "PPMP {$idLabel} ({$p->title}) is awaiting your official review.",
+                                $p->id,
+                                'warning'
+                            );
+                        }
+                    } elseif ($p->status === 'OPPMO_RETURNED') {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Returned') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Returned by OPPMO',
+                                "PPMP {$idLabel} ({$p->title}) was returned for revisions.",
+                                $p->id,
+                                'info'
+                            );
+                        }
+                    } elseif ($p->status === 'READY_TO_PRINT') {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Approved') !== false || stripos((string) $t, 'Ready to Print') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Approved & Ready to Print',
+                                "PPMP {$idLabel} ({$p->title}) has received all required endorsements and is now READY TO PRINT.",
+                                $p->id,
+                                'success'
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // If user is TWG Reviewer
+        if ($user && $user->isTwg()) {
+            $twgPpmps = Ppmp::without(['milestones', 'amendment'])
+                ->select(['id', 'uuid', 'tracking_number', 'ppmp_number', 'title', 'status', 'office_id'])
+                ->whereIn('status', ['TWG_REVIEW', 'TWG_RETURNED', 'READY_TO_PRINT'])
+                ->whereDoesntHave('children')
+                ->latest('id')
+                ->take(30)
+                ->get();
+
+            if ($twgPpmps->isNotEmpty()) {
+                $existingByPpmp = SystemNotification::where('user_id', $user->id)
+                    ->whereIn('ppmp_id', $twgPpmps->pluck('id'))
+                    ->select(['ppmp_id', 'title'])
+                    ->get()
+                    ->groupBy('ppmp_id');
+
+                foreach ($twgPpmps as $p) {
+                    $idLabel = $p->tracking_number ?: ($p->ppmp_number ? "PPMP {$p->ppmp_number}" : "PPMP #{$p->id}");
+                    $existingTitles = ($existingByPpmp->get($p->id) ?? collect())->pluck('title');
+
+                    if ($p->status === 'TWG_REVIEW') {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'TWG') !== false || stripos((string) $t, 'Review') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Awaiting BAC-TWG Review',
+                                "PPMP {$idLabel} ({$p->title}) is awaiting your technical review and evaluation.",
+                                $p->id,
+                                'warning'
+                            );
+                        }
+                    } elseif ($p->status === 'TWG_RETURNED') {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Returned') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Returned by BAC-TWG',
+                                "PPMP {$idLabel} ({$p->title}) was returned for revisions.",
+                                $p->id,
+                                'info'
+                            );
+                        }
+                    } elseif ($p->status === 'READY_TO_PRINT') {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Approved') !== false || stripos((string) $t, 'Ready to Print') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Approved & Ready to Print',
+                                "PPMP {$idLabel} ({$p->title}) has received all required endorsements and is now READY TO PRINT.",
+                                $p->id,
+                                'success'
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // If user is an End User, ensure notifications are synced for their PPMPs
+        if ($user && $user->isEndUser()) {
+            $endUserPpmps = Ppmp::without(['milestones', 'amendment'])
+                ->select(['id', 'uuid', 'tracking_number', 'ppmp_number', 'title', 'status', 'office_id'])
+                ->where('created_by', $user->id)
+                ->whereDoesntHave('children')
+                ->where(function ($q) {
+                    $q->where('status', 'READY_TO_PRINT')
+                        ->orWhere('status', 'like', '%_RETURNED');
+                })
+                ->latest('id')
+                ->take(30)
+                ->get();
+
+            if ($endUserPpmps->isNotEmpty()) {
+                $existingByPpmp = SystemNotification::where('user_id', $user->id)
+                    ->whereIn('ppmp_id', $endUserPpmps->pluck('id'))
+                    ->select(['ppmp_id', 'title'])
+                    ->get()
+                    ->groupBy('ppmp_id');
+
+                foreach ($endUserPpmps as $p) {
+                    $idLabel = $p->tracking_number ?: ($p->ppmp_number ? "PPMP {$p->ppmp_number}" : "PPMP #{$p->id}");
+                    $existingTitles = ($existingByPpmp->get($p->id) ?? collect())->pluck('title');
+
+                    if ($p->status === 'READY_TO_PRINT') {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Approved') !== false || stripos((string) $t, 'Ready to Print') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Approved & Ready to Print',
+                                "Congratulations! PPMP {$idLabel} ({$p->title}) has received all required endorsements and is now READY TO PRINT.",
+                                $p->id,
+                                'success'
+                            );
+                        }
+                    } elseif (str_ends_with($p->status, '_RETURNED')) {
+                        $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Returned') !== false);
+                        if (!$exists) {
+                            SystemNotification::notify(
+                                $user->id,
+                                'PPMP Returned for Revisions',
+                                "PPMP {$idLabel} ({$p->title}) was returned for revisions. Please check the remarks and resubmit.",
+                                $p->id,
+                                'warning'
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         $query = SystemNotification::where('user_id', $user->id)
             ->with([
-                'ppmp:id,uuid,tracking_number,ppmp_number,title,status,office_id,implementing_unit,program_name,created_by,attachment_list_data,app_data',
+                'ppmp:id,uuid,tracking_number,ppmp_number,title,status,office_id,implementing_unit,program_name,created_by,source_of_fund,attachment_list_data,app_data',
                 'ppmp.milestones',
                 'ppmp.amendment',
                 'ppmp.attachments',

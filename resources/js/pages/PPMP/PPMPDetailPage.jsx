@@ -311,25 +311,38 @@ export const PPMPDetailPage = ({
     };
     const isPreSubmissionReady = preSubmissionStatus.hasAttachmentList && preSubmissionStatus.hasMarketScoping;
 
+    const isAttachmentOnly = Boolean(
+        ppmp?.amendment_scope === 'ATTACHMENT_LIST' ||
+        ppmp?.amendment?.amendment_scope === 'ATTACHMENT_LIST' ||
+        ppmp?.requested_amendment_scope === 'ATTACHMENT_LIST'
+    );
+
     const isTwgSkipped = Boolean(
-        (ppmp?.amendment_type === 'AMENDMENT' || ppmp?.amendment?.amendment_type === 'AMENDMENT') &&
-        (ppmp?.amendment_scope === 'PPMP_APP' || ppmp?.amendment?.amendment_scope === 'PPMP_APP')
+        ppmp?.amendment_scope === 'PPMP_APP' ||
+        ppmp?.amendment?.amendment_scope === 'PPMP_APP'
     );
     const isTwgDone = Boolean(isTwgSkipped || ppmp?.twg_approved_at || ppmp?.signatures?.some(s => s.role === 'twg'));
     const isOppmoReviewer = user?.role === 'oppmo' || ['admin', 'super_admin'].includes(user?.role);
     const isOppmoPostTwgReview = isOppmoReviewer && isTwgDone && ppmp?.status === 'OPPMO_REVIEW';
-    const canOppmoGenerateApp = isOppmoPostTwgReview;
+    const canOppmoGenerateApp = isOppmoPostTwgReview && !isAttachmentOnly;
 
-    // View APP is only visible after the OPPMO Reviewer (who generates the APP) has approved the PPMP
+    // View APP is visible:
+    // 1) After the OPPMO Reviewer has approved the PPMP and status is HEAD_PENDING or READY_TO_PRINT
+    // 2) Or when scope is ATTACHMENT_LIST, the existing approved Annual Procurement Plan (APP) remains valid and unchanged
     const isOppmoAppApproved = Boolean(
         hasApp &&
-        ['HEAD_PENDING', 'READY_TO_PRINT'].includes(ppmp?.status) &&
         (
-            ppmp?.status === 'READY_TO_PRINT' ||
-            ppmp?.app_data?.is_oppmo_approved ||
-            ppmp?.app_data?.oppmo_approved_at ||
-            ppmp?.routes?.some(r => r.action === 'OPPMO_APP_GENERATED') ||
-            isTwgDone
+            (
+                ['HEAD_PENDING', 'READY_TO_PRINT'].includes(ppmp?.status) &&
+                (
+                    ppmp?.status === 'READY_TO_PRINT' ||
+                    ppmp?.app_data?.is_oppmo_approved ||
+                    ppmp?.app_data?.oppmo_approved_at ||
+                    ppmp?.routes?.some(r => r.action === 'OPPMO_APP_GENERATED') ||
+                    isTwgDone
+                )
+            ) ||
+            isAttachmentOnly
         )
     );
     const canViewApprovedApp = isOppmoAppApproved;
@@ -786,11 +799,11 @@ export const PPMPDetailPage = ({
                     )}
 
                     {canEdit && (
-                        ppmp.amendment_scope === 'ATTACHMENT_LIST' && !['admin', 'super_admin'].includes(user.role) ? (
+                        isAttachmentOnly && !['admin', 'super_admin'].includes(user.role) ? (
                             <button
                                 type="button"
                                 onClick={() => setIsAttachmentListView(true)}
-                                className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-semibold transition"
+                                className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-semibold transition cursor-pointer"
                                 title="PPMP items are locked for this revision. The approved request scope is restricted to the PPMP List of Attachment only. Click to edit List of Attachment."
                             >
                                 <FileSpreadsheet className="w-4 h-4 text-amber-600" />
@@ -799,7 +812,7 @@ export const PPMPDetailPage = ({
                         ) : (
                             <button
                                 onClick={onEdit}
-                                className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold transition"
+                                className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold transition cursor-pointer"
                             >
                                 <Edit3 className="w-4 h-4" />
                                 Edit PPMP
@@ -1649,7 +1662,18 @@ export const PPMPDetailPage = ({
                         }}
                         initialPpmp={selectedRoutingPpmp}
                         onPrint={(targetPpmp) => {
-                            setSelectedRoutingPpmp(targetPpmp || ppmp);
+                            const isRealPpmp = targetPpmp && typeof targetPpmp === 'object' && !('nativeEvent' in targetPpmp) && (targetPpmp.uuid || targetPpmp.id);
+                            const chosenPpmp = isRealPpmp ? targetPpmp : ppmp;
+                            const fullPpmp = {
+                                ...chosenPpmp,
+                                routes: (chosenPpmp?.routes && chosenPpmp.routes.length > 0) ? chosenPpmp.routes : (ppmp?.routes || []),
+                                reviews: (chosenPpmp?.reviews && chosenPpmp.reviews.length > 0) ? chosenPpmp.reviews : (ppmp?.reviews || []),
+                                change_logs: (chosenPpmp?.change_logs && chosenPpmp.change_logs.length > 0) ? chosenPpmp.change_logs : (ppmp?.change_logs || []),
+                                signatures: (chosenPpmp?.signatures && chosenPpmp.signatures.length > 0) ? chosenPpmp.signatures : (ppmp?.signatures || []),
+                                office: chosenPpmp?.office || ppmp?.office,
+                                creator: chosenPpmp?.creator || ppmp?.creator,
+                            };
+                            setSelectedRoutingPpmp(fullPpmp);
                             setIsRoutingPrintView(true);
                         }}
                     />
@@ -1730,20 +1754,53 @@ export const PPMPDetailPage = ({
                                             </button>
                                         )}
                                     </div>
-                                ) : canEdit ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setIsItemsModalOpen(false);
-                                            onEdit(ppmp);
-                                        }}
-                                        className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition shadow-sm cursor-pointer"
-                                        title="Edit this PPMP form and items"
-                                    >
-                                        <Edit3 className="w-3.5 h-3.5" />
-                                        Edit PPMP
-                                    </button>
-                                ) : null}
+                                ) : (
+                                    <div className="flex items-center gap-2">
+                                        {canViewApprovedApp && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setIsItemsModalOpen(false);
+                                                    setIsAppView(true);
+                                                }}
+                                                className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition shadow-sm cursor-pointer"
+                                                title="View / Print official Annual Procurement Plan (APP)"
+                                            >
+                                                <Printer className="w-3.5 h-3.5" />
+                                                Print APP
+                                            </button>
+                                        )}
+                                        {canEdit && (
+                                            isAttachmentOnly && !['admin', 'super_admin'].includes(user.role) ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setIsItemsModalOpen(false);
+                                                        setIsAttachmentListView(true);
+                                                    }}
+                                                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition shadow-sm cursor-pointer"
+                                                    title="PPMP items are locked for this revision. The approved request scope is restricted to the PPMP List of Attachment only."
+                                                >
+                                                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                                                    Edit List of Attachment
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setIsItemsModalOpen(false);
+                                                        onEdit(ppmp);
+                                                    }}
+                                                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition shadow-sm cursor-pointer"
+                                                    title="Edit this PPMP form and items"
+                                                >
+                                                    <Edit3 className="w-3.5 h-3.5" />
+                                                    Edit PPMP
+                                                </button>
+                                            )
+                                        )}
+                                    </div>
+                                )}
 
                                 <button
                                     type="button"

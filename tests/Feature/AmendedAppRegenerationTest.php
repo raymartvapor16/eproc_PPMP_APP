@@ -291,11 +291,11 @@ class AmendedAppRegenerationTest extends TestCase
             'procurement_mode' => 'Small Value Procurement',
         ]);
 
-        // 2. Submit SUPPLEMENTAL request
+        // 2. Submit SUPPLEMENTAL request (Scope: ALL - reviews PPMP/APP and Attachment List, routing to ALL reviewers including TWG)
         $parentPpmp->update([
             'amendment_status' => 'PENDING_APPROVAL',
             'amendment_type' => 'SUPPLEMENTAL',
-            'amendment_scope' => 'PPMP_APP',
+            'amendment_scope' => 'ALL',
             'amendment_justification' => 'Emergency additional supplies needed',
             'amended_at' => now(),
         ]);

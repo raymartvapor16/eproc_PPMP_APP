@@ -23,6 +23,12 @@ export const POL_TERMS_TEXT = `POL Condition:
 export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = 'General Fund', onBack, onSaved }) => {
     const isEditMode = !!initialPpmp;
 
+    const isAttachmentOnly = Boolean(
+        isEditMode &&
+        (initialPpmp?.amendment_scope === 'ATTACHMENT_LIST' || initialPpmp?.amendment?.amendment_scope === 'ATTACHMENT_LIST') &&
+        !['admin', 'super_admin'].includes(user?.role)
+    );
+
     const cleanInitialFund = (initialPpmp?.source_of_fund === 'General Fund and etc..' ? 'General Fund' : initialPpmp?.source_of_fund) ||
         (initialSourceOfFund === 'General Fund and etc..' ? 'General Fund' : initialSourceOfFund) ||
         'General Fund';
@@ -408,6 +414,11 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
         e.preventDefault();
         setErrorMessage('');
 
+        if (isAttachmentOnly) {
+            setErrorMessage('PPMP procurement items and plan details are locked for this revision. The approved request scope is restricted to the PPMP List of Attachment only.');
+            return;
+        }
+
         // Basic validation
         if (!title.trim()) {
             setErrorMessage('Please provide a descriptive Project Title / Objective.');
@@ -473,14 +484,38 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                 <div className="flex items-center gap-3">
                     <button
                         type="submit"
-                        disabled={loading}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm transition disabled:opacity-50"
+                        disabled={loading || isAttachmentOnly}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm transition ${
+                            isAttachmentOnly
+                                ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                                : 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50'
+                        }`}
+                        title={isAttachmentOnly ? 'PPMP procurement items are locked for this revision.' : ''}
                     >
-                        <Save className="w-4 h-4" />
-                        {loading ? 'Saving...' : isEditMode ? 'Save Changes' : 'Save as Draft'}
+                        {isAttachmentOnly ? <Lock className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                        {loading ? 'Saving...' : isAttachmentOnly ? 'PPMP Items Locked' : isEditMode ? 'Save Changes' : 'Save as Draft'}
                     </button>
                 </div>
             </div>
+
+            {isAttachmentOnly && (
+                <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900 text-xs shadow-xs">
+                    <div className="flex items-center gap-3">
+                        <Lock className="w-5 h-5 text-amber-600 shrink-0" />
+                        <div>
+                            <span className="font-bold uppercase tracking-wider block text-amber-950">Scope Restricted Revision</span>
+                            <span>The approved request scope is restricted to updating the <strong>PPMP List of Attachment</strong> only. Procurement items and plan details cannot be edited.</span>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onBack}
+                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs shrink-0 transition"
+                    >
+                        Return to PPMP Details
+                    </button>
+                </div>
+            )}
 
             {errorMessage && (
                 <div className="p-4 bg-rose-50 border border-rose-200 rounded-lg flex items-center gap-3 text-rose-800 text-xs font-medium">

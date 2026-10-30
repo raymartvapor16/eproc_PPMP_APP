@@ -124,6 +124,15 @@ class AmendmentScopeTest extends TestCase
     {
         $file = $this->createFakePdf();
 
+        // Ensure baseline PPMP has an approved APP
+        $this->ppmpReady->update([
+            'app_data' => [
+                'is_generated' => true,
+                'needs_regeneration' => false,
+                'rows' => [['itemNo' => 1, 'projectTitle' => 'Existing Approved APP', 'estimatedBudget' => 500000.00]],
+            ],
+        ]);
+
         // End user requests ATTACHMENT_LIST only
         $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmpReady->uuid}/request-amendment-or-supplemental", [
             'request_scope' => 'ATTACHMENT_LIST',
@@ -136,14 +145,38 @@ class AmendmentScopeTest extends TestCase
         $approveRes = $this->actingAs($this->adminUser)->postJson("/api/ppmps/{$this->ppmpReady->uuid}/amendment/approve");
         $approveRes->assertStatus(200);
 
-        // Fetch child PPMP
-        $child = Ppmp::where('parent_id', $this->ppmpReady->id)->first();
-        $this->assertNotNull($child);
-        $this->assertEquals('ATTACHMENT_LIST', $child->amendment_scope);
-        $this->assertEquals('DRAFT', $child->status);
+        // Does NOT create a child PPMP in DRAFT
+        $this->assertEquals(0, Ppmp::where('parent_id', $this->ppmpReady->id)->count());
 
-        // Attempting to update PPMP items on child should be forbidden by scope lock
-        $itemUpdateRes = $this->actingAs($this->endUser)->putJson("/api/ppmps/{$child->uuid}", [
+        // Reopens the current PPMP in DRAFT with ATTACHMENT_LIST scope
+        $ppmp = $this->ppmpReady->fresh();
+        $this->assertEquals('ATTACHMENT_LIST', $ppmp->amendment_scope);
+        $this->assertEquals('DRAFT', $ppmp->status);
+
+        // Existing APP remains intact, generated, and NOT flagged for regeneration
+        $this->assertTrue($ppmp->hasAppGenerated());
+        $this->assertFalse($ppmp->app_data['needs_regeneration'] ?? true);
+        $this->assertEquals('Existing Approved APP', $ppmp->app_data['rows'][0]['projectTitle']);
+
+        // Attempting to modify or regenerate the APP should be blocked
+        $oppmoUser = User::create([
+            'name' => 'OPPMO User',
+            'email' => 'oppmo.test@example.test',
+            'password' => bcrypt('password123'),
+            'role' => 'oppmo',
+            'office_id' => $this->office->id,
+            'is_active' => true,
+        ]);
+        $appRegenRes = $this->actingAs($oppmoUser)->postJson("/api/ppmps/{$ppmp->uuid}/app-data", [
+            'rows' => [['itemNo' => 1, 'projectTitle' => 'Should fail']]
+        ]);
+        $appRegenRes->assertStatus(403);
+        $appRegenRes->assertJsonFragment([
+            'message' => 'The Annual Procurement Plan (APP) cannot be modified or regenerated for this revision. The approved request scope is restricted to the PPMP List of Attachment only.'
+        ]);
+
+        // Attempting to update PPMP items on the reopened PPMP should be forbidden by scope lock
+        $itemUpdateRes = $this->actingAs($this->endUser)->putJson("/api/ppmps/{$ppmp->uuid}", [
             'title' => 'Altered Title',
             'fiscal_year' => '2026',
             'plan_type' => 'FINAL',
@@ -157,12 +190,41 @@ class AmendmentScopeTest extends TestCase
         ]);
 
         // Updating attachment list should succeed
-        $attSaveRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$child->uuid}/attachment-list", [
+        $attSaveRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmp->uuid}/attachment-list", [
             'rows' => [
                 ['itemNo' => 1, 'unit' => 'lot', 'description' => 'Valid Attachment Update', 'qty' => 1, 'unitCost' => 5000, 'totalCost' => 5000]
             ],
         ]);
         $attSaveRes->assertStatus(200);
+
+        // Attach fake market scoping pdf to allow submission
+        $scopingFile = $this->createFakePdf('scoping.pdf');
+        $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmp->uuid}/attachments", [
+            'file' => $scopingFile,
+            'attachment_type' => 'MARKET_SCOPING',
+        ])->assertStatus(201);
+
+        // Submitting for review routes directly to TWG_REVIEW
+        $submitRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmp->uuid}/submit-for-review");
+        $submitRes->assertStatus(200);
+        $this->assertEquals('TWG_REVIEW', $ppmp->fresh()->status);
+
+        // Create TWG User and approve
+        $twgUser = User::create([
+            'name' => 'TWG Reviewer Eng',
+            'email' => 'twg.eng@example.test',
+            'password' => bcrypt('password123'),
+            'role' => 'twg',
+            'office_id' => $this->office->id,
+            'is_active' => true,
+        ]);
+
+        $twgApproveRes = $this->actingAs($twgUser)->postJson("/api/ppmps/{$ppmp->uuid}/twg/approve");
+        $twgApproveRes->assertStatus(200);
+
+        // TWG approval moves ATTACHMENT_LIST scope directly to READY_TO_PRINT
+        $this->assertEquals('READY_TO_PRINT', $ppmp->fresh()->status);
+        $this->assertNotNull($ppmp->fresh()->ready_to_print_at);
     }
 
     public function test_ppmp_app_only_scope_locks_attachment_list()

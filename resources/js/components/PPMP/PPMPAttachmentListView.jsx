@@ -29,6 +29,7 @@ export const getInitialAttachmentLists = (ppmp, procurementItems, savedData) => 
     const rawFundSource = ppmp?.items?.find(i => !i.is_header && i.source_of_fund)?.source_of_fund?.trim() || 'General Fund';
     const fiscalYearStr = ppmp?.fiscal_year ? `CY ${ppmp.fiscal_year}` : '';
     const accountCodeStr = ppmp?.account_code || '';
+    const ppmpProgram = (ppmp?.program_name || ppmp?.program || '').trim();
 
     const savedLists = savedData?.attachment_lists || {};
 
@@ -60,6 +61,17 @@ export const getInitialAttachmentLists = (ppmp, procurementItems, savedData) => 
             ? parseFloat(item.estimated_budget) || 0
             : (procurementItems.length === 1 && ppmp?.total_budget ? parseFloat(ppmp.total_budget) || 0 : (parseFloat(ppmp?.total_budget) || 0));
 
+        // Program/Project Title: Must fetch the Program data from the PPMP (ppmp.program_name).
+        // Fall back to custom saved title only if it is not the item.description (which was the old default bug).
+        const savedProjectTitle = itemSaved?.project_title ? String(itemSaved.project_title).trim() : '';
+        const itemDesc = item.description ? String(item.description).trim() : '';
+        let resolvedProjectTitle = ppmpProgram;
+        if (savedProjectTitle && savedProjectTitle !== itemDesc && (!ppmpProgram || savedProjectTitle !== String(ppmp?.title || '').trim())) {
+            resolvedProjectTitle = savedProjectTitle;
+        } else if (!resolvedProjectTitle) {
+            resolvedProjectTitle = savedProjectTitle || ppmp?.title || item.description || '';
+        }
+
         return {
             itemId: item.id !== undefined && item.id !== null ? item.id : idx,
             itemKey,
@@ -67,7 +79,7 @@ export const getInitialAttachmentLists = (ppmp, procurementItems, savedData) => 
             sourceDescription: item.description || '',
             ppmpAllocatedBudget,
             officeName: itemSaved?.office_name || savedData?.office_name || ppmp?.implementing_unit || ppmp?.office?.name || 'Provincial Government of Davao del Sur',
-            projectTitle: itemSaved?.project_title || item.description || ppmp?.title || '',
+            projectTitle: resolvedProjectTitle,
             totalBudget: ppmpAllocatedBudget > 0
                 ? (itemSaved?.total_budget !== undefined && itemSaved?.total_budget !== null && itemSaved?.total_budget !== ''
                     ? Math.min(parseFloat(itemSaved.total_budget) || 0, ppmpAllocatedBudget)
@@ -104,6 +116,7 @@ export const getInitialAttachmentLists = (ppmp, procurementItems, savedData) => 
  */
 export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItemId = null, onBack, onGenerated }) => {
     const savedData = ppmp?.attachment_list_data || null;
+    const ppmpProgram = (ppmp?.program_name || ppmp?.program || '').trim();
 
     // Filter actual procurement items (excluding account code header rows)
     const procurementItems = useMemo(() => {
@@ -324,12 +337,31 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
             : (headSig?.signer_designation || resolvedOfficeHeadPosition || 'Head of Office')
     );
 
+    const isLegacyGovernor = (val) => {
+        if (!val) return false;
+        const s = String(val).toUpperCase();
+        return s.includes('CAGAS') || s.includes('GOVERNOR');
+    };
+
+    // Approved By (TWG): do NOT hardcode or prefill TWG name/designation.
+    // Fetch dynamically from whichever TWG reviewer approves the PPMP list of attachment.
+    const resolvedTwgName = twgSig?.signer_name || twgSig?.user?.name || (user?.role === 'twg' ? user?.name : '');
+    const resolvedTwgPosition = twgSig?.signer_designation || twgSig?.user?.designation || (user?.role === 'twg' ? (user?.designation || 'BAC Technical Working Group (TWG) Member') : '');
+
     const [approvedByName, setApprovedByName] = useState(
-        savedData?.approved_by_name || ppmp?.default_signatories?.approved_by?.name || 'HON. YVONNE R. CAGAS'
+        resolvedTwgName || (savedData?.approved_by_name && !isLegacyGovernor(savedData.approved_by_name) ? savedData.approved_by_name : '')
     );
     const [approvedByPosition, setApprovedByPosition] = useState(
-        savedData?.approved_by_position || ppmp?.default_signatories?.approved_by?.position || 'PROVINCIAL GOVERNOR'
+        resolvedTwgPosition || (savedData?.approved_by_position && !isLegacyGovernor(savedData.approved_by_position) ? savedData.approved_by_position : '')
     );
+
+    // Keep dynamically synchronized when TWG approval signature is added or updated
+    useEffect(() => {
+        if (twgSig?.signer_name || twgSig?.user?.name) {
+            setApprovedByName(twgSig.signer_name || twgSig.user?.name);
+            setApprovedByPosition(twgSig.signer_designation || twgSig.user?.designation || 'BAC Technical Working Group (TWG) Member');
+        }
+    }, [twgSig]);
 
     // Helpers to update active list
     const updateActiveField = (field, value) => {
@@ -675,7 +707,11 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                         End User/ Implementing Unit: <span className="font-semibold uppercase">{list.officeName}</span>
                     </div>
                     <div>
-                        Program/Project Title: <span className="font-semibold uppercase">{list.projectTitle || '—'}</span>
+                        Program/Project Title: <span className="font-semibold uppercase">{
+                            (list.projectTitle && String(list.projectTitle).trim() !== String(list.sourceDescription || '').trim())
+                                ? list.projectTitle
+                                : (ppmpProgram || list.projectTitle || '—')
+                        }</span>
                     </div>
                     <div>Charges: {list.charges || '—'}</div>
                 </div>
@@ -828,7 +864,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
 
                     <div className="pt-2">
                         <div className="text-center flex flex-col items-center justify-end">
-                            <div className="font-bold text-[10px] uppercase mb-1">REVIEWED BY TWG:</div>
+                            <div className="font-bold text-[10px] uppercase mb-1">APPROVED BY (TWG):</div>
                             {isAttachmentSignatureEnabled && twgSig?.user?.signature_path ? (
                                 <div className="h-8 flex items-center justify-center">
                                     <img
@@ -848,10 +884,10 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                 <div className="h-2" />
                             )}
                             <div className="font-bold text-xs uppercase underline">
-                                {twgSig?.signer_name || twgSig?.user?.name || 'NAME OF TWG INCHARGE'}
+                                {twgSig?.signer_name || twgSig?.user?.name || (approvedByName && !isLegacyGovernor(approvedByName) ? approvedByName : '')}
                             </div>
                             <div className="text-[10px] text-slate-600">
-                                {twgSig?.signer_designation || twgSig?.user?.designation || 'BAC TWG'}
+                                {twgSig?.signer_designation || twgSig?.user?.designation || (approvedByPosition && !isLegacyGovernor(approvedByPosition) ? approvedByPosition : (twgSig ? 'BAC TWG' : ''))}
                             </div>
                             {isAttachmentSignatureEnabled && twgSig?.signed_at && (
                                 <div className="text-[9px] text-slate-500">
@@ -1139,8 +1175,8 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                             {idx + 1}
                                         </span>
                                         <div className="min-w-0 flex-1">
-                                            <div className="text-xs font-bold text-slate-900 truncate" title={item.projectTitle}>
-                                                {item.projectTitle || `Item #${idx + 1}`}
+                                            <div className="text-xs font-bold text-slate-900 truncate" title={item.sourceDescription || item.projectTitle}>
+                                                {item.sourceDescription || item.projectTitle || `Item #${idx + 1}`}
                                             </div>
                                             <div className="text-[11px] text-slate-500 font-mono mt-0.5 flex items-center justify-between">
                                                 <span>Budget: {formatCurrency(itemBudget)}</span>
@@ -1284,7 +1320,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                         value={activeList.projectTitle || ''}
                                         onChange={(e) => updateActiveField('projectTitle', e.target.value)}
                                         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                                        placeholder="Project Title"
+                                        placeholder="Program / Project Title"
                                     />
                                 </div>
                             </div>
@@ -1295,7 +1331,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                                 <div>
                                     <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                                        PPMP List of Attachment Items (Breakdown for {activeList.projectTitle})
+                                        PPMP List of Attachment Items (Breakdown for {activeList.sourceDescription || activeList.projectTitle})
                                     </h3>
                                     <p className="text-[11px] text-slate-500 mt-0.5">
                                         Enter items, units, quantities, and unit costs. The Total Cost must coincide with or be lower than the Allocated Budget (<strong className="font-mono">{formatCurrency(activePpmpBudget)}</strong>).
@@ -1769,7 +1805,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                 </div>
 
                                 <div>
-                                    <label className="block font-bold text-slate-700 mb-1">Approved By (Governor):</label>
+                                    <label className="block font-bold text-slate-700 mb-1">Approved By (TWG):</label>
                                     <input
                                         type="text"
                                         value={approvedByName || ''}

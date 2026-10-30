@@ -8,15 +8,28 @@ import { getAccurateRouteRecipient, getAccurateRouteOrigin } from '../RoutingTim
  * Official printable Document Routing Slip and Complete Workflow Audit Trail
  * for Project Procurement Management Plan (PPMP) in Province of Davao del Sur.
  */
-export const PPMPRoutingPrintView = ({ ppmp, onBack }) => {
+export const PPMPRoutingPrintView = ({ ppmp: rawPpmp, onBack }) => {
     const handlePrint = () => {
         window.print();
     };
 
+    // Protect against React synthetic event objects or invalid inputs
+    const ppmp = (rawPpmp && typeof rawPpmp === 'object' && !('nativeEvent' in rawPpmp)) ? rawPpmp : {};
+
     const rawRoutes = ppmp?.routes || [];
-    const routes = [...rawRoutes].reverse();
+    // Chronological ordering: Step #1 is the initial creation, ascending to latest
+    const routes = [...rawRoutes].sort((a, b) => {
+        const timeA = new Date(a.submitted_at || a.created_at || 0).getTime();
+        const timeB = new Date(b.submitted_at || b.created_at || 0).getTime();
+        if (timeA !== timeB) return timeA - timeB;
+        return (a.id || 0) - (b.id || 0);
+    });
+
     const changeLogs = ppmp?.change_logs || [];
     const reviews = ppmp?.reviews || [];
+    const signatures = ppmp?.signatures || [];
+    const creatorSig = signatures.find(s => s.role === 'end_user');
+    const headSig = signatures.find(s => s.role === 'head');
 
     const getStatusBadgeClass = (status = '') => {
         if (status.includes('RETURNED') || status.includes('REJECTED')) {
@@ -149,7 +162,7 @@ export const PPMPRoutingPrintView = ({ ppmp, onBack }) => {
                         <tbody>
                             {routes.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="border border-slate-900 p-4 text-center text-slate-400 italic text-xs">
+                                    <td colSpan={8} className="border border-slate-900 p-4 text-center text-slate-400 italic text-xs">
                                         No routing movements recorded yet.
                                     </td>
                                 </tr>
@@ -308,18 +321,28 @@ export const PPMPRoutingPrintView = ({ ppmp, onBack }) => {
                 {/* Sign-off / Verification section */}
                 <div className="mt-8 pt-4 border-t border-slate-300 grid grid-cols-2 gap-8 page-break-inside-avoid text-xs">
                     <div>
-                        <div className="text-[10px] uppercase font-bold text-slate-500 mb-6">Generated & Certified by:</div>
+                        <div className="text-[10px] uppercase font-bold text-slate-500 mb-6">Generated &amp; Certified by:</div>
                         <div className="border-b border-slate-800 w-64 pb-1">
-                            <span className="font-bold uppercase">{ppmp?.creator?.name || 'Authorized Personnel'}</span>
+                            <span className="font-bold uppercase">{creatorSig?.signer_name || ppmp?.creator?.name || 'Authorized Personnel'}</span>
                         </div>
-                        <div className="text-[10px] text-slate-600 mt-0.5">End-User / Project Coordinator</div>
+                        <div className="text-[10px] text-slate-600 mt-0.5">{creatorSig?.signer_designation || ppmp?.creator?.designation || 'End-User / Project Coordinator'}</div>
+                        {creatorSig?.signed_at && (
+                            <div className="text-[9px] text-slate-500 mt-0.5 font-mono">
+                                Digitally Signed: {formatDate(creatorSig.signed_at)}
+                            </div>
+                        )}
                     </div>
                     <div className="text-right">
                         <div className="text-[10px] uppercase font-bold text-slate-500 mb-6">Office / Implementing Unit Head:</div>
                         <div className="border-b border-slate-800 w-64 pb-1 ml-auto">
-                            <span className="font-bold uppercase">{ppmp?.office?.head_name || 'Department Head'}</span>
+                            <span className="font-bold uppercase">{headSig?.signer_name || ppmp?.office?.head?.name || ppmp?.office?.head_name || 'Department Head'}</span>
                         </div>
-                        <div className="text-[10px] text-slate-600 mt-0.5">{ppmp?.office?.name || 'Head of Office'}</div>
+                        <div className="text-[10px] text-slate-600 mt-0.5">{headSig?.signer_designation || ppmp?.office?.head?.designation || ppmp?.office?.name || 'Head of Office'}</div>
+                        {headSig?.signed_at && (
+                            <div className="text-[9px] text-slate-500 mt-0.5 font-mono">
+                                Approved: {formatDate(headSig.signed_at)}
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -327,6 +350,23 @@ export const PPMPRoutingPrintView = ({ ppmp, onBack }) => {
                     Provincial Electronic Procurement Management System (eProc) • Province of Davao del Sur
                 </div>
             </div>
+
+            <style>{`
+                @media print {
+                    @page {
+                        size: portrait;
+                        margin: 10mm;
+                    }
+                    body {
+                        background: white !important;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    .no-print {
+                        display: none !important;
+                    }
+                }
+            `}</style>
         </div>
     );
 };

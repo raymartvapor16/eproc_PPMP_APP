@@ -259,7 +259,7 @@ export const PrivacyPolicyPage = ({ onBack }) => {
                         <div className="text-white font-bold">OFFICE OF THE PROVINCIAL PROCUREMENT MANAGEMENT OFFICER (OPPMO)</div>
                         <div>Provincial Capitol Complex, Matti, Digos City, Davao del Sur</div>
                         <div>Province of Davao del Sur, Philippines</div>
-                        <div className="text-blue-400 pt-1">Email: oppmo@davaodelsur.gov.ph</div>
+                        <div className="text-blue-400 pt-1">Email: bac.davaodelsur2@gmail.com </div>
                     </div>
                 </div>
 

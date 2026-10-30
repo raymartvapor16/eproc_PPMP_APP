@@ -29,7 +29,7 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
         ppmp?.items?.some(i => i.source_of_fund?.toLowerCase()?.includes('trust'))
     );
     const isAttachOnly = ppmp?.amendment_scope === 'ATTACHMENT_LIST';
-    const isPpmpAppOnly = ppmp?.amendment_type === 'AMENDMENT' && ppmp?.amendment_scope === 'PPMP_APP';
+    const isPpmpAppOnly = ppmp?.amendment_scope === 'PPMP_APP';
 
     // 1. Initial Draft Created -> next reviewing office upon submission
     if (action === 'DRAFT_CREATED') {
@@ -116,7 +116,7 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
     }
 
     // 8. Office Head Approved or Ready to Print -> released to Implementing Unit / End User
-    if (action === 'HEAD_APPROVED' || action === 'READY_TO_PRINT') {
+    if (action === 'HEAD_APPROVED' || action === 'READY_TO_PRINT' || action === 'TWG_APPROVED_ATTACHMENT_LIST') {
         return {
             name: ppmp?.creator?.name || 'Implementing Unit / End User',
             role: 'end_user',
@@ -375,7 +375,7 @@ export const RoutingTimeline = ({
                     {onPrint && (
                         <button
                             type="button"
-                            onClick={onPrint}
+                            onClick={() => onPrint(activeSelectedPpmp || ppmp)}
                             className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase tracking-wider rounded-md border border-slate-300 transition shadow-2xs cursor-pointer"
                             title="Print Official Document Routing Slip"
                         >
@@ -409,7 +409,7 @@ export const RoutingTimeline = ({
                                         type="button"
                                         onClick={() => {
                                             setIsOpen(false);
-                                            onPrint(activeSelectedPpmp);
+                                            onPrint(activeSelectedPpmp || ppmp);
                                         }}
                                         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer"
                                         title="Print Official Document Routing Slip"

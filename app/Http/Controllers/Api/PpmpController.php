@@ -860,6 +860,18 @@ class PpmpController extends Controller
             $validated['attachment_lists'] = $mergedLists;
         }
 
+        // Ensure Approved By (TWG) is fetched from the approving TWG signature if already approved, and never defaults to Governor
+        $twgSig = $ppmp->signatures()->where('role', 'twg')->first();
+        if ($twgSig) {
+            $validated['approved_by_name'] = $twgSig->signer_name;
+            $validated['approved_by_position'] = $twgSig->signer_designation;
+        } else {
+            if (!empty($validated['approved_by_name']) && (stripos($validated['approved_by_name'], 'cagas') !== false || stripos($validated['approved_by_name'], 'governor') !== false)) {
+                $validated['approved_by_name'] = null;
+                $validated['approved_by_position'] = null;
+            }
+        }
+
         $ppmpUpdates = ['attachment_list_data' => $validated];
         if (array_key_exists('other_terms', $validated)) {
             $ppmpUpdates['warranty_and_other_terms'] = $validated['other_terms'];
@@ -902,9 +914,15 @@ class PpmpController extends Controller
         $user = $request->user();
         $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
 
-        $isTwgSkipped = ($ppmp->amendment_type === 'AMENDMENT' && $ppmp->amendment_scope === 'PPMP_APP');
+        $isTwgSkipped = ($ppmp->amendment_scope === 'PPMP_APP');
         $isTwgDone = $isTwgSkipped || $ppmp->twg_approved_at !== null || $ppmp->signatures()->where('role', 'twg')->exists();
         $isOppmoAuthorized = $user->isOppmo() && $isTwgDone && in_array($ppmp->status, ['OPPMO_REVIEW', 'READY_TO_PRINT'], true);
+
+        if ($ppmp->amendment_scope === 'ATTACHMENT_LIST' && !$user->isAdmin()) {
+            return response()->json([
+                'message' => 'The Annual Procurement Plan (APP) cannot be modified or regenerated for this revision. The approved request scope is restricted to the PPMP List of Attachment only.'
+            ], 403);
+        }
 
         if (!$isOppmoAuthorized && !$user->isAdmin()) {
             return response()->json([
