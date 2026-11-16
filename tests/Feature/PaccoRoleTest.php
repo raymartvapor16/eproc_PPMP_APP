@@ -312,35 +312,29 @@ class PaccoRoleTest extends TestCase
             ]
         ])->assertOk();
 
-        // 3. End User submits for review -> MUST route to PACCO_REVIEW because it is Trust Fund
+        // 3. End User submits for review -> MUST route to TWG_REVIEW first
         $submitReviewRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$uuid}/submit-for-review");
         $submitReviewRes->assertOk();
-        $this->assertEquals('PACCO_REVIEW', $submitReviewRes->json('ppmp.status'));
+        $this->assertEquals('TWG_REVIEW', $submitReviewRes->json('ppmp.status'));
 
-        // Budget officer should NOT be able to approve PACCO_REVIEW PPMP
+        // Budget officer should NOT be able to approve TWG_REVIEW PPMP
         $budgetUnauthorized = $this->actingAs($budgetUser)->postJson("/api/ppmps/{$uuid}/budget/approve");
         $budgetUnauthorized->assertStatus(422);
 
-        // 4. PACCO Reviewer receives document
-        $receiveRes = $this->actingAs($this->paccoUser)->postJson("/api/ppmps/{$uuid}/receive");
-        $receiveRes->assertOk();
+        // 4. TWG Reviewer approves -> routes to PACCO_REVIEW because it is Trust Fund
+        $twgApproveRes = $this->actingAs($twgUser)->postJson("/api/ppmps/{$uuid}/twg/approve");
+        $twgApproveRes->assertOk();
+        $this->assertEquals('PACCO_REVIEW', $twgApproveRes->json('ppmp.status'));
 
-        // 5. PACCO Reviewer approves -> routes to OPPMO_REVIEW
+        // 5. PACCO Reviewer receives & approves -> routes to OPPMO_REVIEW
+        $paccoReceiveRes = $this->actingAs($this->paccoUser)->postJson("/api/ppmps/{$uuid}/receive");
+        $paccoReceiveRes->assertOk();
+
         $paccoApproveRes = $this->actingAs($this->paccoUser)->postJson("/api/ppmps/{$uuid}/pacco/approve");
         $paccoApproveRes->assertOk();
         $this->assertEquals('OPPMO_REVIEW', $paccoApproveRes->json('ppmp.status'));
 
-        // 6. OPPMO receives & approves -> routes to TWG_REVIEW
-        $oppmoApproveRes = $this->actingAs($oppmoUser)->postJson("/api/ppmps/{$uuid}/oppmo/approve");
-        $oppmoApproveRes->assertOk();
-        $this->assertEquals('TWG_REVIEW', $oppmoApproveRes->json('ppmp.status'));
-
-        // 7. TWG approves -> routes back to OPPMO for APP generation (OPPMO_REVIEW)
-        $twgApproveRes = $this->actingAs($twgUser)->postJson("/api/ppmps/{$uuid}/twg/approve");
-        $twgApproveRes->assertOk();
-        $this->assertEquals('OPPMO_REVIEW', $twgApproveRes->json('ppmp.status'));
-
-        // 8. OPPMO generates APP data & approves -> routes to Office Head for approval (HEAD_PENDING)
+        // 6. OPPMO generates APP data & approves -> routes directly to READY_TO_PRINT
         $this->actingAs($oppmoUser)->postJson("/api/ppmps/{$uuid}/app-data", [
             'prepared_by_name' => 'OPPMO Officer',
             'rows' => [['code' => 'APP-TF-01', 'total' => 500000.00]],
@@ -348,12 +342,7 @@ class PaccoRoleTest extends TestCase
 
         $oppmoFinalApproveRes = $this->actingAs($oppmoUser)->postJson("/api/ppmps/{$uuid}/oppmo/approve");
         $oppmoFinalApproveRes->assertOk();
-        $this->assertEquals('HEAD_PENDING', $oppmoFinalApproveRes->json('ppmp.status'));
-
-        // 9. Office Head receives & approves -> routes to READY_TO_PRINT
-        $headApproveRes = $this->actingAs($headUser)->postJson("/api/ppmps/{$uuid}/head/approve");
-        $headApproveRes->assertOk();
-        $this->assertEquals('READY_TO_PRINT', $headApproveRes->json('ppmp.status'));
+        $this->assertEquals('READY_TO_PRINT', $oppmoFinalApproveRes->json('ppmp.status'));
     }
 
     public function test_general_fund_workflow_routes_to_budget_officer_then_oppmo_then_twg(): void
@@ -451,27 +440,22 @@ class PaccoRoleTest extends TestCase
             ]
         ])->assertOk();
 
-        // 3. End User submits for review -> MUST route to BUDGET_OFFICER_REVIEW for General Fund
+        // 3. End User submits for review -> MUST route to TWG_REVIEW first
         $submitReviewRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$uuid}/submit-for-review");
         $submitReviewRes->assertOk();
-        $this->assertEquals('BUDGET_OFFICER_REVIEW', $submitReviewRes->json('ppmp.status'));
+        $this->assertEquals('TWG_REVIEW', $submitReviewRes->json('ppmp.status'));
 
-        // 4. Budget Officer approves -> routes to OPPMO_REVIEW
+        // 4. TWG approves -> routes to BUDGET_OFFICER_REVIEW for General Fund
+        $twgApproveRes = $this->actingAs($twgUser)->postJson("/api/ppmps/{$uuid}/twg/approve");
+        $twgApproveRes->assertOk();
+        $this->assertEquals('BUDGET_OFFICER_REVIEW', $twgApproveRes->json('ppmp.status'));
+
+        // 5. Budget Officer approves -> routes to OPPMO_REVIEW
         $budgetApproveRes = $this->actingAs($budgetUser)->postJson("/api/ppmps/{$uuid}/budget/approve");
         $budgetApproveRes->assertOk();
         $this->assertEquals('OPPMO_REVIEW', $budgetApproveRes->json('ppmp.status'));
 
-        // 5. OPPMO approves -> routes to TWG_REVIEW
-        $oppmoApproveRes = $this->actingAs($oppmoUser)->postJson("/api/ppmps/{$uuid}/oppmo/approve");
-        $oppmoApproveRes->assertOk();
-        $this->assertEquals('TWG_REVIEW', $oppmoApproveRes->json('ppmp.status'));
-
-        // 6. TWG approves -> routes back to OPPMO for APP generation (OPPMO_REVIEW)
-        $twgApproveRes = $this->actingAs($twgUser)->postJson("/api/ppmps/{$uuid}/twg/approve");
-        $twgApproveRes->assertOk();
-        $this->assertEquals('OPPMO_REVIEW', $twgApproveRes->json('ppmp.status'));
-
-        // 7. OPPMO generates APP data & approves -> routes to Office Head for approval (HEAD_PENDING)
+        // 6. OPPMO generates APP data & approves -> routes directly to READY_TO_PRINT
         $this->actingAs($oppmoUser)->postJson("/api/ppmps/{$uuid}/app-data", [
             'prepared_by_name' => 'OPPMO Officer',
             'rows' => [['code' => 'APP-GF-01', 'total' => 250000.00]],
@@ -479,17 +463,22 @@ class PaccoRoleTest extends TestCase
 
         $oppmoFinalApproveRes = $this->actingAs($oppmoUser)->postJson("/api/ppmps/{$uuid}/oppmo/approve");
         $oppmoFinalApproveRes->assertOk();
-        $this->assertEquals('HEAD_PENDING', $oppmoFinalApproveRes->json('ppmp.status'));
-
-        // 8. Office Head approves -> routes to READY_TO_PRINT
-        $headApproveRes = $this->actingAs($headUser)->postJson("/api/ppmps/{$uuid}/head/approve");
-        $headApproveRes->assertOk();
-        $this->assertEquals('READY_TO_PRINT', $headApproveRes->json('ppmp.status'));
+        $this->assertEquals('READY_TO_PRINT', $oppmoFinalApproveRes->json('ppmp.status'));
     }
 
     public function test_pacco_reviewer_can_return_and_enduser_can_resubmit_back_to_pacco(): void
     {
         $password = Hash::make('password123');
+
+        $twgUser = User::create([
+            'name' => 'TWG Reviewer TF Ret',
+            'email' => 'twg_tf_ret@test.com',
+            'password' => $password,
+            'role' => 'twg',
+            'office_id' => $this->office->id,
+            'is_active' => true,
+            'approval_status' => 'approved',
+        ]);
 
         $headUser = User::create([
             'name' => 'Department Head TF',
@@ -545,9 +534,13 @@ class PaccoRoleTest extends TestCase
             ]
         ])->assertOk();
 
+        // 1. Submit routes to TWG_REVIEW
         $this->actingAs($this->endUser)->postJson("/api/ppmps/{$uuid}/submit-for-review")->assertOk();
 
-        // PACCO returns with remarks
+        // 2. TWG approves -> routes to PACCO_REVIEW
+        $this->actingAs($twgUser)->postJson("/api/ppmps/{$uuid}/twg/approve")->assertOk();
+
+        // 3. PACCO returns with remarks
         $returnRes = $this->actingAs($this->paccoUser)->postJson("/api/ppmps/{$uuid}/pacco/return", [
             'remarks' => 'Please provide complete trust fund grant documentation.',
         ]);

@@ -6,6 +6,7 @@ import {
     Building2,
     Users,
     Shield,
+    ShieldCheck,
     ChevronRight,
     TrendingUp,
     Activity,
@@ -17,6 +18,8 @@ import {
     Globe,
     UserCheck,
     Tags,
+    Database,
+    Timer,
 } from 'lucide-react';
 
 export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingUsersCount }) => {
@@ -119,12 +122,28 @@ export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingU
             description: 'Governor & Reviewers',
         },
         {
-            id: 'settings',
-            label: 'Security & Dev Mode',
-            icon: Sliders,
-            badge: null,
-            badgeColor: 'bg-amber-100 text-amber-800',
-            description: 'Developer Mode Control',
+            id: 'security',
+            label: 'Security & Access Controls',
+            icon: ShieldCheck,
+            badge: 'Active',
+            badgeColor: 'bg-emerald-100 text-emerald-800 font-bold',
+            description: 'DevTools, E-Sign & Policies',
+        },
+        {
+            id: 'afk_management',
+            label: 'AFK Auto-Logout',
+            icon: Timer,
+            badge: '15 Min',
+            badgeColor: 'bg-amber-100 text-amber-800 font-bold',
+            description: 'Inactivity & Auto-Logout',
+        },
+        {
+            id: 'database_backup',
+            label: 'Database Backup',
+            icon: Database,
+            badge: 'SQL Dump',
+            badgeColor: 'bg-indigo-100 text-indigo-800 font-bold',
+            description: 'Manual Dump & Backup Key',
         },
         {
             id: 'logs',
@@ -160,7 +179,9 @@ export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingU
                 <div className="p-2 space-y-1">
                     {navItems.map((item) => {
                         const Icon = item.icon;
-                        const isActive = activeSection === item.id;
+                        const isActive = activeSection === item.id || 
+                            (item.id === 'security' && activeSection === 'settings') ||
+                            (item.id === 'afk_management' && activeSection === 'afk');
                         return (
                             <button
                                 key={item.id}

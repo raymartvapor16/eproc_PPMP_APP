@@ -10,12 +10,34 @@ use Illuminate\Http\Request;
 class PortalSystemController extends Controller
 {
     /**
-     * Public list of active systems for the landing page
+     * Public list of systems for the landing page and system status checks
+     * (Includes both active and inactive systems so inactive systems can display
+     *  "Inactive / Under Maintenance" state and block access).
      */
     public function publicIndex(): JsonResponse
     {
-        $systems = PortalSystem::active()->get();
+        $systems = PortalSystem::orderBy('sort_order', 'asc')->orderBy('id', 'asc')->get();
         return response()->json($systems);
+    }
+
+    /**
+     * Check if PIMS system is currently active in the portal catalog
+     */
+    public function pimsStatus(): JsonResponse
+    {
+        $pims = PortalSystem::where('link_url', '/pims')
+            ->orWhere('link_url', 'like', '%/pims%')
+            ->orWhere('name', 'like', '%PIMS%')
+            ->latest('id')
+            ->first();
+
+        $isActive = $pims ? $pims->status === 'active' : true;
+
+        return response()->json([
+            'is_active' => $isActive,
+            'status' => $pims ? $pims->status : 'active',
+            'system' => $pims,
+        ]);
     }
 
     /**

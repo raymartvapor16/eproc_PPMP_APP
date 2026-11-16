@@ -16,7 +16,11 @@ import {
 } from 'lucide-react';
 import { StatusBadge, formatCurrency } from '../UI/StatusBadge';
 import { PimsPublishModal } from '../Monitoring/PimsPublishModal';
-import { monitoringService } from '../../services/api';
+import { GeneratePurchaseRequestModal } from '../PIMS/GeneratePurchaseRequestModal';
+import { PurchaseRequestPrintView } from '../PIMS/PurchaseRequestPrintView';
+import { showConfirm } from '../../utils/modalAlert';
+import { monitoringService, pimsService } from '../../services/api';
+import { usePimsStatus } from '../../hooks/usePimsStatus';
 
 const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -218,6 +222,7 @@ export const getPimsReminderInfo = (startSchedule, customDate = null) => {
  * is scheduled and nearing the end of the month, prompting them to publish the PPMP to PIMS.
  */
 export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
+    const { isPimsActive } = usePimsStatus();
     const [publishedMap, setPublishedMap] = useState(() => {
         try {
             const stored = localStorage.getItem('pims_published_ppmps');
@@ -231,6 +236,10 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [selectedPpmpForPublish, setSelectedPpmpForPublish] = useState(null);
     const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
+    const [selectedPpmpUuidForPr, setSelectedPpmpUuidForPr] = useState(null);
+    const [selectedMonitoringProjectIdForPr, setSelectedMonitoringProjectIdForPr] = useState(null);
+    const [isGeneratePrModalOpen, setIsGeneratePrModalOpen] = useState(false);
+    const [selectedPrForPrint, setSelectedPrForPrint] = useState(null);
 
     // Sync published map across events
     useEffect(() => {
@@ -281,7 +290,13 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
             : Boolean(publishedMap[ppmp.uuid]);
 
         if (isCurrentlyPublished) {
-            if (!window.confirm(`Are you sure you want to unmark PPMP "${ppmp.tracking_number || ppmp.title}" as published to PIMS?`)) {
+            const confirmed = await showConfirm({
+                title: 'Unmark PIMS Publication',
+                message: `Are you sure you want to unmark PPMP "${ppmp.tracking_number || ppmp.title}" as published to PIMS?`,
+                confirmText: 'Yes, Unmark',
+                type: 'warning',
+            });
+            if (!confirmed) {
                 return;
             }
             try {
@@ -304,9 +319,15 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
             window.dispatchEvent(new CustomEvent('monitoring:updated'));
             window.dispatchEvent(new CustomEvent('pims:published'));
         } else {
-            // Prompt modal to capture what enduser is procuring and start monitoring
-            setSelectedPpmpForPublish(ppmp);
-            setIsPublishModalOpen(true);
+            if (isPimsActive) {
+                // If PIMS is active -> directly open Generate PR modal
+                setSelectedPpmpUuidForPr(ppmp.uuid);
+                setIsGeneratePrModalOpen(true);
+            } else {
+                // If PIMS is inactive -> PIMS publish modal is back! No generate PR modal!
+                setSelectedPpmpForPublish(ppmp);
+                setIsPublishModalOpen(true);
+            }
         }
     };
 
@@ -667,10 +688,35 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
                                                     ) : (
                                                         <>
                                                             <Check className="w-3.5 h-3.5" />
-                                                            <span>Publish Done</span>
+                                                            <span>Publish to PIMS</span>
                                                         </>
                                                     )}
                                                 </button>
+
+                                                {isPublished && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={async () => {
+                                                            try {
+                                                                const prRes = await pimsService.getPurchaseRequests({ ppmp_id: ppmp.id });
+                                                                const prs = prRes.data.purchase_requests || [];
+                                                                if (prs.length > 0) {
+                                                                    setSelectedPrForPrint(prs[0]);
+                                                                } else {
+                                                                    setSelectedPpmpUuidForPr(ppmp.uuid);
+                                                                    setIsGeneratePrModalOpen(true);
+                                                                }
+                                                            } catch (e) {
+                                                                setSelectedPpmpUuidForPr(ppmp.uuid);
+                                                                setIsGeneratePrModalOpen(true);
+                                                            }
+                                                        }}
+                                                        className="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 flex items-center gap-1 transition cursor-pointer"
+                                                        title="Generate or View Official Purchase Request (PR)"
+                                                    >
+                                                        <span>PR Document</span>
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -681,17 +727,59 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
                 </>
             )}
 
-            <PimsPublishModal
-                isOpen={isPublishModalOpen}
-                onClose={() => setIsPublishModalOpen(false)}
-                ppmp={selectedPpmpForPublish}
-                onSuccess={() => {
-                    try {
-                        const stored = localStorage.getItem('pims_published_ppmps');
-                        if (stored) setPublishedMap(JSON.parse(stored));
-                    } catch (e) {}
-                }}
-            />
+            {/* 1. If PIMS is INACTIVE: Show PIMS Publish Confirmation & Procurement Input Modal (NO Generate PR modal) */}
+            {!isPimsActive && (
+                <PimsPublishModal
+                    isOpen={isPublishModalOpen}
+                    onClose={() => {
+                        setIsPublishModalOpen(false);
+                        setSelectedPpmpForPublish(null);
+                    }}
+                    ppmp={selectedPpmpForPublish}
+                    onSuccess={() => {
+                        try {
+                            const stored = localStorage.getItem('pims_published_ppmps');
+                            if (stored) setPublishedMap(JSON.parse(stored));
+                        } catch (e) {}
+                    }}
+                />
+            )}
+
+            {/* 2. If PIMS is ACTIVE: Show Generate Purchase Request (PR) Popup */}
+            {isPimsActive && (
+                <GeneratePurchaseRequestModal
+                    isOpen={isGeneratePrModalOpen}
+                    onClose={() => {
+                        setIsGeneratePrModalOpen(false);
+                        setSelectedPpmpUuidForPr(null);
+                        setSelectedMonitoringProjectIdForPr(null);
+                    }}
+                    ppmpUuid={selectedPpmpUuidForPr}
+                    monitoringProjectId={selectedMonitoringProjectIdForPr}
+                    onSuccess={(generatedPr) => {
+                        try {
+                            const stored = localStorage.getItem('pims_published_ppmps');
+                            const map = stored ? JSON.parse(stored) : {};
+                            if (selectedPpmpUuidForPr) {
+                                map[selectedPpmpUuidForPr] = { publishedAt: new Date().toISOString() };
+                                localStorage.setItem('pims_published_ppmps', JSON.stringify(map));
+                                setPublishedMap(map);
+                            }
+                        } catch (e) {}
+                        setSelectedPrForPrint(generatedPr);
+                    }}
+                />
+            )}
+
+            {/* 3. PR Print View */}
+            {selectedPrForPrint && (
+                <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs">
+                    <PurchaseRequestPrintView
+                        purchaseRequest={selectedPrForPrint}
+                        onBack={() => setSelectedPrForPrint(null)}
+                    />
+                </div>
+            )}
         </div>
     );
 };

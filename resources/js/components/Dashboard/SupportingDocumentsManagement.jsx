@@ -226,7 +226,7 @@ export const SupportingDocumentsManagement = () => {
                         Attached Supporting Documents Management
                     </h2>
                     <p className="text-xs text-blue-100/80 max-w-2xl leading-relaxed">
-                        Manage options for the <strong>Attached Supporting Documents</strong> column (e.g. 3 Pre Canvass, Market Scoping, Latest PO, List of Attachment). These appear as multi-select checkboxes for end-users when adding or editing PPMP line items.
+                        Manage options for the <strong>Attached Supporting Documents</strong> column (e.g. 3 Pre Canvass, Market Scoping, Latest PO, Detailed Specifications). These appear as multi-select checkboxes for end-users when adding or editing PPMP line items.
                     </p>
                 </div>
 

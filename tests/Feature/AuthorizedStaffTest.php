@@ -73,6 +73,101 @@ class AuthorizedStaffTest extends TestCase
         Storage::assertExists($user->authorization_letter_path);
     }
 
+    public function test_authorization_letter_rejects_oversized_files_above_5mb(): void
+    {
+        Storage::fake('local');
+
+        $office = Office::create([
+            'code' => 'ENG',
+            'name' => 'Provincial Engineering Office',
+            'head_name' => 'Engr. Juan Dela Cruz',
+        ]);
+
+        // 6MB PDF file
+        $oversizedFile = UploadedFile::fake()->create('large_auth.pdf', 6000, 'application/pdf');
+
+        $response = $this->postJson('/api/register', [
+            'name' => 'Authorized Staff Member',
+            'email' => 'authstaff_large@example.com',
+            'phone_number' => '+639123456789',
+            'address' => 'Capitol Complex, City',
+            'designation' => 'Authorized Staff Officer',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'role' => 'authorized_staff',
+            'office_id' => $office->id,
+            'signature' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+            'authorization_letter' => $oversizedFile,
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['authorization_letter']);
+    }
+
+    public function test_authorization_letter_rejects_non_pdf_and_disguised_files(): void
+    {
+        Storage::fake('local');
+
+        $office = Office::create([
+            'code' => 'ENG',
+            'name' => 'Provincial Engineering Office',
+            'head_name' => 'Engr. Juan Dela Cruz',
+        ]);
+
+        // 1. .url file rejected
+        $urlFile = UploadedFile::fake()->create('Letter.url', 1, 'application/octet-stream');
+        $res1 = $this->postJson('/api/register', [
+            'name' => 'Staff 1',
+            'email' => 'staff1@example.com',
+            'phone_number' => '+639123456789',
+            'address' => 'Capitol Complex',
+            'designation' => 'Staff',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'role' => 'authorized_staff',
+            'office_id' => $office->id,
+            'signature' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+            'authorization_letter' => $urlFile,
+        ]);
+        $res1->assertStatus(422);
+
+        // 2. Disguised .exe.pdf rejected
+        $disguised = UploadedFile::fake()->createWithContent('exploit.exe.pdf', "%PDF-1.4\nMalicious code");
+        $res2 = $this->postJson('/api/register', [
+            'name' => 'Staff 2',
+            'email' => 'staff2@example.com',
+            'phone_number' => '+639123456789',
+            'address' => 'Capitol Complex',
+            'designation' => 'Staff',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'role' => 'authorized_staff',
+            'office_id' => $office->id,
+            'signature' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+            'authorization_letter' => $disguised,
+        ]);
+        $res2->assertStatus(422)
+            ->assertJsonPath('message', 'Security Error: Suspicious disguised multi-extension filename detected.');
+
+        // 3. Fake PDF without %PDF- header rejected
+        $fakePdf = UploadedFile::fake()->createWithContent('letter.pdf', 'Not a valid pdf');
+        $res3 = $this->postJson('/api/register', [
+            'name' => 'Staff 3',
+            'email' => 'staff3@example.com',
+            'phone_number' => '+639123456789',
+            'address' => 'Capitol Complex',
+            'designation' => 'Staff',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'role' => 'authorized_staff',
+            'office_id' => $office->id,
+            'signature' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+            'authorization_letter' => $fakePdf,
+        ]);
+        $res3->assertStatus(422)
+            ->assertJsonPath('message', 'Security Error: Invalid file content. The uploaded document does not have a genuine PDF header.');
+    }
+
     public function test_authorized_staff_can_receive_and_approve_ppmp_just_like_head(): void
     {
         $office = Office::create([
@@ -216,5 +311,29 @@ class AuthorizedStaffTest extends TestCase
         $response = $this->actingAs($admin)->get("/api/users/{$staff->id}/signature");
         $response->assertStatus(200);
         $response->assertHeader('Content-Type', 'image/png');
+    }
+
+    public function test_registration_requires_system_role(): void
+    {
+        $office = Office::create([
+            'code' => 'ENG_TEST',
+            'name' => 'Provincial Engineering Office Test',
+            'head_name' => 'Engr. Juan Dela Cruz',
+        ]);
+
+        $response = $this->postJson('/api/register', [
+            'name' => 'Test User',
+            'email' => 'testrole@example.com',
+            'phone_number' => '+639123456789',
+            'address' => 'Capitol Complex, City',
+            'designation' => 'Staff Officer',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'role' => '',
+            'office_id' => $office->id,
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['role']);
     }
 }

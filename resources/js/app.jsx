@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { authService, dashboardService, ppmpService } from './services/api';
+import { authService, dashboardService, ppmpService, portalSystemService } from './services/api';
 import { MainLayout } from './components/Layout/MainLayout';
 import { LoginPage } from './pages/Auth/LoginPage';
 import { Dashboard } from './pages/Dashboard/Dashboard';
@@ -10,11 +10,25 @@ import { PPMPFormPage } from './pages/PPMP/PPMPFormPage';
 import { PrivacyPolicyPage } from './pages/Privacy/PrivacyPolicyPage';
 import { MonitoringDashboard } from './pages/Monitoring/MonitoringDashboard';
 import { SupplierEvaluationDashboard } from './pages/SupplierEvaluation/SupplierEvaluationDashboard';
-import { SourceOfFundModal, FUND_SOURCES } from './components/PPMP/SourceOfFundModal';
+import { PimsDashboard } from './pages/PIMS/PimsDashboard';
+import { SourceOfFundModal, FUND_SOURCES, FUND_ROUTES } from './components/PPMP/SourceOfFundModal';
 import { initDevToolsGuard } from './utils/devToolsGuard';
+import { initAnimatedFavicon } from './utils/animatedFavicon';
+import { initGlobalAlertModal } from './utils/modalAlert';
+import { CustomAlertModal } from './components/UI/CustomAlertModal';
 import { Loader2 } from 'lucide-react';
 import { LandingPage } from './pages/Landing/LandingPage';
-import { UnauthorizedSystemAccessView, canUserAccessSystem } from './components/UI/UnauthorizedSystemAccessView';
+import {
+    UnauthorizedSystemAccessView,
+    SystemMaintenanceView,
+    canUserAccessSystem,
+    isPortalSystemActive,
+    resolveCanonicalSystemPath,
+} from './components/UI/UnauthorizedSystemAccessView';
+import { AfkInactivityGuard } from './components/UI/AfkInactivityGuard';
+
+// Initialize modern modal interceptor for window.alert
+initGlobalAlertModal();
 
 const ROUTE_STORAGE_KEY = 'eproc_active_route';
 const LAST_ACTIVE_SYSTEM_KEY = 'eproc_last_active_system';
@@ -32,6 +46,7 @@ const getInitialLastActiveSystem = () => {
     } catch (_) {}
 
     const path = window.location.pathname.replace(/\/+$/, '') || '/';
+    if (path === '/pims' || path === '/pimssystem' || path.startsWith('/pims')) return 'pims';
     if (path === '/monitoringsystem' || path.startsWith('/monitoring')) return 'monitoring';
     if (path === '/supplierevaluation' || path.startsWith('/supplier-evaluation')) return 'supplierevaluation';
     return 'dashboard';
@@ -45,6 +60,9 @@ const parseRouteFromLocation = () => {
 
     if (path === '/privacy') {
         return { view: 'privacy', uuid: null };
+    }
+    if (path === '/pims' || path === '/pimssystem' || path.startsWith('/pims')) {
+        return { view: 'pims', uuid: null };
     }
     if (path === '/monitoringsystem' || path.startsWith('/monitoring')) {
         return { view: 'monitoring', uuid: null };
@@ -131,6 +149,8 @@ const syncUrlAndState = (view, uuid = null, replace = false) => {
         targetPath = '/privacy';
     } else if (view === 'monitoring') {
         targetPath = '/monitoringsystem';
+    } else if (view === 'pims') {
+        targetPath = '/pims';
     } else if (view === 'supplierevaluation') {
         targetPath = '/supplierevaluation';
     } else {
@@ -176,7 +196,31 @@ export function App() {
     const [currentPpmp, setCurrentPpmp] = useState(null);
     const [dashboardData, setDashboardData] = useState(null);
     const [selectedSourceOfFund, setSelectedSourceOfFund] = useState(FUND_SOURCES.GENERAL_FUND);
+    const [selectedFundRoute, setSelectedFundRoute] = useState(FUND_ROUTES.BUDGET);
     const [isSourceOfFundModalOpen, setIsSourceOfFundModalOpen] = useState(false);
+    const [portalSystems, setPortalSystems] = useState(() =>
+        Array.isArray(window.App?.portal_systems) ? window.App.portal_systems : []
+    );
+    const [maintenanceBypass, setMaintenanceBypass] = useState(false);
+
+    useEffect(() => {
+        const refreshPortalSystems = async () => {
+            try {
+                const res = await portalSystemService.getPublic();
+                if (Array.isArray(res.data)) {
+                    setPortalSystems(res.data);
+                    if (window.App) window.App.portal_systems = res.data;
+                }
+            } catch (_) {}
+        };
+        refreshPortalSystems();
+        window.addEventListener('portal-systems:updated', refreshPortalSystems);
+        window.addEventListener('pims:status_changed', refreshPortalSystems);
+        return () => {
+            window.removeEventListener('portal-systems:updated', refreshPortalSystems);
+            window.removeEventListener('pims:status_changed', refreshPortalSystems);
+        };
+    }, []);
 
     // Check existing session if needed
     const checkAuth = async () => {
@@ -316,8 +360,12 @@ export function App() {
         }
     };
 
-    const handleSelectSourceOfFund = (fund) => {
-        setSelectedSourceOfFund(fund);
+    const handleSelectSourceOfFund = (fund, route = null) => {
+        const fundName = typeof fund === 'object' ? (fund.defaultFund || fund.name) : fund;
+        const fundRoute = typeof fund === 'object' ? (fund.route || fund.workflow_route) : (route || (fundName?.toLowerCase().includes('trust') ? 'pacco' : 'budget'));
+
+        setSelectedSourceOfFund(fundName);
+        setSelectedFundRoute(fundRoute || 'budget');
         setIsSourceOfFundModalOpen(false);
         syncUrlAndState('create', null, false);
         setCurrentView('create');
@@ -414,6 +462,7 @@ export function App() {
     }, [user?.id, currentView]);
 
     useEffect(() => {
+        initAnimatedFavicon();
         initDevToolsGuard();
         checkAuth();
 
@@ -578,14 +627,15 @@ export function App() {
         }
     };
 
-    if (loading) {
-        return (
-            <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
-                <div className="w-12 h-12 rounded-full border-4 border-blue-500 border-t-transparent animate-spin mb-4" />
-                <div className="text-sm font-semibold tracking-wider uppercase">Loading Provincial System...</div>
-            </div>
-        );
-    }
+    const renderContent = () => {
+        if (loading) {
+            return (
+                <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white">
+                    <div className="w-12 h-12 rounded-full border-4 border-blue-500 border-t-transparent animate-spin mb-4" />
+                    <div className="text-sm font-semibold tracking-wider uppercase">Loading Provincial System...</div>
+                </div>
+            );
+        }
 
     if (currentView === 'landing') {
         return (
@@ -623,6 +673,15 @@ export function App() {
                             handleNavigate('monitoring');
                         } else {
                             syncUrlAndState('monitoring', null, false);
+                            setCurrentView('login');
+                        }
+                        return;
+                    }
+                    if (cleanPath === '/pims' || cleanPath === '/pimssystem' || cleanPath.startsWith('/pims')) {
+                        if (user) {
+                            handleNavigate('pims');
+                        } else {
+                            syncUrlAndState('pims', null, false);
                             setCurrentView('login');
                         }
                         return;
@@ -681,6 +740,34 @@ export function App() {
                         syncUrlAndState('landing', null, false);
                         setCurrentView('landing');
                     }
+                }}
+            />
+        );
+    }
+
+    // System Inactive / Under Maintenance Gate:
+    // If the target system is marked as "inactive" in Portal Systems Catalog, block access and display maintenance view.
+    if (
+        ['dashboard', 'ppmps', 'create', 'edit', 'detail', 'monitoring', 'pims', 'supplierevaluation'].includes(currentView) &&
+        !isPortalSystemActive(portalSystems, currentView) &&
+        !maintenanceBypass
+    ) {
+        return (
+            <SystemMaintenanceView
+                user={user}
+                attemptedSystem={resolveCanonicalSystemPath(currentView)}
+                portalSystems={portalSystems}
+                onNavigate={(nextView) => {
+                    setMaintenanceBypass(false);
+                    handleNavigate(nextView);
+                }}
+                onLogout={handleLogout}
+                onBypassMaintenance={() => {
+                    setMaintenanceBypass(true);
+                    handleNavigate('dashboard');
+                    setTimeout(() => {
+                        window.dispatchEvent(new CustomEvent('admin:navigate_section', { detail: { section: 'portal-systems' } }));
+                    }, 100);
                 }}
             />
         );
@@ -780,6 +867,7 @@ export function App() {
                 onNavigateToPortal={() => handleNavigate('landing')}
                 onLogout={handleLogout}
                 onUserUpdate={(updatedUser) => setUser(updatedUser)}
+                onNavigate={handleNavigate}
             />
         );
     }
@@ -802,6 +890,29 @@ export function App() {
                 user={user}
                 onBackToPpmpSystem={canUserAccessSystem(user, '/eprocrementppmpapp') ? () => handleNavigate('dashboard') : null}
                 onNavigateToPortal={() => handleNavigate('landing')}
+                onLogout={handleLogout}
+                onNavigate={handleNavigate}
+            />
+        );
+    }
+
+    // PIMS System Access Check (Dedicated standalone system dashboard)
+    if (currentView === 'pims') {
+        if (!canUserAccessSystem(user, '/pims')) {
+            return (
+                <UnauthorizedSystemAccessView
+                    user={user}
+                    attemptedSystem="/pims"
+                    onNavigate={handleNavigate}
+                    onLogout={handleLogout}
+                />
+            );
+        }
+
+        return (
+            <PimsDashboard
+                user={user}
+                onNavigate={handleNavigate}
                 onLogout={handleLogout}
             />
         );
@@ -852,6 +963,7 @@ export function App() {
                 <PPMPFormPage
                     user={user}
                     initialSourceOfFund={selectedSourceOfFund}
+                    initialWorkflowRoute={selectedFundRoute}
                     onBack={() => handleNavigate('dashboard')}
                     onSaved={(newPpmp) => {
                         loadPpmpDetail(newPpmp.uuid, true);
@@ -904,6 +1016,15 @@ export function App() {
                 onSelect={handleSelectSourceOfFund}
             />
         </MainLayout>
+        );
+    };
+
+    return (
+        <>
+            <AfkInactivityGuard user={user} onLogout={handleLogout} />
+            <CustomAlertModal />
+            {renderContent()}
+        </>
     );
 }
 

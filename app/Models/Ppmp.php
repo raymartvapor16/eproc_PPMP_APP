@@ -34,9 +34,13 @@ class Ppmp extends Model
         'requested_amendment_type',
         'requested_amendment_reason',
         'requested_amendment_scope',
+        'requested_supplemental_purpose',
+        'requested_supplemental_specify',
         'amendment_type',
         'amendment_reason',
         'amendment_scope',
+        'supplemental_purpose',
+        'supplemental_purpose_specify',
         'amendment_requested_at',
         'amendment_approved_at',
     ];
@@ -54,13 +58,18 @@ class Ppmp extends Model
         'office_id',
         'implementing_unit',
         'program_name',
+        'program_name_id',
         'created_by',
         'title',
         'source_of_fund',
+        'fund_source_id',
         'account_code',
+        'account_code_id',
         'fiscal_year',
         'plan_type',
         'is_annual',
+        'is_continuation',
+        'baseline_annual_budget',
         'delivery_period',
         'place_of_delivery',
         'payment_method',
@@ -70,13 +79,20 @@ class Ppmp extends Model
         'app_data',
         'total_budget',
         'status',
+        'twg_reviewer_id',
+        'budget_reviewer_id',
+        'oppmo_reviewer_id',
         'amendment_status',
         'amendment_type',
         'amendment_scope',
         'amendment_reason',
+        'supplemental_purpose',
+        'supplemental_purpose_specify',
         'requested_amendment_type',
         'requested_amendment_scope',
         'requested_amendment_reason',
+        'requested_supplemental_purpose',
+        'requested_supplemental_specify',
         'amendment_requested_at',
         'amendment_approved_at',
         'prepared_at',
@@ -99,6 +115,13 @@ class Ppmp extends Model
 
     protected $casts = [
         'is_annual' => 'boolean',
+        'is_continuation' => 'boolean',
+        'baseline_annual_budget' => 'decimal:2',
+        'account_code_id' => 'integer',
+        'program_name_id' => 'integer',
+        'twg_reviewer_id' => 'integer',
+        'budget_reviewer_id' => 'integer',
+        'oppmo_reviewer_id' => 'integer',
         'attachment_list_data' => 'array',
         'app_data' => 'array',
         'total_budget' => 'decimal:2',
@@ -257,6 +280,13 @@ class Ppmp extends Model
 
     public function isTrustFund(): bool
     {
+        if ($this->fund_source_id) {
+            $fs = $this->fundSource ?: FundSource::find($this->fund_source_id);
+            if ($fs) {
+                return $fs->isTrustFund();
+            }
+        }
+
         if ($this->source_of_fund) {
             static $routeCache = [];
             if (!array_key_exists($this->source_of_fund, $routeCache)) {
@@ -275,19 +305,118 @@ class Ppmp extends Model
 
         if ($this->relationLoaded('items')) {
             return $this->items->contains(function ($item) {
-                return $item->source_of_fund && stripos($item->source_of_fund, 'trust') !== false;
+                return ($item->fund_source_id && $item->fundSource && $item->fundSource->isTrustFund()) ||
+                    ($item->source_of_fund && stripos($item->source_of_fund, 'trust') !== false);
             });
         }
 
-        return $this->items()->where('source_of_fund', 'like', '%trust%')->exists();
+        return $this->items()->where(function ($q) {
+            $q->where('source_of_fund', 'like', '%trust%')
+              ->orWhereHas('fundSource', function ($sub) {
+                  $sub->where('workflow_route', 'pacco')->orWhere('category', 'Trust Fund');
+              });
+        })->exists();
+    }
+
+    /**
+     * Get the root Annual PPMP (top-level ancestor where parent_id is null).
+     */
+    public function getRootAnnualPpmp(): self
+    {
+        $current = $this;
+        while ($current->parent_id) {
+            $parent = $current->parent;
+            if (!$parent) {
+                break;
+            }
+            $current = $parent;
+        }
+        return $current;
     }
 
     protected $appends = [
         'default_signatories',
+        'office_head_name',
+        'office_head_designation',
         'pre_submission_checks',
         'is_published_to_pims',
         'pims_published_at',
+        'pending_cell_comments_count',
     ];
+
+    public function getOfficeHeadNameAttribute(): ?string
+    {
+        // 1. Approved / Recorded head signature
+        if ($this->relationLoaded('signatures') && $this->signatures) {
+            $headSig = $this->signatures->firstWhere('role', 'head');
+            if ($headSig && !empty($headSig->signer_name)) {
+                return $headSig->signer_name;
+            }
+        }
+
+        // 2. Direct office relation head
+        if ($this->relationLoaded('office') && $this->office) {
+            if ($this->office->relationLoaded('head') && $this->office->head && !empty($this->office->head->name)) {
+                return $this->office->head->name;
+            }
+            if (!empty($this->office->head_name) && $this->office->head_name !== 'NA') {
+                return $this->office->head_name;
+            }
+        }
+
+        // 3. Creator's office head
+        if ($this->relationLoaded('creator') && $this->creator && $this->creator->relationLoaded('office') && $this->creator->office) {
+            if ($this->creator->office->relationLoaded('head') && $this->creator->office->head && !empty($this->creator->office->head->name)) {
+                return $this->creator->office->head->name;
+            }
+            if (!empty($this->creator->office->head_name) && $this->creator->office->head_name !== 'NA') {
+                return $this->creator->office->head_name;
+            }
+        }
+
+        return null;
+    }
+
+    public function getOfficeHeadDesignationAttribute(): ?string
+    {
+        // 1. Approved / Recorded head signature
+        if ($this->relationLoaded('signatures') && $this->signatures) {
+            $headSig = $this->signatures->firstWhere('role', 'head');
+            if ($headSig && !empty($headSig->signer_designation)) {
+                return $headSig->signer_designation;
+            }
+        }
+
+        // 2. Direct office relation head
+        if ($this->relationLoaded('office') && $this->office) {
+            if ($this->office->relationLoaded('head') && $this->office->head && !empty($this->office->head->designation)) {
+                return $this->office->head->designation;
+            }
+            if (!empty($this->office->designation) && $this->office->designation !== 'NA') {
+                return $this->office->designation;
+            }
+        }
+
+        // 3. Creator's office designation
+        if ($this->relationLoaded('creator') && $this->creator && $this->creator->relationLoaded('office') && $this->creator->office) {
+            if ($this->creator->office->relationLoaded('head') && $this->creator->office->head && !empty($this->creator->office->head->designation)) {
+                return $this->creator->office->head->designation;
+            }
+            if (!empty($this->creator->office->designation) && $this->creator->office->designation !== 'NA') {
+                return $this->creator->office->designation;
+            }
+        }
+
+        return 'HEAD OF OFFICE';
+    }
+
+    public function getPendingCellCommentsCountAttribute(): int
+    {
+        if ($this->relationLoaded('cellComments')) {
+            return $this->cellComments->where('status', 'pending')->count();
+        }
+        return 0;
+    }
 
     public function toArray()
     {
@@ -477,6 +606,14 @@ class Ppmp extends Model
         $appApproved = $signatories->firstWhere('signatory_type', 'app_approved_by');
 
         return [
+            'head_of_office' => [
+                'name' => $this->office_head_name,
+                'position' => $this->office_head_designation,
+            ],
+            'submitted_by' => [
+                'name' => $this->office_head_name,
+                'position' => $this->office_head_designation,
+            ],
             'budget_requirement' => [
                 'name' => $budget ? $budget->name : 'DESSAMIE BUAT-SANCHEZ, CPA, JD',
                 'position' => $budget ? $budget->position : 'PGDH - PBO / BAC - Chairman',
@@ -628,9 +765,69 @@ class Ppmp extends Model
         return $this->hasMany(SystemNotification::class, 'ppmp_id');
     }
 
+    public function systemNotifications()
+    {
+        return $this->hasMany(SystemNotification::class, 'ppmp_id');
+    }
+
     public function monitoringProjects()
     {
         return $this->hasMany(MonitoringProject::class, 'ppmp_id');
+    }
+
+    public function purchaseRequests()
+    {
+        return $this->hasMany(PurchaseRequest::class, 'ppmp_id');
+    }
+
+    public function cellComments()
+    {
+        return $this->hasMany(PpmpCellComment::class, 'ppmp_id')->orderBy('created_at', 'asc');
+    }
+
+    public function accountCodeRef()
+    {
+        return $this->belongsTo(AccountCode::class, 'account_code_id');
+    }
+
+    public function accountCode()
+    {
+        return $this->belongsTo(AccountCode::class, 'account_code_id');
+    }
+
+    public function fundSourceRef()
+    {
+        return $this->belongsTo(FundSource::class, 'fund_source_id');
+    }
+
+    public function fundSource()
+    {
+        return $this->belongsTo(FundSource::class, 'fund_source_id');
+    }
+
+    public function programNameRef()
+    {
+        return $this->belongsTo(ProgramName::class, 'program_name_id');
+    }
+
+    public function programName()
+    {
+        return $this->belongsTo(ProgramName::class, 'program_name_id');
+    }
+
+    public function twgReviewer()
+    {
+        return $this->belongsTo(User::class, 'twg_reviewer_id');
+    }
+
+    public function budgetReviewer()
+    {
+        return $this->belongsTo(User::class, 'budget_reviewer_id');
+    }
+
+    public function oppmoReviewer()
+    {
+        return $this->belongsTo(User::class, 'oppmo_reviewer_id');
     }
 
     public function milestones()
@@ -641,6 +838,77 @@ class Ppmp extends Model
     public function amendment()
     {
         return $this->hasOne(PpmpAmendment::class, 'ppmp_id')->withDefault();
+    }
+
+    public function attachmentLists()
+    {
+        return $this->hasMany(PpmpAttachmentList::class, 'ppmp_id');
+    }
+
+    public function syncAttachmentLists(array $data): void
+    {
+        if (empty($data)) return;
+
+        $attachmentLists = $data['attachment_lists'] ?? [];
+        if (!empty($attachmentLists) && is_array($attachmentLists)) {
+            foreach ($attachmentLists as $key => $list) {
+                $rawItemId = is_numeric($key) ? (int)$key : null;
+                $itemId = ($rawItemId && $rawItemId > 0 && PpmpItem::where('id', $rawItemId)->where('ppmp_id', $this->id)->exists()) ? $rawItemId : null;
+                PpmpAttachmentList::updateOrCreate(
+                    [
+                        'ppmp_id' => $this->id,
+                        'item_id' => $itemId,
+                    ],
+                    [
+                        'item_no' => $list['itemNo'] ?? null,
+                        'project_title' => $list['project_title'] ?? ($data['project_title'] ?? $this->title),
+                        'office_name' => $list['office_name'] ?? ($data['office_name'] ?? $this->implementing_unit),
+                        'total_budget' => isset($list['total_budget']) && is_numeric($list['total_budget']) ? (float)$list['total_budget'] : (float)($data['total_budget'] ?? 0),
+                        'charges' => $list['charges'] ?? ($data['charges'] ?? null),
+                        'place_of_delivery' => $list['place_of_delivery'] ?? ($data['place_of_delivery'] ?? $this->place_of_delivery),
+                        'payment_method' => $list['payment_method'] ?? ($data['payment_method'] ?? $this->payment_method),
+                        'delivery_period' => $list['delivery_period'] ?? ($data['delivery_period'] ?? $this->delivery_period),
+                        'additional_condition' => $list['additional_condition'] ?? ($data['additional_condition'] ?? $this->additional_condition),
+                        'other_terms' => $list['other_terms'] ?? ($data['other_terms'] ?? $this->warranty_and_other_terms),
+                        'rows' => $list['rows'] ?? [],
+                        'prepared_by_name' => $data['prepared_by_name'] ?? null,
+                        'prepared_by_position' => $data['prepared_by_position'] ?? null,
+                        'submitted_by_name' => $data['submitted_by_name'] ?? null,
+                        'submitted_by_position' => $data['submitted_by_position'] ?? null,
+                        'approved_by_name' => $data['approved_by_name'] ?? null,
+                        'approved_by_position' => $data['approved_by_position'] ?? null,
+                        'is_approved' => !empty($data['approved_by_name']),
+                    ]
+                );
+            }
+        } elseif (!empty($data['rows'])) {
+            PpmpAttachmentList::updateOrCreate(
+                [
+                    'ppmp_id' => $this->id,
+                    'item_id' => $data['active_item_id'] ?? null,
+                ],
+                [
+                    'item_no' => 1,
+                    'project_title' => $data['project_title'] ?? $this->title,
+                    'office_name' => $data['office_name'] ?? $this->implementing_unit,
+                    'total_budget' => isset($data['total_budget']) && is_numeric($data['total_budget']) ? (float)$data['total_budget'] : (float)($this->total_budget ?? 0),
+                    'charges' => $data['charges'] ?? null,
+                    'place_of_delivery' => $data['place_of_delivery'] ?? $this->place_of_delivery,
+                    'payment_method' => $data['payment_method'] ?? $this->payment_method,
+                    'delivery_period' => $data['delivery_period'] ?? $this->delivery_period,
+                    'additional_condition' => $data['additional_condition'] ?? $this->additional_condition,
+                    'other_terms' => $data['other_terms'] ?? $this->warranty_and_other_terms,
+                    'rows' => $data['rows'] ?? [],
+                    'prepared_by_name' => $data['prepared_by_name'] ?? null,
+                    'prepared_by_position' => $data['prepared_by_position'] ?? null,
+                    'submitted_by_name' => $data['submitted_by_name'] ?? null,
+                    'submitted_by_position' => $data['submitted_by_position'] ?? null,
+                    'approved_by_name' => $data['approved_by_name'] ?? null,
+                    'approved_by_position' => $data['approved_by_position'] ?? null,
+                    'is_approved' => !empty($data['approved_by_name']),
+                ]
+            );
+        }
     }
 
     public function getIsPublishedToPimsAttribute(): bool

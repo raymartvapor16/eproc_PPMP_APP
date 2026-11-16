@@ -21,6 +21,7 @@ class PpmpItem extends Model
         'end_date',
         'delivery_period',
         'source_of_fund',
+        'fund_source_id',
         'estimated_budget',
         'supporting_docs_text',
         'remarks',
@@ -34,5 +35,15 @@ class PpmpItem extends Model
     public function ppmp()
     {
         return $this->belongsTo(Ppmp::class, 'ppmp_id');
+    }
+
+    public function fundSource()
+    {
+        return $this->belongsTo(FundSource::class, 'fund_source_id');
+    }
+
+    public function attachmentList()
+    {
+        return $this->hasOne(PpmpAttachmentList::class, 'item_id');
     }
 }

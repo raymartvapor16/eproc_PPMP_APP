@@ -98,6 +98,12 @@ class AuditLog extends Model
             'CONDITION_UPDATED'          => "Admin updated a procurement condition",
             'CONDITION_DELETED'          => "Admin deleted a procurement condition",
             'DEVELOPER_MODE_TOGGLED'     => "Super Admin modified Developer Mode setting",
+            'DATABASE_BACKUP_PASSWORD_SET' => "Super Admin created database backup security password",
+            'DATABASE_BACKUP_PASSWORD_CHANGED' => "Super Admin changed database backup security password",
+            'DATABASE_BACKUP_DOWNLOADED' => "Super Admin downloaded MySQL database backup",
+            'DATABASE_BACKUP_DOWNLOAD_FAILED' => "Failed database backup download attempt (invalid credentials)",
+            'DATABASE_BACKUP_BRUTE_FORCE_BLOCKED' => "Database backup download blocked (anti-brute-force rate limit)",
+            'DATABASE_BACKUP_DECRYPTED' => "Super Admin decrypted an encrypted database backup",
         ];
 
         return $map[$this->action] ?? ucwords(str_replace('_', ' ', strtolower($this->action)));
@@ -120,7 +126,7 @@ class AuditLog extends Model
         if (str_starts_with($action, 'AMENDMENT_')) {
             return 'amendment';
         }
-        if (in_array($action, ['SIGNATORY_CREATED', 'SIGNATORY_UPDATED', 'SIGNATORY_DELETED', 'OFFICE_CREATED', 'OFFICE_UPDATED', 'OFFICE_DELETED', 'OFFICES_IMPORTED', 'FUND_SOURCE_CREATED', 'FUND_SOURCE_UPDATED', 'FUND_SOURCE_DELETED', 'CONDITION_CREATED', 'CONDITION_UPDATED', 'CONDITION_DELETED', 'DEVELOPER_MODE_TOGGLED'])) {
+        if (in_array($action, ['SIGNATORY_CREATED', 'SIGNATORY_UPDATED', 'SIGNATORY_DELETED', 'OFFICE_CREATED', 'OFFICE_UPDATED', 'OFFICE_DELETED', 'OFFICES_IMPORTED', 'FUND_SOURCE_CREATED', 'FUND_SOURCE_UPDATED', 'FUND_SOURCE_DELETED', 'CONDITION_CREATED', 'CONDITION_UPDATED', 'CONDITION_DELETED', 'DEVELOPER_MODE_TOGGLED']) || str_starts_with($action, 'DATABASE_BACKUP_')) {
             return 'admin';
         }
         if (in_array($action, ['USER_APPROVED', 'USER_REJECTED', 'USER_DEACTIVATED', 'USER_ACTIVATED', 'USER_PASSWORD_RESET', 'USER_PROFILE_UPDATED'])) {

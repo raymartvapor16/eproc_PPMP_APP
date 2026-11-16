@@ -14,6 +14,7 @@ class FundSource extends Model
         'name',
         'code',
         'workflow_route',
+        'category',
         'description',
         'is_active',
         'display_order',
@@ -23,6 +24,30 @@ class FundSource extends Model
         'is_active' => 'boolean',
         'display_order' => 'integer',
     ];
+
+    /**
+     * Relationship to PPMPs linked to this fund source.
+     */
+    public function ppmps()
+    {
+        return $this->hasMany(Ppmp::class, 'fund_source_id');
+    }
+
+    /**
+     * Relationship to individual PPMP items linked to this fund source.
+     */
+    public function ppmpItems()
+    {
+        return $this->hasMany(PpmpItem::class, 'fund_source_id');
+    }
+
+    /**
+     * Check if this fund source routes to PACCO as a Trust Fund.
+     */
+    public function isTrustFund(): bool
+    {
+        return $this->workflow_route === 'pacco' || stripos($this->category ?? '', 'trust') !== false;
+    }
 
     /**
      * Scope a query to only include active fund sources.

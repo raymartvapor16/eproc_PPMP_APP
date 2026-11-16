@@ -241,17 +241,17 @@ class AmendedAppRegenerationTest extends TestCase
                 ->exists()
         );
 
-        // 7. OPPMO approves: because amendment is PPMP_APP only, TWG is bypassed and routes directly to Office Head!
+        // 7. OPPMO approves with generated APP: marks PPMP finalized and READY_TO_PRINT!
         $oppmoApproveSuccess = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$childPpmp->uuid}/oppmo/approve", [
             'remarks' => 'APP regenerated and verified.',
         ]);
         $oppmoApproveSuccess->assertStatus(200);
-        $this->assertEquals('HEAD_PENDING', $childPpmp->fresh()->status);
+        $this->assertEquals('READY_TO_PRINT', $childPpmp->fresh()->status);
     }
 
     /**
-     * Test SUPPLEMENTAL allows BAC-TWG to review the PPMP,
-     * and invalidates APP if changes are made to the PPMP items.
+     * Test SUPPLEMENTAL allows BAC-TWG to review the PPMP first,
+     * then Budget Officer, then OPPMO which requires APP generation before finalization.
      */
     public function test_supplemental_ppmp_allows_twg_review_and_requires_app_regeneration(): void
     {
@@ -308,27 +308,25 @@ class AmendedAppRegenerationTest extends TestCase
         $childPpmp = Ppmp::where('parent_id', $parentPpmp->id)->firstOrFail();
         $this->assertEquals('SUPPLEMENTAL', $childPpmp->amendment_type);
 
-        // 3. Review workflow reaches OPPMO_REVIEW
-        $childPpmp->update(['status' => 'OPPMO_REVIEW']);
+        // 3. For SUPPLEMENTAL (ALL scope), workflow routes to TWG_REVIEW first!
+        $childPpmp->update(['status' => 'TWG_REVIEW']);
 
-        // For SUPPLEMENTAL, OPPMO approval forwards to TWG_REVIEW!
-        $oppmoToTwg = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$childPpmp->uuid}/oppmo/approve", [
-            'remarks' => 'Forwarded to BAC-TWG for technical review.',
-        ]);
-        $oppmoToTwg->assertStatus(200);
-        $this->assertEquals('TWG_REVIEW', $childPpmp->fresh()->status);
-
-        // 4. BAC-TWG conducts review and approves
+        // 4. BAC-TWG conducts technical review and approves -> routes to BUDGET_OFFICER_REVIEW (General Fund)
         $twgApproveRes = $this->actingAs($this->twgUser)->postJson("/api/ppmps/{$childPpmp->uuid}/twg/approve");
         $twgApproveRes->assertStatus(200);
-        $this->assertEquals('OPPMO_REVIEW', $childPpmp->fresh()->status);
+        $this->assertEquals('BUDGET_OFFICER_REVIEW', $childPpmp->fresh()->status);
         $this->assertNotNull($childPpmp->fresh()->twg_approved_at);
 
-        // 5. In post-TWG OPPMO review, APP must be generated before approving to Office Head
+        // 5. Budget Officer reviews and approves -> routes to OPPMO_REVIEW
+        $budgetApproveRes = $this->actingAs($this->budgetOfficer)->postJson("/api/ppmps/{$childPpmp->uuid}/budget/approve");
+        $budgetApproveRes->assertStatus(200);
+        $this->assertEquals('OPPMO_REVIEW', $childPpmp->fresh()->status);
+
+        // 6. In OPPMO review, APP must be generated before approving to READY_TO_PRINT
         $oppmoApproveBlocked = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$childPpmp->uuid}/oppmo/approve");
         $oppmoApproveBlocked->assertStatus(422);
 
-        // 6. OPPMO generates the APP
+        // 7. OPPMO generates the APP
         $saveApp = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$childPpmp->uuid}/app-data", [
             'fiscal_year' => '2026',
             'plan_version_type' => 'UPDATED',
@@ -344,11 +342,11 @@ class AmendedAppRegenerationTest extends TestCase
         ]);
         $saveApp->assertStatus(200);
 
-        // 7. OPPMO now approves and forwards to Office Head
+        // 8. OPPMO now approves and marks READY_TO_PRINT
         $oppmoFinalApprove = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$childPpmp->uuid}/oppmo/approve", [
-            'remarks' => 'APP finalized with TWG findings and forwarded to Office Head.',
+            'remarks' => 'APP finalized and ready to print.',
         ]);
         $oppmoFinalApprove->assertStatus(200);
-        $this->assertEquals('HEAD_PENDING', $childPpmp->fresh()->status);
+        $this->assertEquals('READY_TO_PRINT', $childPpmp->fresh()->status);
     }
 }

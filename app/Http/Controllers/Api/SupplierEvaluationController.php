@@ -1288,11 +1288,26 @@ class SupplierEvaluationController extends Controller
         $this->authorizeSupplierEvaluation($request);
 
         $request->validate([
-            'pdf_po' => 'required|file|mimes:pdf|max:30720',
+            'pdf_po' => 'required|file|mimes:pdf|max:15360', // Strictly max 15MB for Supplier Evaluation PDF
         ]);
 
         $po = SupplierPurchaseOrder::findOrFail($id);
         $file = $request->file('pdf_po');
+
+        // Security: Block suspicious disguised multi-extensions
+        $origName = $file->getClientOriginalName();
+        if (preg_match('/\.(php|phtml|phar|exe|bat|cmd|sh|vbs|js|jar|py|pl|url|lnk)\.pdf$/i', $origName)) {
+            return response()->json(['message' => 'Disguised executable file naming detected for Purchase Order PDF.'], 422);
+        }
+
+        // Security: Binary Magic Bytes verification (%PDF-)
+        $handle = fopen($file->getRealPath(), 'rb');
+        $header = fread($handle, 5);
+        fclose($handle);
+        if ($header !== '%PDF-') {
+            return response()->json(['message' => 'Security Error: File is not a valid genuine PDF (%PDF- signature missing).'], 422);
+        }
+
         $filename = time() . '_' . preg_replace('/[^A-Za-z0-9_\-\.]/', '_', $po->po_no ?: (string) $po->id) . '.pdf';
         $po->pdf_po = 'private/' . $file->storeAs('po_pdf', $filename, 'local');
         $po->save();
@@ -1837,10 +1852,25 @@ class SupplierEvaluationController extends Controller
         $user = $this->authorizeSupplierEvaluation($request);
 
         $request->validate([
-            'pdf_file' => 'required|file|mimes:pdf|max:20480',
+            'pdf_file' => 'required|file|mimes:pdf|max:15360', // Strictly max 15MB for Supplier Evaluation PDF
         ]);
 
         $file = $request->file('pdf_file');
+
+        // Security: Block suspicious disguised multi-extensions
+        $origName = $file->getClientOriginalName();
+        if (preg_match('/\.(php|phtml|phar|exe|bat|cmd|sh|vbs|js|jar|py|pl|url|lnk)\.pdf$/i', $origName)) {
+            return response()->json(['message' => 'Disguised executable file naming detected for Authorization PDF.'], 422);
+        }
+
+        // Security: Binary Magic Bytes verification (%PDF-)
+        $handle = fopen($file->getRealPath(), 'rb');
+        $header = fread($handle, 5);
+        fclose($handle);
+        if ($header !== '%PDF-') {
+            return response()->json(['message' => 'Security Error: File is not a valid genuine PDF (%PDF- signature missing).'], 422);
+        }
+
         $filename = 'auth_pdf_' . time() . '_' . $user->id . '.pdf';
         $path = $file->storeAs('supplier_authorize_pdfs', $filename, 'local');
 

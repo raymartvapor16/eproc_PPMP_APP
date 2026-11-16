@@ -32,11 +32,13 @@ class SystemNotification extends Model
         return $this->belongsTo(Ppmp::class, 'ppmp_id');
     }
 
-    public static function notify(int $userId, string $title, string $message, ?int $ppmpId = null, string $type = 'info'): self
+    public static function notify(int $userId, string $title, string $message, int|Ppmp|null $ppmpId = null, string $type = 'info'): self
     {
+        $resolvedPpmpId = $ppmpId instanceof Ppmp ? $ppmpId->id : $ppmpId;
+
         return self::create([
             'user_id' => $userId,
-            'ppmp_id' => $ppmpId,
+            'ppmp_id' => $resolvedPpmpId,
             'type' => $type,
             'title' => $title,
             'message' => $message,

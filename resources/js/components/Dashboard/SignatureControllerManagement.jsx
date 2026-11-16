@@ -73,7 +73,7 @@ export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
                 onSettingsUpdated(saved);
             }
 
-            const docName = key === 'ppmp' ? 'PPMP' : key === 'app' ? 'APP' : 'PPMP List of Attachment';
+            const docName = key === 'ppmp' ? 'PPMP' : key === 'app' ? 'APP' : 'Detailed Specifications';
             setNotification({
                 type: 'success',
                 message: `${docName} signature insertion is now ${nextValue ? 'ENABLED (ON)' : 'DISABLED (OFF)'}. All users and reviewers will follow this setting.`,
@@ -150,10 +150,10 @@ export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
         },
         {
             key: 'attachment_list',
-            title: 'PPMP List of Attachment Signatures',
+            title: 'Detailed Specifications Signatures',
             subtitle: 'Annexes, Attachments & Certification Sheets',
             description:
-                'Controls electronic signature insertion on PPMP List of Attachments, supporting document summaries, and endorsement signing blocks.',
+                'Controls electronic signature insertion on Detailed Specifications, supporting document summaries, and endorsement signing blocks.',
             icon: Layers,
             color: 'blue',
             roles: ['End-User / Implementing Unit', 'Office Head Endorsement', 'Reviewer Verification'],
@@ -181,7 +181,7 @@ export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
                             Electronic Signature Insertion Controller
                         </h2>
                         <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
-                            Master switch for document signature insertion across <strong>PPMP</strong>, <strong>APP</strong>, and <strong>PPMP List of Attachments</strong>.
+                            Master switch for document signature insertion across <strong>PPMP</strong>, <strong>APP</strong>, and <strong>Detailed Specifications</strong>.
                             When <strong>ON</strong>, stored electronic signatures are inserted onto documents.
                             When <strong>OFF</strong>, signatures are omitted and only standard clean signature lines are shown for manual wet signing. All end-users, heads, and reviewers follow this controller.
                         </p>

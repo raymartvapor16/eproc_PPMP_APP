@@ -2,8 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { StatusBadge, formatCurrency, formatDate } from '../../components/UI/StatusBadge';
 import { PaginationControl } from '../../components/UI/PaginationControl';
 import { AdminActivityLog } from '../../components/Dashboard/AdminActivityLog';
+import { UnifiedSecurityControls } from '../../components/Dashboard/UnifiedSecurityControls';
+import { getSupplementalKindInfo } from '../../utils/workflowHelpers';
 import { userService, ppmpService, officeService } from '../../services/api';
 import { getStandardFiscalYears } from '../../utils/fiscalYears';
+import { showConfirm } from '../../utils/modalAlert';
+import { UserActionDropdown } from '../../components/Dashboard/UserActionDropdown';
 import {
     getPpmpStartOfActivity,
     getPimsReminderInfo
@@ -12,6 +16,7 @@ import {
     Users,
     UserPlus,
     Shield,
+    ShieldCheck,
     FileSpreadsheet,
     Activity,
     RefreshCw,
@@ -45,9 +50,15 @@ import {
     FileCheck2,
     Layers,
     Tags,
+    BookOpen,
+    Compass,
+    Timer,
 } from 'lucide-react';
+import { AfkLogoutManagement } from '../../components/Dashboard/AfkLogoutManagement';
 import { FundSourcesManagement } from '../../components/Dashboard/FundSourcesManagement';
 import { ProcurementModesManagement } from '../../components/Dashboard/ProcurementModesManagement';
+import { AccountCodesManagement } from '../../components/Dashboard/AccountCodesManagement';
+import { ProgramNamesManagement } from '../../components/Dashboard/ProgramNamesManagement';
 import { ProcurementConditionsManagement } from '../../components/Dashboard/ProcurementConditionsManagement';
 import { OtherTermsManagement } from '../../components/Dashboard/OtherTermsManagement';
 import { SupportingDocumentsManagement } from '../../components/Dashboard/SupportingDocumentsManagement';
@@ -55,6 +66,8 @@ import { SignatoriesManagement } from '../../components/Dashboard/SignatoriesMan
 import { CreateUserModal } from '../../components/Dashboard/CreateUserModal';
 import { UserSignatureModal } from '../../components/Dashboard/UserSignatureModal';
 import { UserSystemAccessModal } from '../../components/Dashboard/UserSystemAccessModal';
+import { UserAccountCodesModal } from '../../components/Dashboard/UserAccountCodesModal';
+import { ExpandableText, ExpandableFundBadge } from '../../components/UI/ExpandableCell';
 
 export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) => {
     // Current Active Tab: 'users' | 'amendments' | 'logs' | 'ppmps' | 'fund_sources' | 'conditions' | 'other_terms' | 'supporting_docs' | 'signatories'
@@ -91,6 +104,7 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
     // Modals for User management
     const [passwordModalUser, setPasswordModalUser] = useState(null);
     const [systemAccessModalUser, setSystemAccessModalUser] = useState(null);
+    const [twgAccountCodesModalUser, setTwgAccountCodesModalUser] = useState(null);
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [savingPassword, setSavingPassword] = useState(false);
@@ -245,7 +259,13 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
     // USER ACTIONS
     // ──────────────────────────────────────────────────────────────────────────
     const handleApproveUser = async (targetUser) => {
-        if (!window.confirm(`Approve registration for ${targetUser.name}?`)) return;
+        const confirmed = await showConfirm({
+            title: 'Approve User Registration',
+            message: `Approve registration for ${targetUser.name}? The account will be granted system access.`,
+            confirmText: 'Yes, Approve User',
+            type: 'success',
+        });
+        if (!confirmed) return;
         setProcessingUserId(targetUser.id);
         try {
             const res = await userService.approve(targetUser.id);
@@ -343,7 +363,13 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
     };
 
     const handleDeleteUser = async (targetUser) => {
-        if (!window.confirm(`Permanently delete account for "${targetUser.name}"? This cannot be undone.`)) return;
+        const confirmed = await showConfirm({
+            title: 'Delete User Account',
+            message: `Permanently delete account for "${targetUser.name}"? This action cannot be undone.`,
+            confirmText: 'Yes, Delete Account',
+            type: 'danger',
+        });
+        if (!confirmed) return;
         setProcessingUserId(targetUser.id);
         try {
             const res = await userService.delete(targetUser.id);
@@ -376,7 +402,13 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
     };
 
     const handleApproveAmendment = async (ppmp) => {
-        if (!window.confirm(`Approve amendment request for PPMP No. ${ppmp.ppmp_number || ppmp.title}? A revised draft PPMP will be initialized.`)) return;
+        const confirmed = await showConfirm({
+            title: 'Approve Amendment Request',
+            message: `Approve amendment request for PPMP No. ${ppmp.ppmp_number || ppmp.title}? A revised draft PPMP will be initialized.`,
+            confirmText: 'Yes, Approve Amendment',
+            type: 'success',
+        });
+        if (!confirmed) return;
         setApprovingAmendmentUuid(ppmp.uuid);
         try {
             const res = await ppmpService.approveAmendment(ppmp.uuid);
@@ -422,7 +454,7 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
     const rejectedUsersCount = usersList.filter(u => u.approval_status === 'rejected').length;
     const pendingAmendmentsCount = metrics.pending_amendments || amendmentsList.filter(a => a.amendment_status === 'PENDING_APPROVAL').length;
 
-    // Filtered Users
+    // Filtered Users (Newest registered users first, oldest on the bottom)
     const filteredUsers = useMemo(() => {
         let list = usersList;
         if (userSubFilter === 'pending') {
@@ -442,7 +474,14 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 u.phone_number?.toLowerCase().includes(q)
             );
         }
-        return list;
+
+        // Always display newly registered users first (highest id/newest created_at)
+        return [...list].sort((a, b) => {
+            const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+            if (timeB !== timeA) return timeB - timeA;
+            return (Number(b.id) || 0) - (Number(a.id) || 0);
+        });
     }, [usersList, userSubFilter, userSearch]);
 
     // Filtered Amendments
@@ -601,25 +640,25 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                     </div>
                 </div>
 
-                {/* Metric 4: System Logs */}
+                {/* Metric 4: Security & Audit */}
                 <div
-                    onClick={() => setActiveTab('logs')}
-                    className={`bg-white p-5 rounded-xl border transition shadow-xs cursor-pointer hover:border-indigo-400 ${activeTab === 'logs' ? 'ring-2 ring-indigo-500 border-indigo-500' : 'border-slate-200'}`}
+                    onClick={() => setActiveTab('security')}
+                    className={`bg-white p-5 rounded-xl border transition shadow-xs cursor-pointer hover:border-emerald-400 ${activeTab === 'security' || activeTab === 'settings' ? 'ring-2 ring-emerald-500 border-emerald-500' : 'border-slate-200'}`}
                 >
                     <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">System Logs &amp; Audit</span>
-                        <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                            <Activity className="w-4 h-4" />
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Security &amp; Audit</span>
+                        <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                            <ShieldCheck className="w-4 h-4" />
                         </div>
                     </div>
                     <div className="mt-2 flex items-baseline gap-2">
-                        <span className="text-2xl font-black text-slate-900">{metrics.total_logs || 'Live'}</span>
-                        <span className="text-xs text-slate-500">events</span>
+                        <span className="text-2xl font-black text-slate-900">Active</span>
+                        <span className="text-xs text-slate-500">protection</span>
                     </div>
                     <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                        <span className="text-indigo-600 font-semibold">Audit Trail</span>
+                        <span className="text-emerald-700 font-semibold">Security Center</span>
                         <span className="inline-flex items-center gap-1 font-bold text-emerald-600">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live Tracking
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live Shield
                         </span>
                     </div>
                 </div>
@@ -665,6 +704,32 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                             {pendingAmendmentsCount}
                         </span>
                     )}
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('security')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
+                        activeTab === 'security' || activeTab === 'settings'
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                >
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Security &amp; Controls</span>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('afk')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
+                        activeTab === 'afk' || activeTab === 'afk_management'
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                >
+                    <Timer className="w-4 h-4" />
+                    <span>AFK Auto-Logout</span>
                 </button>
 
                 <button
@@ -717,6 +782,32 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 >
                     <Tags className="w-4 h-4" />
                     <span>Modes of Procurement</span>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('account_codes')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
+                        activeTab === 'account_codes'
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                >
+                    <BookOpen className="w-4 h-4" />
+                    <span>Account Codes</span>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('program_names')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
+                        activeTab === 'program_names'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                >
+                    <Compass className="w-4 h-4" />
+                    <span>Program Names</span>
                 </button>
 
                 <button
@@ -863,7 +954,7 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                     </div>
 
                     {/* Users Table */}
-                    <div className="overflow-x-auto border-t border-slate-100">
+                    <div className="overflow-x-auto border-t border-slate-100 min-h-[300px]">
                         <table className="w-full text-left text-xs">
                             <thead className="bg-slate-50 text-slate-700 uppercase font-semibold border-b border-slate-200">
                                 <tr>
@@ -889,7 +980,7 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                         const startIndex = (safePage - 1) * userPerPage;
                                         const paginated = filteredUsers.slice(startIndex, startIndex + userPerPage);
 
-                                        return paginated.map((u) => {
+                                        return paginated.map((u, index) => {
                                             const isPending = !u.is_active && u.approval_status !== 'rejected';
                                             const isRejected = u.approval_status === 'rejected';
 
@@ -919,6 +1010,29 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                                                 {u.designation}
                                                             </div>
                                                         )}
+                                                        {/* TWG Assigned Account Codes Pill */}
+                                                        {u.role === 'twg' && (() => {
+                                                            const codes = u.account_codes || u.accountCodes || [];
+                                                            return (
+                                                                <div className="mt-1">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setTwgAccountCodesModalUser(u)}
+                                                                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border transition cursor-pointer hover:shadow-2xs ${
+                                                                            codes.length > 0
+                                                                                ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'
+                                                                                : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-300'
+                                                                        }`}
+                                                                        title={codes.length > 0
+                                                                            ? codes.map(ac => `${ac.code} - ${ac.name}`).join('\n')
+                                                                            : 'Click to assign account codes'}
+                                                                    >
+                                                                        <FileSpreadsheet className="w-3 h-3 text-amber-600" />
+                                                                        <span>{codes.length} assigned code{codes.length === 1 ? '' : 's'}</span>
+                                                                    </button>
+                                                                </div>
+                                                            );
+                                                        })()}
                                                         {/* Systems Access Badges */}
                                                         {(() => {
                                                             let systems = [];
@@ -943,6 +1057,9 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                                                         } else if (sys === '/monitoringsystem' || sys.startsWith('/monitoring')) {
                                                                             label = 'Monitoring';
                                                                             color = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                                                                        } else if (sys === '/pims' || sys.startsWith('/pims')) {
+                                                                            label = 'PIMS';
+                                                                            color = 'bg-purple-50 text-purple-700 border-purple-200';
                                                                         } else if (sys === '/supplierevaluation' || sys.startsWith('/supplier-evaluation')) {
                                                                             label = 'Supplier Eval';
                                                                             color = 'bg-amber-50 text-amber-800 border-amber-200';
@@ -1008,99 +1125,34 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                                         )}
                                                     </td>
                                                     <td className="p-3 text-right">
-                                                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                                                            {isPending ? (
-                                                                <>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleApproveUser(u)}
-                                                                        disabled={processingUserId === u.id}
-                                                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold transition shadow-2xs cursor-pointer disabled:opacity-50"
-                                                                        title="Approve registration"
-                                                                    >
-                                                                        <UserCheck className="w-3 h-3" /> Approve
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => { setRejectModalUser(u); setRejectionReason(''); }}
-                                                                        disabled={processingUserId === u.id}
-                                                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold transition shadow-2xs cursor-pointer disabled:opacity-50"
-                                                                        title="Reject registration"
-                                                                    >
-                                                                        <UserX className="w-3 h-3" /> Reject
-                                                                    </button>
-                                                                </>
-                                                            ) : isRejected ? (
-                                                                <>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => handleApproveUser(u)}
-                                                                        disabled={processingUserId === u.id}
-                                                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold transition shadow-2xs cursor-pointer disabled:opacity-50"
-                                                                        title="Re-approve user"
-                                                                    >
-                                                                        <UserCheck className="w-3 h-3" /> Approve
-                                                                    </button>
-                                                                    {u.id !== user?.id && u.role !== 'super_admin' && (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleDeleteUser(u)}
-                                                                            disabled={processingUserId === u.id}
-                                                                            className="p-1 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
-                                                                            title="Delete account"
-                                                                        >
-                                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                                        </button>
-                                                                    )}
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    {u.id !== user?.id && u.role !== 'super_admin' && (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => handleToggleStatus(u)}
-                                                                            disabled={processingUserId === u.id}
-                                                                            className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-bold transition cursor-pointer disabled:opacity-50 ${
-                                                                                u.is_active
-                                                                                    ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                                                                                    : 'bg-slate-200 hover:bg-emerald-600 hover:text-white text-slate-700'
-                                                                            }`}
-                                                                            title={u.is_active ? 'Deactivate account' : 'Activate account'}
-                                                                        >
-                                                                            {u.is_active ? <><ToggleLeft className="w-3 h-3" /> Deactivate</> : <><ToggleRight className="w-3 h-3" /> Activate</>}
-                                                                        </button>
-                                                                    )}
-                                                                    {u.role !== 'super_admin' && (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => { setRoleModalUser(u); setSelectedRole(u.role); setRoleError(''); }}
-                                                                            className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-bold transition cursor-pointer"
-                                                                            title="Change User Role"
-                                                                        >
-                                                                            <SlidersHorizontal className="w-3 h-3 text-slate-500" /> Role
-                                                                        </button>
-                                                                    )}
-                                                                    {u.role !== 'super_admin' && (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => { setPasswordModalUser(u); setNewPassword(''); setConfirmPassword(''); setPasswordError(''); }}
-                                                                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold transition cursor-pointer"
-                                                                            title="Reset Password"
-                                                                        >
-                                                                            <Key className="w-3 h-3" /> Pass
-                                                                        </button>
-                                                                    )}
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => setSystemAccessModalUser(u)}
-                                                                        className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded text-[11px] font-bold transition cursor-pointer shadow-2xs"
-                                                                        title="Manage Digital Systems Access Permissions"
-                                                                    >
-                                                                        <Layers className="w-3 h-3 text-purple-600" /> Systems
-                                                                    </button>
-                                                                </>
-                                                            )}
-                                                        </div>
+                                                        <UserActionDropdown
+                                                            user={u}
+                                                            currentUser={user}
+                                                            isPending={isPending}
+                                                            isRejected={isRejected}
+                                                            onToggleStatus={() => handleToggleStatus(u)}
+                                                            onChangeRole={() => {
+                                                                setRoleModalUser(u);
+                                                                setSelectedRole(u.role);
+                                                                setRoleError('');
+                                                            }}
+                                                            onResetPassword={() => {
+                                                                setPasswordModalUser(u);
+                                                                setNewPassword('');
+                                                                setConfirmPassword('');
+                                                                setPasswordError('');
+                                                            }}
+                                                            onManageCodes={() => setTwgAccountCodesModalUser(u)}
+                                                            onManageSystems={() => setSystemAccessModalUser(u)}
+                                                            onApprove={() => handleApproveUser(u)}
+                                                            onReject={() => {
+                                                                setRejectModalUser(u);
+                                                                setRejectionReason('');
+                                                            }}
+                                                            onDelete={() => handleDeleteUser(u)}
+                                                            isProcessing={processingUserId === u.id}
+                                                            openUpward={index >= paginated.length - 2 && paginated.length > 2}
+                                                        />
                                                     </td>
                                                 </tr>
                                             );
@@ -1266,6 +1318,7 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                             const reason = ppmp.requested_amendment_reason || ppmp.amendment_reason || '—';
                                             const isPending = ppmp.amendment_status === 'PENDING_APPROVAL';
                                             const isReceived = Boolean(ppmp.admin_received_at);
+                                            const suppInfo = getSupplementalKindInfo(ppmp);
 
                                             return (
                                                 <tr key={ppmp.id} className="hover:bg-slate-50/80 transition">
@@ -1277,7 +1330,7 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                                             {ppmp.tracking_number}
                                                         </div>
                                                         <div className="text-[10px] text-slate-400 mt-0.5">
-                                                            FY {ppmp.fiscal_year} • {formatCurrency(ppmp.total_budget || 0)}
+                                                            FY {ppmp.fiscal_year} • {ppmp.source_of_fund || 'General Fund'} • {formatCurrency(ppmp.total_budget || 0)}
                                                         </div>
                                                     </td>
                                                     <td className="p-3 text-slate-700">
@@ -1290,11 +1343,27 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                                     </td>
                                                     <td className="p-3">
                                                         <div className="flex flex-col items-start gap-1">
-                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold ${
-                                                                type === 'SUPPLEMENTAL' ? 'bg-indigo-100 text-indigo-800' : 'bg-purple-100 text-purple-800'
-                                                            }`}>
-                                                                {type === 'SUPPLEMENTAL' ? 'Supplemental' : 'Amendment'}
-                                                            </span>
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold ${
+                                                                    type === 'SUPPLEMENTAL' ? 'bg-indigo-100 text-indigo-800' : 'bg-purple-100 text-purple-800'
+                                                                }`}>
+                                                                    {type === 'SUPPLEMENTAL' ? 'Supplemental' : 'Amendment'}
+                                                                </span>
+                                                                {type === 'SUPPLEMENTAL' && (
+                                                                    <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold border ${
+                                                                        suppInfo.purpose === 'OTHER'
+                                                                            ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                                                            : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                                                    }`}>
+                                                                        {suppInfo.purpose === 'OTHER' ? 'Other' : 'Continuation'}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {type === 'SUPPLEMENTAL' && suppInfo.purpose === 'OTHER' && suppInfo.specify && (
+                                                                <span className="text-[10px] text-slate-600 italic font-medium leading-tight max-w-[220px]" title={suppInfo.specify}>
+                                                                    Specify: <strong>{suppInfo.specify}</strong>
+                                                                </span>
+                                                            )}
                                                             <span className="text-[10px] text-slate-500 font-medium">
                                                                 Scope: <strong>{scope}</strong>
                                                             </span>
@@ -1516,6 +1585,7 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                     <th className="p-3">Office</th>
                                     <th className="p-3">Project Title</th>
                                     <th className="p-3">Fiscal Year</th>
+                                    <th className="p-3">Source of Funds</th>
                                     <th className="p-3">Estimated Budget</th>
                                     <th className="p-3">Status</th>
                                     <th className="p-3 text-right">Action</th>
@@ -1524,34 +1594,51 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                             <tbody className="divide-y divide-slate-100">
                                 {loadingPpmps ? (
                                     <tr>
-                                        <td colSpan={7} className="p-8 text-center text-slate-500">
+                                        <td colSpan={8} className="p-8 text-center text-slate-500">
                                             <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-emerald-600" />
                                             <span>Loading PPMP records...</span>
                                         </td>
                                     </tr>
                                 ) : ppmpsList.length === 0 ? (
                                     <tr>
-                                        <td colSpan={7} className="p-8 text-center text-slate-400 italic">
+                                        <td colSpan={8} className="p-8 text-center text-slate-400 italic">
                                             No Project Procurement Management Plans found.
                                         </td>
                                     </tr>
                                 ) : (
-                                    ppmpsList.map((ppmp) => (
+                                    ppmpsList.map((ppmp) => {
+                                        const suppInfo = getSupplementalKindInfo(ppmp);
+                                        return (
                                         <tr key={ppmp.id} className="hover:bg-slate-50/80 transition">
                                             <td className="p-3 font-medium">
                                                 <div className="font-bold text-slate-900">{ppmp.ppmp_number || 'Pending No.'}</div>
                                                 <div className="text-[11px] font-mono text-blue-700 font-semibold">{ppmp.tracking_number}</div>
+                                                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                                    {!ppmp.parent_id ? (
+                                                        <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold tracking-tight uppercase border bg-blue-100 text-blue-800 border-blue-300">
+                                                            Annual
+                                                        </span>
+                                                    ) : (
+                                                        <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold tracking-tight uppercase border ${
+                                                            ppmp.amendment_type === 'AMENDMENT'
+                                                                ? 'bg-purple-100 text-purple-800 border-purple-300'
+                                                                : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                                        }`} title={suppInfo.specify ? `Purpose: ${suppInfo.specify}` : ''}>
+                                                            {ppmp.amendment_type === 'AMENDMENT'
+                                                                ? 'Amended'
+                                                                : `Supplemental (${suppInfo.label || 'Continuation'})`}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="p-3">
-                                                <div className="font-medium text-slate-800">{ppmp.office?.name || '—'}</div>
+                                                <ExpandableText text={ppmp.office?.name || '—'} maxLength={35} textClassName="font-medium text-slate-800" />
                                                 {ppmp.office?.code && (
                                                     <span className="font-mono text-[10px] text-slate-500 font-bold">{ppmp.office.code}</span>
                                                 )}
                                             </td>
                                             <td className="p-3 max-w-sm">
-                                                <div className="font-semibold text-slate-900 truncate" title={ppmp.title}>
-                                                    {ppmp.title}
-                                                </div>
+                                                <ExpandableText text={ppmp.title} maxLength={50} textClassName="font-semibold text-slate-900" />
                                                 {(() => {
                                                     const schedule = getPpmpStartOfActivity(ppmp);
                                                     if (!schedule) return null;
@@ -1583,11 +1670,23 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                                 <span className="font-mono text-slate-700 font-semibold">FY {ppmp.fiscal_year}</span>
                                                 <div className="text-[10px] text-slate-400">{ppmp.plan_type}</div>
                                             </td>
+                                            <td className="p-3 text-slate-700">
+                                                <ExpandableFundBadge fund={ppmp.source_of_fund || ppmp.items?.find(i => i.source_of_fund)?.source_of_fund || 'General Fund'} />
+                                            </td>
                                             <td className="p-3 font-bold text-slate-900">
                                                 {formatCurrency(ppmp.total_budget || 0)}
                                             </td>
                                             <td className="p-3">
-                                                <StatusBadge status={ppmp.status} />
+                                                <div className="flex flex-col items-start gap-1">
+                                                    <StatusBadge status={ppmp.status} />
+                                                    {ppmp.amendment_status === 'PENDING_APPROVAL' && (
+                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse" title={suppInfo.specify ? `Specify: ${suppInfo.specify}` : ''}>
+                                                            Pending {(ppmp.requested_amendment_type || ppmp.amendment_type) === 'SUPPLEMENTAL'
+                                                                ? `Supplemental (${suppInfo.purpose === 'OTHER' ? (suppInfo.specify ? `Other: ${suppInfo.specify}` : 'Other') : 'Continuation'})`
+                                                                : 'Amendment'}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="p-3 text-right">
                                                 <button
@@ -1600,8 +1699,9 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                                 </button>
                                             </td>
                                         </tr>
-                                    ))
-                                )}
+                                    );
+                                })
+                            )}
                             </tbody>
                         </table>
                     </div>
@@ -1628,7 +1728,7 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
             {/* TAB 5: SOURCES OF FUND & REVIEW ROUTING                           */}
             {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'fund_sources' && (
-                <FundSourcesManagement />
+                <FundSourcesManagement user={user} />
             )}
 
             {/* ══════════════════════════════════════════════════════════════════ */}
@@ -1636,6 +1736,20 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
             {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'procurement_modes' && (
                 <ProcurementModesManagement />
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            {/* TAB 5C: ACCOUNT CODES (CHART OF ACCOUNTS MASTERLIST)               */}
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            {activeTab === 'account_codes' && (
+                <AccountCodesManagement />
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            {/* TAB 5D: PROGRAM NAMES DIRECTORY                                    */}
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            {activeTab === 'program_names' && (
+                <ProgramNamesManagement />
             )}
 
             {/* ══════════════════════════════════════════════════════════════════ */}
@@ -1664,6 +1778,20 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
             {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'signatories' && (
                 <SignatoriesManagement initialSignatories={data?.signatories} onReload={onReload} />
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            {/* TAB 9: UNIFIED SECURITY & ACCESS CONTROLS (CONSOLIDATED)          */}
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            {(activeTab === 'security' || activeTab === 'settings') && (
+                <UnifiedSecurityControls />
+            )}
+
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            {/* TAB 10: AFK AUTO-LOGOUT SECURITY MANAGEMENT                       */}
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            {(activeTab === 'afk' || activeTab === 'afk_management') && (
+                <AfkLogoutManagement />
             )}
 
             {/* ══════════════════════════════════════════════════════════════════ */}
@@ -1892,6 +2020,24 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                         text: `System access permissions for "${updatedUser.name}" have been updated successfully.`,
                     });
                     setTimeout(() => setUserFeedback({ type: '', text: '' }), 4000);
+                }}
+            />
+
+            {/* Manage TWG Assigned Account Codes Modal */}
+            <UserAccountCodesModal
+                isOpen={!!twgAccountCodesModalUser}
+                onClose={() => setTwgAccountCodesModalUser(null)}
+                targetUser={twgAccountCodesModalUser}
+                onSuccess={(updatedUser) => {
+                    setUsersList(prev =>
+                        prev.map(item => (item.id === updatedUser.id ? { ...item, ...updatedUser } : item))
+                    );
+                    setUserFeedback({
+                        type: 'success',
+                        text: `Assigned account codes for "${updatedUser.name}" have been updated successfully.`,
+                    });
+                    setTimeout(() => setUserFeedback({ type: '', text: '' }), 4000);
+                    if (onReload) onReload();
                 }}
             />
 

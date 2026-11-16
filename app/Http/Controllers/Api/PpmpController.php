@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AccountCode;
+use App\Models\ProgramName;
+use App\Models\FundSource;
 use App\Models\AuditLog;
 use App\Models\Office;
 use App\Models\Ppmp;
@@ -25,12 +28,17 @@ class PpmpController extends Controller
 
         // Only show active/latest PPMPs in the list (superseded PPMPs that have child PPMPs are folded inside the new PPMP)
         $query = Ppmp::with([
-            'office',
+            'office.head',
             'creator',
-            'items',
+            'items.fundSource',
+            'fundSourceRef',
             'signatures',
             'attachments',
             'monitoringProjects',
+            'twgReviewer',
+            'budgetReviewer',
+            'oppmoReviewer',
+            'amendment',
         ])->whereDoesntHave('children');
 
         // Scope based on role
@@ -41,23 +49,53 @@ class PpmpController extends Controller
             // Head sees PPMPs under their office
             $query->where('office_id', $user->office_id);
         } elseif ($user->isBudgetOfficer()) {
-            // Budget officer sees PPMPs that reached review or beyond
-            $query->where('status', '!=', 'DRAFT');
+            // Budget officer sees PPMPs that reached review or beyond, and specifically assigned to them (or legacy unassigned, or completed ready to print)
+            $query->where('status', '!=', 'DRAFT')
+                ->where(function ($q) use ($user) {
+                    $q->whereNull('budget_reviewer_id')
+                      ->orWhere('budget_reviewer_id', $user->id)
+                      ->orWhere('created_by', $user->id)
+                      ->orWhere('status', 'READY_TO_PRINT');
+                });
         } elseif ($user->isOppmo()) {
-            // OPPMO sees PPMPs past budget/pacco review or historical
-            $query->whereNotIn('status', ['DRAFT', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED']);
+            // OPPMO sees PPMPs past budget/pacco review or historical, specifically assigned to them, or completed ready to print
+            $query->where(function ($q) use ($user) {
+                $q->where(function ($subQ) {
+                    $subQ->whereNotIn('status', ['DRAFT', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED'])
+                         ->orWhere('status', 'READY_TO_PRINT');
+                })->where(function ($subQ) use ($user) {
+                    $subQ->whereNull('oppmo_reviewer_id')
+                         ->orWhere('oppmo_reviewer_id', $user->id)
+                         ->orWhere('created_by', $user->id)
+                         ->orWhere('status', 'READY_TO_PRINT');
+                });
+            });
         } elseif ($user->isTwg()) {
-            // TWG sees PPMPs reaching TWG review or that they already acted on
-            $query->where(function ($q) {
-                $q->whereNotIn('status', ['DRAFT', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED'])
-                  ->orWhereHas('milestones', fn($mq) => $mq->whereNotNull('twg_approved_at'))
-                  ->orWhereHas('signatures', function ($sq) {
-                      $sq->where('role', 'twg');
-                  });
+            // TWG sees PPMPs reaching TWG review or that they already acted on, specifically assigned to them, or completed ready to print
+            $query->where(function ($q) use ($user) {
+                $q->where(function ($subQ) {
+                    $subQ->whereNotIn('status', ['DRAFT', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED'])
+                      ->orWhereHas('milestones', fn($mq) => $mq->whereNotNull('twg_approved_at'))
+                      ->orWhereHas('signatures', function ($sq) {
+                          $sq->where('role', 'twg');
+                      })
+                      ->orWhere('status', 'READY_TO_PRINT');
+                })->where(function ($subQ) use ($user) {
+                    $subQ->whereNull('twg_reviewer_id')
+                      ->orWhere('twg_reviewer_id', $user->id)
+                      ->orWhere('created_by', $user->id)
+                      ->orWhere('status', 'READY_TO_PRINT');
+                });
             });
         } elseif ($user->isPacco()) {
-            // PACCO reviewer sees PPMPs that reached review or beyond
-            $query->where('status', '!=', 'DRAFT');
+            // PACCO reviewer sees PPMPs that reached review or beyond, specifically assigned to them, or completed ready to print
+            $query->where('status', '!=', 'DRAFT')
+                ->where(function ($q) use ($user) {
+                    $q->whereNull('budget_reviewer_id')
+                      ->orWhere('budget_reviewer_id', $user->id)
+                      ->orWhere('created_by', $user->id)
+                      ->orWhere('status', 'READY_TO_PRINT');
+                });
         }
 
         // Filters
@@ -122,12 +160,15 @@ class PpmpController extends Controller
             'ppmp_number' => 'nullable|string|max:50',
             'title' => 'required|string|max:500',
             'source_of_fund' => 'nullable|string|max:255',
+            'fund_source_id' => 'nullable|integer|exists:fund_sources,id',
             'account_code' => 'nullable|string',
+            'account_code_id' => 'nullable|integer|exists:account_codes,id',
             'fiscal_year' => 'required|string|max:10',
             'plan_type' => 'required|in:INDICATIVE,FINAL',
             'office_id' => 'nullable|exists:offices,id',
             'implementing_unit' => 'nullable|string|max:255',
             'program_name' => 'nullable|string|max:500',
+            'program_name_id' => 'nullable|integer|exists:program_names,id',
             'delivery_period' => 'nullable|string',
             'place_of_delivery' => 'nullable|string',
             'payment_method' => 'nullable|string',
@@ -143,6 +184,7 @@ class PpmpController extends Controller
             'items.*.end_date' => 'nullable|string',
             'items.*.delivery_period' => 'nullable|string',
             'items.*.source_of_fund' => 'nullable|string',
+            'items.*.fund_source_id' => 'nullable|integer|exists:fund_sources,id',
             'items.*.estimated_budget' => 'required|numeric|min:0',
             'items.*.supporting_docs_text' => 'nullable|string',
             'items.*.remarks' => 'nullable|string',
@@ -216,7 +258,52 @@ class PpmpController extends Controller
                 ? (string) $validated['ppmp_number']
                 : (string) ($maxSeq + 1);
 
-            $sourceOfFund = $validated['source_of_fund'] ?? 'General Fund';
+            $fundSourceId = $validated['fund_source_id'] ?? null;
+            $sourceOfFund = $validated['source_of_fund'] ?? null;
+            if ($fundSourceId) {
+                $fs = FundSource::find($fundSourceId);
+                if ($fs && empty($sourceOfFund)) {
+                    $sourceOfFund = $fs->name;
+                }
+            } elseif (!empty($sourceOfFund)) {
+                $fs = FundSource::where('name', trim($sourceOfFund))->first();
+                if ($fs) {
+                    $fundSourceId = $fs->id;
+                }
+            }
+            if (empty($sourceOfFund)) {
+                $sourceOfFund = 'General Fund';
+            }
+
+            $programNameId = $validated['program_name_id'] ?? null;
+            $programNameStr = $validated['program_name'] ?? null;
+            if ($programNameId) {
+                $prog = ProgramName::find($programNameId);
+                if ($prog && empty($programNameStr)) {
+                    $programNameStr = $prog->name;
+                }
+            } elseif (!empty($programNameStr)) {
+                $prog = ProgramName::where('name', trim($programNameStr))->first();
+                if ($prog) {
+                    $programNameId = $prog->id;
+                }
+            }
+
+            $accountCodeId = $validated['account_code_id'] ?? null;
+            $accountCodeStr = $validated['account_code'] ?? null;
+            if ($accountCodeId) {
+                $ac = AccountCode::find($accountCodeId);
+                if ($ac && empty($accountCodeStr)) {
+                    $accountCodeStr = $ac->code ? "{$ac->name}\n{$ac->code}" : $ac->name;
+                }
+            } elseif (!empty($accountCodeStr)) {
+                if (preg_match('/[0-9]-[0-9]{2}-[0-9]{2}-[0-9]{3}/', $accountCodeStr, $m)) {
+                    $ac = AccountCode::where('code', $m[0])->first();
+                    if ($ac) {
+                        $accountCodeId = $ac->id;
+                    }
+                }
+            }
 
             $ppmp = Ppmp::create([
                 'uuid' => (string) Str::uuid(),
@@ -224,11 +311,14 @@ class PpmpController extends Controller
                 'ppmp_number' => $ppmpNumber,
                 'office_id' => $officeId,
                 'implementing_unit' => $validated['implementing_unit'] ?? null,
-                'program_name' => $validated['program_name'] ?? null,
+                'program_name' => $programNameStr,
+                'program_name_id' => $programNameId,
                 'created_by' => $user->id,
                 'title' => $validated['title'],
                 'source_of_fund' => $sourceOfFund,
-                'account_code' => $validated['account_code'] ?? null,
+                'fund_source_id' => $fundSourceId,
+                'account_code' => $accountCodeStr,
+                'account_code_id' => $accountCodeId,
                 'fiscal_year' => $year,
                 'plan_type' => $validated['plan_type'],
                 'is_annual' => true,
@@ -247,6 +337,24 @@ class PpmpController extends Controller
                 $itemBudget = (float) $itemData['estimated_budget'];
                 $total += $itemBudget;
 
+                $itemFundSourceId = $itemData['fund_source_id'] ?? null;
+                $itemSourceOfFund = $itemData['source_of_fund'] ?? null;
+                if ($itemFundSourceId) {
+                    $itemFs = FundSource::find($itemFundSourceId);
+                    if ($itemFs && empty($itemSourceOfFund)) {
+                        $itemSourceOfFund = $itemFs->name;
+                    }
+                } elseif (!empty($itemSourceOfFund)) {
+                    $itemFs = FundSource::where('name', trim($itemSourceOfFund))->first();
+                    if ($itemFs) {
+                        $itemFundSourceId = $itemFs->id;
+                    }
+                }
+                if (empty($itemSourceOfFund)) {
+                    $itemSourceOfFund = $sourceOfFund;
+                    $itemFundSourceId = $fundSourceId;
+                }
+
                 PpmpItem::create([
                     'ppmp_id' => $ppmp->id,
                     'item_no' => $index + 1,
@@ -258,7 +366,8 @@ class PpmpController extends Controller
                     'start_date' => $itemData['start_date'] ?? null,
                     'end_date' => $itemData['end_date'] ?? null,
                     'delivery_period' => $itemData['delivery_period'] ?? null,
-                    'source_of_fund' => $itemData['source_of_fund'] ?? $sourceOfFund,
+                    'source_of_fund' => $itemSourceOfFund,
+                    'fund_source_id' => $itemFundSourceId,
                     'estimated_budget' => $itemBudget,
                     'supporting_docs_text' => $itemData['supporting_docs_text'] ?? null,
                     'remarks' => $itemData['remarks'] ?? null,
@@ -302,7 +411,7 @@ class PpmpController extends Controller
 
         return response()->json([
             'message' => 'PPMP created successfully in DRAFT status.',
-            'ppmp' => $ppmp->load(['office', 'creator', 'items', 'signatures', 'attachments', 'routes', 'monitoringProjects']),
+            'ppmp' => $ppmp->load(['office.head', 'creator.office.head', 'items', 'signatures.user', 'attachments', 'routes', 'monitoringProjects']),
         ], 201);
     }
 
@@ -315,8 +424,9 @@ class PpmpController extends Controller
 
         $ppmp = Ppmp::with([
             'office.head',
-            'creator',
-            'items',
+            'creator.office.head',
+            'items.fundSource',
+            'fundSourceRef',
             'attachments.uploader',
             'reviews.reviewer',
             'signatures.user',
@@ -324,9 +434,16 @@ class PpmpController extends Controller
             'routes.toUser',
             'changeLogs.user',
             'monitoringProjects',
+            'cellComments.reviewer',
+            'cellComments.compliedByUser',
+            'accountCodeRef',
+            'programNameRef',
+            'twgReviewer',
+            'budgetReviewer',
+            'oppmoReviewer',
             'parent.items',
             'parent.signatures.user',
-            'parent.office',
+            'parent.office.head',
             'children.items',
         ])->where('uuid', $uuid)->firstOrFail();
 
@@ -338,20 +455,38 @@ class PpmpController extends Controller
             if ($user->isHead() && $ppmp->office_id !== $user->office_id) {
                 return response()->json(['message' => 'Unauthorized. You may only view PPMPs from your assigned office.'], 403);
             }
-            if ($user->isBudgetOfficer() && $ppmp->status === 'DRAFT') {
-                return response()->json(['message' => 'PPMP is not yet submitted for Budget review.'], 403);
+            if ($user->isBudgetOfficer()) {
+                if ($ppmp->status === 'DRAFT') {
+                    return response()->json(['message' => 'PPMP is not yet submitted for Budget review.'], 403);
+                }
+                if ($ppmp->status !== 'READY_TO_PRINT' && $ppmp->budget_reviewer_id && $ppmp->budget_reviewer_id !== $user->id && $ppmp->created_by !== $user->id) {
+                    return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different Budget Officer.'], 403);
+                }
             }
-            if ($user->isOppmo() && in_array($ppmp->status, ['DRAFT', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED'])) {
-                return response()->json(['message' => 'PPMP is not yet submitted for OPPMO review.'], 403);
+            if ($user->isOppmo()) {
+                if ($ppmp->status !== 'READY_TO_PRINT' && in_array($ppmp->status, ['DRAFT', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED'])) {
+                    return response()->json(['message' => 'PPMP is not yet submitted for OPPMO review.'], 403);
+                }
+                if ($ppmp->status !== 'READY_TO_PRINT' && $ppmp->oppmo_reviewer_id && $ppmp->oppmo_reviewer_id !== $user->id && $ppmp->created_by !== $user->id) {
+                    return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different OPPMO reviewer.'], 403);
+                }
             }
             if ($user->isTwg()) {
                 $hasTwgReviewed = $ppmp->twg_approved_at !== null || $ppmp->signatures()->where('role', 'twg')->exists();
-                if (!$hasTwgReviewed && in_array($ppmp->status, ['DRAFT', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED'])) {
+                if (!$hasTwgReviewed && $ppmp->status !== 'READY_TO_PRINT' && in_array($ppmp->status, ['DRAFT', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED'])) {
                     return response()->json(['message' => 'PPMP is not yet submitted for BAC-TWG review.'], 403);
                 }
+                if ($ppmp->status !== 'READY_TO_PRINT' && $ppmp->twg_reviewer_id && $ppmp->twg_reviewer_id !== $user->id && $ppmp->created_by !== $user->id) {
+                    return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different BAC-TWG reviewer.'], 403);
+                }
             }
-            if ($user->isPacco() && $ppmp->status === 'DRAFT') {
-                return response()->json(['message' => 'PPMP is not yet submitted for review.'], 403);
+            if ($user->isPacco()) {
+                if ($ppmp->status === 'DRAFT') {
+                    return response()->json(['message' => 'PPMP is not yet submitted for review.'], 403);
+                }
+                if ($ppmp->status !== 'READY_TO_PRINT' && $ppmp->budget_reviewer_id && $ppmp->budget_reviewer_id !== $user->id && $ppmp->created_by !== $user->id) {
+                    return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different PACCO reviewer.'], 403);
+                }
             }
         }
 
@@ -371,9 +506,12 @@ class PpmpController extends Controller
             $depth++;
 
             $currentParent->loadMissing([
-                'items',
+                'items.attachmentList',
+                'attachmentLists',
                 'signatures.user',
-                'office',
+                'office.head',
+                'accountCodeRef',
+                'programNameRef',
                 'creator',
                 'attachments.uploader',
                 'routes.fromUser',
@@ -386,6 +524,14 @@ class PpmpController extends Controller
             $currentParent = $currentParent->parent;
         }
         $ppmp->setRelation('history', collect($history));
+
+        // For end-users, reviewer cell comments are strictly hidden until the PPMP has been officially suspended/returned
+        $isSuspended = str_ends_with($ppmp->status, '_RETURNED');
+        $isReviewerOrAdmin = in_array($user?->role, ['head', 'authorized_staff', 'budget_officer', 'pacco', 'oppmo', 'twg', 'admin', 'super_admin']) || ($user && $user->isAdmin());
+        if (!$isReviewerOrAdmin && !$isSuspended) {
+            // Keep complied comments visible so end-users can inspect what was complied after resubmitting to reviewer
+            $ppmp->setRelation('cellComments', $ppmp->cellComments->where('status', 'complied')->values());
+        }
 
         // Signatories for report / details (served from static cache)
         $activeSignatories = \App\Models\PpmpSignatory::getActiveSignatories();
@@ -436,10 +582,10 @@ class PpmpController extends Controller
 
         $isReviewerEditable = (
             ($user->isHead() && in_array($ppmp->status, ['HEAD_PENDING', 'HEAD_APPROVED']) && $user->office_id === $ppmp->office_id) ||
-            ($user->isBudgetOfficer() && $ppmp->status === 'BUDGET_OFFICER_REVIEW') ||
-            ($user->isPacco() && $ppmp->status === 'PACCO_REVIEW') ||
-            ($user->isOppmo() && $ppmp->status === 'OPPMO_REVIEW') ||
-            ($user->isTwg() && $ppmp->status === 'TWG_REVIEW')
+            ($user->isBudgetOfficer() && $ppmp->status === 'BUDGET_OFFICER_REVIEW' && (!$ppmp->budget_reviewer_id || $ppmp->budget_reviewer_id === $user->id)) ||
+            ($user->isPacco() && $ppmp->status === 'PACCO_REVIEW' && (!$ppmp->budget_reviewer_id || $ppmp->budget_reviewer_id === $user->id)) ||
+            ($user->isOppmo() && $ppmp->status === 'OPPMO_REVIEW' && (!$ppmp->oppmo_reviewer_id || $ppmp->oppmo_reviewer_id === $user->id)) ||
+            ($user->isTwg() && $ppmp->status === 'TWG_REVIEW' && (!$ppmp->twg_reviewer_id || $ppmp->twg_reviewer_id === $user->id))
         );
 
         if (!$isCreatorEditable && !$isReviewerEditable && !$user->isAdmin()) {
@@ -451,7 +597,7 @@ class PpmpController extends Controller
         // Enforce Amendment Scope restriction: if scope was ATTACHMENT_LIST only, PPMP/APP items are locked
         if ($ppmp->amendment_scope === 'ATTACHMENT_LIST' && !$user->isAdmin()) {
             return response()->json([
-                'message' => "PPMP items and plan details cannot be modified for this revision. The approved request scope is restricted to the PPMP List of Attachment only."
+                'message' => "PPMP items and plan details cannot be modified for this revision. The approved request scope is restricted to the Detailed Specifications only."
             ], 403);
         }
 
@@ -459,11 +605,14 @@ class PpmpController extends Controller
             'ppmp_number' => 'nullable|string|max:50',
             'title' => 'required|string|max:500',
             'source_of_fund' => 'nullable|string|max:255',
+            'fund_source_id' => 'nullable|integer|exists:fund_sources,id',
             'account_code' => 'nullable|string',
+            'account_code_id' => 'nullable|integer|exists:account_codes,id',
             'fiscal_year' => 'required|string|max:10',
             'plan_type' => 'required|in:INDICATIVE,FINAL',
             'implementing_unit' => 'nullable|string|max:255',
             'program_name' => 'nullable|string|max:500',
+            'program_name_id' => 'nullable|integer|exists:program_names,id',
             'delivery_period' => 'nullable|string',
             'place_of_delivery' => 'nullable|string',
             'payment_method' => 'nullable|string',
@@ -480,15 +629,31 @@ class PpmpController extends Controller
             'items.*.end_date' => 'nullable|string',
             'items.*.delivery_period' => 'nullable|string',
             'items.*.source_of_fund' => 'nullable|string',
+            'items.*.fund_source_id' => 'nullable|integer|exists:fund_sources,id',
             'items.*.estimated_budget' => 'required|numeric|min:0',
             'items.*.supporting_docs_text' => 'nullable|string',
             'items.*.remarks' => 'nullable|string',
         ]);
 
         DB::transaction(function () use ($ppmp, $validated, $user) {
-            $oldValues = $ppmp->only(['title', 'plan_type', 'total_budget']);
+            $oldValues = $ppmp->toArray();
 
-            $sourceOfFund = $validated['source_of_fund'] ?? $ppmp->source_of_fund ?? 'General Fund';
+            $fundSourceId = array_key_exists('fund_source_id', $validated) ? $validated['fund_source_id'] : $ppmp->fund_source_id;
+            $sourceOfFund = $validated['source_of_fund'] ?? $ppmp->source_of_fund;
+            if (!empty($validated['fund_source_id'])) {
+                $fs = FundSource::find($validated['fund_source_id']);
+                if ($fs && (empty($sourceOfFund) || !array_key_exists('source_of_fund', $validated))) {
+                    $sourceOfFund = $fs->name;
+                }
+            } elseif (array_key_exists('source_of_fund', $validated) && !empty($validated['source_of_fund'])) {
+                $fs = FundSource::where('name', trim($validated['source_of_fund']))->first();
+                if ($fs) {
+                    $fundSourceId = $fs->id;
+                }
+            }
+            if (empty($sourceOfFund)) {
+                $sourceOfFund = 'General Fund';
+            }
 
             $isPol = array_key_exists('additional_condition', $validated)
                 ? ($validated['additional_condition'] === 'POL Condition')
@@ -538,14 +703,76 @@ class PpmpController extends Controller
                 ]);
             }
 
+            // Resolve program_name and program_name_id
+            if (array_key_exists('program_name', $validated) || array_key_exists('program_name_id', $validated)) {
+                $rawProgStr = array_key_exists('program_name', $validated) && $validated['program_name'] !== null
+                    ? trim((string)$validated['program_name'])
+                    : null;
+                $rawProgId = array_key_exists('program_name_id', $validated) && !empty($validated['program_name_id'])
+                    ? (int)$validated['program_name_id']
+                    : null;
+
+                if (!empty($rawProgId)) {
+                    $prog = ProgramName::find($rawProgId);
+                    $programNameId = $rawProgId;
+                    $programNameStr = !empty($rawProgStr) ? $rawProgStr : ($prog?->name ?: null);
+                } elseif (!empty($rawProgStr)) {
+                    $prog = ProgramName::where('name', $rawProgStr)->first();
+                    $programNameId = $prog?->id;
+                    $programNameStr = $rawProgStr;
+                } else {
+                    // Explicitly removed / cleared
+                    $programNameId = null;
+                    $programNameStr = null;
+                }
+            } else {
+                $programNameId = $ppmp->program_name_id;
+                $programNameStr = $ppmp->program_name;
+            }
+
+            // Resolve account_code and account_code_id
+            if (array_key_exists('account_code', $validated) || array_key_exists('account_code_id', $validated)) {
+                $rawCodeStr = array_key_exists('account_code', $validated) && $validated['account_code'] !== null
+                    ? trim((string)$validated['account_code'])
+                    : null;
+                $rawCodeId = array_key_exists('account_code_id', $validated) && !empty($validated['account_code_id'])
+                    ? (int)$validated['account_code_id']
+                    : null;
+
+                if (!empty($rawCodeId)) {
+                    $ac = AccountCode::find($rawCodeId);
+                    $accountCodeId = $rawCodeId;
+                    $accountCodeStr = !empty($rawCodeStr) ? $rawCodeStr : ($ac ? ($ac->code ? "{$ac->name}\n{$ac->code}" : $ac->name) : null);
+                } elseif (!empty($rawCodeStr)) {
+                    $accountCodeStr = $rawCodeStr;
+                    $accountCodeId = null;
+                    if (preg_match('/[0-9]-[0-9]{2}-[0-9]{2}-[0-9]{3}/', $rawCodeStr, $m)) {
+                        $ac = AccountCode::where('code', $m[0])->first();
+                        if ($ac) {
+                            $accountCodeId = $ac->id;
+                        }
+                    }
+                } else {
+                    // Explicitly removed / cleared
+                    $accountCodeId = null;
+                    $accountCodeStr = null;
+                }
+            } else {
+                $accountCodeId = $ppmp->account_code_id;
+                $accountCodeStr = $ppmp->account_code;
+            }
+
             $ppmp->update([
                 'tracking_number' => $trackingNumber,
                 'ppmp_number' => isset($validated['ppmp_number']) && $validated['ppmp_number'] !== '' ? $validated['ppmp_number'] : $ppmp->ppmp_number,
                 'implementing_unit' => array_key_exists('implementing_unit', $validated) ? $validated['implementing_unit'] : $ppmp->implementing_unit,
-                'program_name' => array_key_exists('program_name', $validated) ? $validated['program_name'] : $ppmp->program_name,
+                'program_name' => $programNameStr,
+                'program_name_id' => $programNameId,
                 'title' => $validated['title'],
                 'source_of_fund' => $sourceOfFund,
-                'account_code' => $validated['account_code'] ?? $ppmp->account_code,
+                'fund_source_id' => $fundSourceId,
+                'account_code' => $accountCodeStr,
+                'account_code_id' => $accountCodeId,
                 'fiscal_year' => $cleanFiscalYear,
                 'plan_type' => $validated['plan_type'],
                 'delivery_period' => $isPol ? null : ($validated['delivery_period'] ?? $ppmp->delivery_period),
@@ -565,14 +792,20 @@ class PpmpController extends Controller
                 'title' => 'Project Title',
                 'program_name' => 'Program Name',
                 'account_code' => 'Account Code',
+                'implementing_unit' => 'Implementing Office / Unit',
+                'fiscal_year' => 'Fiscal Year',
+                'ppmp_number' => 'PPMP Number',
+                'plan_type' => 'Plan Type',
                 'delivery_period' => 'Delivery Period',
                 'place_of_delivery' => 'Place of Delivery',
                 'payment_method' => 'Payment Method',
                 'source_of_fund' => 'Source of Fund',
+                'additional_condition' => 'Additional Condition',
+                'warranty_and_other_terms' => 'Warranty and Other Terms',
             ];
             foreach ($headerFields as $field => $label) {
-                $oldVal = trim((string) ($oldValues[$field] ?? $ppmp->{$field} ?? ''));
-                $newVal = trim((string) ($validated[$field] ?? ($field === 'source_of_fund' ? $sourceOfFund : '')));
+                $oldVal = trim((string) ($oldValues[$field] ?? ''));
+                $newVal = trim((string) ($validated[$field] ?? ($field === 'source_of_fund' ? $sourceOfFund : ($field === 'fiscal_year' ? $cleanFiscalYear : ''))));
                 if ($oldVal !== $newVal && ($oldVal !== '' || $newVal !== '')) {
                     $changeLogsToCreate[] = [
                         'ppmp_id' => $ppmp->id,
@@ -586,6 +819,21 @@ class PpmpController extends Controller
                 }
             }
 
+            // Track combined Category / Program Name & Account Code if either changed
+            $oldProgCombined = trim(($oldValues['program_name'] ?? '') . ' • ' . ($oldValues['account_code'] ?? ''));
+            $newProgCombined = trim(($programNameStr ?? '') . ' • ' . ($accountCodeStr ?? ''));
+            if ($oldProgCombined !== $newProgCombined && $oldProgCombined !== '•' && $newProgCombined !== '•') {
+                $changeLogsToCreate[] = [
+                    'ppmp_id' => $ppmp->id,
+                    'user_id' => $user->id,
+                    'role' => $user->role,
+                    'field_name' => 'Category / Program Name & Account Code',
+                    'old_value' => $oldProgCombined ?: '(empty)',
+                    'new_value' => $newProgCombined ?: '(empty)',
+                    'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                ];
+            }
+
             // Replace items safely
             $ppmp->items()->delete();
 
@@ -595,7 +843,25 @@ class PpmpController extends Controller
                 $itemBudget = (float) $itemData['estimated_budget'];
                 $total += $itemBudget;
 
-                PpmpItem::create([
+                $itemFundSourceId = $itemData['fund_source_id'] ?? null;
+                $itemSourceOfFund = $itemData['source_of_fund'] ?? null;
+                if ($itemFundSourceId) {
+                    $itemFs = FundSource::find($itemFundSourceId);
+                    if ($itemFs && empty($itemSourceOfFund)) {
+                        $itemSourceOfFund = $itemFs->name;
+                    }
+                } elseif (!empty($itemSourceOfFund)) {
+                    $itemFs = FundSource::where('name', trim($itemSourceOfFund))->first();
+                    if ($itemFs) {
+                        $itemFundSourceId = $itemFs->id;
+                    }
+                }
+                if (empty($itemSourceOfFund)) {
+                    $itemSourceOfFund = $sourceOfFund;
+                    $itemFundSourceId = $fundSourceId;
+                }
+
+                $newItem = PpmpItem::create([
                     'ppmp_id' => $ppmp->id,
                     'item_no' => $itemNo,
                     'description' => $itemData['description'],
@@ -606,11 +872,15 @@ class PpmpController extends Controller
                     'start_date' => $itemData['start_date'] ?? null,
                     'end_date' => $itemData['end_date'] ?? null,
                     'delivery_period' => $itemData['delivery_period'] ?? null,
-                    'source_of_fund' => $itemData['source_of_fund'] ?? $sourceOfFund,
+                    'source_of_fund' => $itemSourceOfFund,
+                    'fund_source_id' => $itemFundSourceId,
                     'estimated_budget' => $itemBudget,
                     'supporting_docs_text' => $itemData['supporting_docs_text'] ?? null,
                     'remarks' => $itemData['remarks'] ?? null,
                 ]);
+
+                // Maintain cell comment associations across item updates / edits
+                $ppmp->cellComments()->where('item_no', $itemNo)->update(['item_id' => $newItem->id]);
 
                 // Track item-level changes
                 $oldItem = $oldItemsMap->get($itemNo);
@@ -715,6 +985,16 @@ class PpmpController extends Controller
                 \App\Models\PpmpChangeLog::create($log);
             }
 
+            if ($ppmp->is_continuation) {
+                $rootAnnual = $ppmp->getRootAnnualPpmp();
+                $annualCeiling = (float) ($ppmp->baseline_annual_budget ?? ($rootAnnual ? ($rootAnnual->total_budget ?: $rootAnnual->items()->sum('estimated_budget')) : 0));
+                if ($annualCeiling > 0 && $total > ($annualCeiling + 0.01)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'total_budget' => ["The estimated budget (₱" . number_format($total, 2) . ") cannot exceed the baseline Annual PPMP budgetary allocation (₱" . number_format($annualCeiling, 2) . ")."]
+                    ]);
+                }
+            }
+
             $ppmp->update(['total_budget' => $total]);
 
             // If amended/supplemental and changes were made, invalidate APP so OPPMO is required to regenerate
@@ -739,7 +1019,7 @@ class PpmpController extends Controller
 
         return response()->json([
             'message' => 'PPMP updated successfully.',
-            'ppmp' => $ppmp->fresh(['office', 'creator', 'items', 'signatures', 'attachments', 'routes', 'changeLogs.user', 'monitoringProjects']),
+            'ppmp' => $ppmp->fresh(['office.head', 'creator.office.head', 'items', 'signatures.user', 'attachments', 'routes', 'changeLogs.user', 'monitoringProjects']),
         ]);
     }
 
@@ -765,22 +1045,22 @@ class PpmpController extends Controller
 
         $isReviewerEditable = (
             ($user->isHead() && in_array($ppmp->status, ['HEAD_PENDING', 'HEAD_APPROVED']) && $user->office_id === $ppmp->office_id) ||
-            ($user->isBudgetOfficer() && $ppmp->status === 'BUDGET_OFFICER_REVIEW') ||
-            ($user->isPacco() && $ppmp->status === 'PACCO_REVIEW') ||
-            ($user->isOppmo() && $ppmp->status === 'OPPMO_REVIEW') ||
-            ($user->isTwg() && $ppmp->status === 'TWG_REVIEW')
+            ($user->isBudgetOfficer() && $ppmp->status === 'BUDGET_OFFICER_REVIEW' && (!$ppmp->budget_reviewer_id || $ppmp->budget_reviewer_id === $user->id)) ||
+            ($user->isPacco() && $ppmp->status === 'PACCO_REVIEW' && (!$ppmp->budget_reviewer_id || $ppmp->budget_reviewer_id === $user->id)) ||
+            ($user->isOppmo() && $ppmp->status === 'OPPMO_REVIEW' && (!$ppmp->oppmo_reviewer_id || $ppmp->oppmo_reviewer_id === $user->id)) ||
+            ($user->isTwg() && $ppmp->status === 'TWG_REVIEW' && (!$ppmp->twg_reviewer_id || $ppmp->twg_reviewer_id === $user->id))
         );
 
         if (!$isCreatorEditable && !$isReviewerEditable && !$user->isAdmin()) {
             return response()->json([
-                'message' => "PPMP List of Attachment is locked. Once submitted for review, only the authorized reviewer can modify it."
+                'message' => "Detailed Specifications are locked. Once submitted for review, only the authorized reviewer can modify them."
             ], 403);
         }
 
         // Enforce Amendment Scope restriction: if scope was PPMP_APP only, List of Attachment is locked
         if ($ppmp->amendment_scope === 'PPMP_APP' && !$user->isAdmin()) {
             return response()->json([
-                'message' => "PPMP List of Attachment cannot be modified for this revision. The approved request scope is restricted to PPMP/APP procurement items only."
+                'message' => "Detailed Specifications cannot be modified for this revision. The approved request scope is restricted to PPMP/APP procurement items only."
             ], 403);
         }
 
@@ -845,7 +1125,7 @@ class PpmpController extends Controller
                 $formattedBudget = number_format($allocatedBudget, 2);
                 $excess = number_format($calculatedTotal - $allocatedBudget, 2);
                 return response()->json([
-                    'message' => "Cannot save: The Total Cost (₱{$formattedTotal}) of the PPMP List of Attachment exceeds the Allocated Budget (₱{$formattedBudget}) from the PPMP data by ₱{$excess}. The total cost must coincide with or be lower than the Allocated Budget."
+                    'message' => "Cannot save: The Total Cost (₱{$formattedTotal}) of the Detailed Specifications exceeds the Allocated Budget (₱{$formattedBudget}) from the PPMP data by ₱{$excess}. The total cost must coincide with or be lower than the Allocated Budget."
                 ], 422);
             }
         }
@@ -872,6 +1152,105 @@ class PpmpController extends Controller
             }
         }
 
+        // Track changes to ppmp_change_logs for PPMP List of Attachment
+        $changeLogsToCreate = [];
+
+        // Check header terms
+        $attHeaderFields = [
+            'warranty_and_other_terms' => ['key' => 'other_terms', 'label' => 'Attachment List • Other Terms & Delivery Info'],
+            'additional_condition' => ['key' => 'additional_condition', 'label' => 'Attachment List • Additional Condition'],
+            'place_of_delivery' => ['key' => 'place_of_delivery', 'label' => 'Attachment List • Place of Delivery'],
+            'payment_method' => ['key' => 'payment_method', 'label' => 'Attachment List • Payment Method'],
+            'delivery_period' => ['key' => 'delivery_period', 'label' => 'Attachment List • Delivery Period'],
+        ];
+
+        foreach ($attHeaderFields as $modelField => $cfg) {
+            $valKey = $cfg['key'];
+            if (array_key_exists($valKey, $validated)) {
+                $oldHVal = trim((string) ($ppmp->{$modelField} ?? ''));
+                $newHVal = trim((string) ($validated[$valKey] ?? ''));
+                if ($oldHVal !== $newHVal && ($oldHVal !== '' || $newHVal !== '')) {
+                    $changeLogsToCreate[] = [
+                        'ppmp_id' => $ppmp->id,
+                        'user_id' => $user->id,
+                        'role' => $user->role,
+                        'field_name' => $cfg['label'],
+                        'old_value' => $oldHVal ?: '(empty)',
+                        'new_value' => $newHVal ?: '(empty)',
+                        'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                    ];
+                }
+            }
+        }
+
+        // Check attachment rows diff
+        $existingLists = $existingData['attachment_lists'] ?? [];
+        $incomingLists = $validated['attachment_lists'] ?? [];
+        if (!empty($validated['rows']) && empty($incomingLists)) {
+            $activeKey = (string) ($validated['active_item_id'] ?? '0');
+            $incomingLists[$activeKey] = ['rows' => $validated['rows']];
+        }
+
+        foreach ($incomingLists as $listKey => $listVal) {
+            $listNum = is_numeric($listKey) ? ((int) $listKey + 1) : 1;
+            $oldRows = $existingLists[$listKey]['rows'] ?? ($existingData['rows'] ?? []);
+            $newRows = $listVal['rows'] ?? [];
+
+            foreach ($newRows as $rIdx => $newRow) {
+                $rowNum = $rIdx + 1;
+                $oldRow = $oldRows[$rIdx] ?? null;
+
+                if (!$oldRow) {
+                    $newDesc = trim((string) ($newRow['description'] ?? ''));
+                    $newUnit = trim((string) ($newRow['unit'] ?? ''));
+                    $newQty = trim((string) ($newRow['qty'] ?? ''));
+                    if ($newDesc !== '') {
+                        $changeLogsToCreate[] = [
+                            'ppmp_id' => $ppmp->id,
+                            'user_id' => $user->id,
+                            'role' => $user->role,
+                            'field_name' => "Attachment List #{$listNum} • Row #{$rowNum} Description",
+                            'old_value' => '(none)',
+                            'new_value' => "{$newDesc} ({$newQty} {$newUnit})",
+                            'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                        ];
+                    }
+                } else {
+                    $rowDiffFields = [
+                        'unit' => "Attachment List #{$listNum} • Row #{$rowNum} Unit",
+                        'description' => "Attachment List #{$listNum} • Row #{$rowNum} Description",
+                        'qty' => "Attachment List #{$listNum} • Row #{$rowNum} Quantity",
+                        'unitCost' => "Attachment List #{$listNum} • Row #{$rowNum} Unit Cost",
+                        'totalCost' => "Attachment List #{$listNum} • Row #{$rowNum} Total Cost",
+                    ];
+
+                    foreach ($rowDiffFields as $fKey => $fLabel) {
+                        $oldRVal = trim((string) ($oldRow[$fKey] ?? ''));
+                        $newRVal = trim((string) ($newRow[$fKey] ?? ''));
+
+                        if ($oldRVal !== $newRVal && ($oldRVal !== '' || $newRVal !== '')) {
+                            $oldDisplay = in_array($fKey, ['unitCost', 'totalCost']) && is_numeric($oldRVal) ? '₱' . number_format((float) $oldRVal, 2) : $oldRVal;
+                            $newDisplay = in_array($fKey, ['unitCost', 'totalCost']) && is_numeric($newRVal) ? '₱' . number_format((float) $newRVal, 2) : $newRVal;
+
+                            $changeLogsToCreate[] = [
+                                'ppmp_id' => $ppmp->id,
+                                'user_id' => $user->id,
+                                'role' => $user->role,
+                                'field_name' => $fLabel,
+                                'old_value' => $oldDisplay ?: '(empty)',
+                                'new_value' => $newDisplay ?: '(empty)',
+                                'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        foreach ($changeLogsToCreate as $log) {
+            \App\Models\PpmpChangeLog::create($log);
+        }
+
         $ppmpUpdates = ['attachment_list_data' => $validated];
         if (array_key_exists('other_terms', $validated)) {
             $ppmpUpdates['warranty_and_other_terms'] = $validated['other_terms'];
@@ -890,6 +1269,7 @@ class PpmpController extends Controller
         }
 
         $ppmp->update($ppmpUpdates);
+        $ppmp->syncAttachmentLists($validated);
 
         AuditLog::log(
             'PPMP_ATTACHMENT_LIST_GENERATED',
@@ -901,8 +1281,8 @@ class PpmpController extends Controller
         );
 
         return response()->json([
-            'message' => 'PPMP List of Attachment saved successfully.',
-            'ppmp' => $ppmp->fresh(['office.head', 'creator', 'items', 'signatures.user', 'attachments', 'routes']),
+            'message' => 'Detailed Specifications saved successfully.',
+            'ppmp' => $ppmp->fresh(['office.head', 'creator.office.head', 'items', 'signatures.user', 'attachments', 'routes', 'changeLogs.user']),
         ]);
     }
 
@@ -914,19 +1294,17 @@ class PpmpController extends Controller
         $user = $request->user();
         $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
 
-        $isTwgSkipped = ($ppmp->amendment_scope === 'PPMP_APP');
-        $isTwgDone = $isTwgSkipped || $ppmp->twg_approved_at !== null || $ppmp->signatures()->where('role', 'twg')->exists();
-        $isOppmoAuthorized = $user->isOppmo() && $isTwgDone && in_array($ppmp->status, ['OPPMO_REVIEW', 'READY_TO_PRINT'], true);
+        $isOppmoAuthorized = $user->isOppmo() && in_array($ppmp->status, ['OPPMO_REVIEW', 'READY_TO_PRINT'], true) && (!$ppmp->oppmo_reviewer_id || $ppmp->oppmo_reviewer_id === $user->id);
 
         if ($ppmp->amendment_scope === 'ATTACHMENT_LIST' && !$user->isAdmin()) {
             return response()->json([
-                'message' => 'The Annual Procurement Plan (APP) cannot be modified or regenerated for this revision. The approved request scope is restricted to the PPMP List of Attachment only.'
+                'message' => 'The Annual Procurement Plan (APP) cannot be modified or regenerated for this revision. The approved request scope is restricted to the Detailed Specifications only.'
             ], 403);
         }
 
         if (!$isOppmoAuthorized && !$user->isAdmin()) {
             return response()->json([
-                'message' => 'Only the OPPMO reviewer can generate or regenerate the Annual Procurement Plan (APP) after BAC-TWG technical review is complete.'
+                'message' => 'Only the OPPMO reviewer can generate or regenerate the Annual Procurement Plan (APP).'
             ], 403);
         }
 
@@ -983,7 +1361,7 @@ class PpmpController extends Controller
 
         return response()->json([
             'message' => 'Annual Procurement Plan (APP) data saved successfully.',
-            'ppmp' => $ppmp->fresh(['office.head', 'creator', 'items', 'signatures.user', 'attachments', 'routes', 'changeLogs.user']),
+            'ppmp' => $ppmp->fresh(['office.head', 'creator.office.head', 'items', 'signatures.user', 'attachments', 'routes', 'changeLogs.user']),
         ]);
     }
 }

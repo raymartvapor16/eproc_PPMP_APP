@@ -99,7 +99,7 @@ class PpmpAttachmentListTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertJsonFragment([
-            'message' => 'PPMP List of Attachment saved successfully.',
+            'message' => 'Detailed Specifications saved successfully.',
         ]);
 
         $ppmp->refresh();
@@ -209,7 +209,7 @@ class PpmpAttachmentListTest extends TestCase
 
         $response->assertStatus(403);
         $response->assertJsonFragment([
-            'message' => 'PPMP List of Attachment cannot be modified for this revision. The approved request scope is restricted to PPMP/APP procurement items only.',
+            'message' => 'Detailed Specifications cannot be modified for this revision. The approved request scope is restricted to PPMP/APP procurement items only.',
         ]);
     }
 
@@ -318,6 +318,85 @@ class PpmpAttachmentListTest extends TestCase
         $ppmp->refresh();
         // Since TWG already approved, it retains the TWG signer's name
         $this->assertEquals('Engr. Juan Dela Cruz', $ppmp->attachment_list_data['approved_by_name']);
+    }
+
+    public function test_attachment_list_is_saved_in_normalized_database_table_with_relationships(): void
+    {
+        $ppmp = Ppmp::create([
+            'uuid' => (string) Str::uuid(),
+            'tracking_number' => 'TRK-2026-NORM-001',
+            'ppmp_number' => '1',
+            'office_id' => $this->office->id,
+            'created_by' => $this->creator->id,
+            'fiscal_year' => 2026,
+            'title' => 'Office Network Modernization',
+            'status' => 'DRAFT',
+            'total_budget' => 120000.00,
+        ]);
+
+        $item1 = PpmpItem::create([
+            'ppmp_id' => $ppmp->id,
+            'item_no' => 1,
+            'description' => 'Heavy Duty Switch',
+            'estimated_budget' => 70000.00,
+        ]);
+
+        $item2 = PpmpItem::create([
+            'ppmp_id' => $ppmp->id,
+            'item_no' => 2,
+            'description' => 'Enterprise Access Points',
+            'estimated_budget' => 50000.00,
+        ]);
+
+        $payload = [
+            'project_title' => 'Office Network Modernization Project',
+            'office_name' => $this->office->name,
+            'total_budget' => 120000.00,
+            'charges' => '5-02-03-010 Capital Outlay',
+            'place_of_delivery' => 'Provincial ICT Center',
+            'payment_method' => 'Credit Basis',
+            'delivery_period' => '30 Calendar Days',
+            'attachment_lists' => [
+                (string) $item1->id => [
+                    'itemNo' => 1,
+                    'project_title' => 'Heavy Duty Switch List',
+                    'total_budget' => 70000.00,
+                    'rows' => [
+                        ['id' => 1, 'unit' => 'unit', 'description' => '48-Port PoE Switch', 'qty' => 1, 'unitCost' => 70000, 'totalCost' => 70000],
+                    ],
+                ],
+                (string) $item2->id => [
+                    'itemNo' => 2,
+                    'project_title' => 'Access Points List',
+                    'total_budget' => 50000.00,
+                    'rows' => [
+                        ['id' => 1, 'unit' => 'units', 'description' => 'Wi-Fi 6 AP', 'qty' => 2, 'unitCost' => 25000, 'totalCost' => 50000],
+                    ],
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($this->creator)->postJson("/api/ppmps/{$ppmp->uuid}/attachment-list", $payload);
+        $response->assertStatus(200);
+
+        // Verify records in normalized ppmp_attachment_lists table
+        $this->assertDatabaseHas('ppmp_attachment_lists', [
+            'ppmp_id' => $ppmp->id,
+            'item_id' => $item1->id,
+            'total_budget' => 70000.00,
+        ]);
+
+        $this->assertDatabaseHas('ppmp_attachment_lists', [
+            'ppmp_id' => $ppmp->id,
+            'item_id' => $item2->id,
+            'total_budget' => 50000.00,
+        ]);
+
+        // Verify Eloquent relationships work
+        $freshPpmp = Ppmp::with(['attachmentLists', 'items.attachmentList'])->find($ppmp->id);
+        $this->assertCount(2, $freshPpmp->attachmentLists);
+        $this->assertNotNull($freshPpmp->items->first()->attachmentList);
+        $this->assertEquals('Heavy Duty Switch List', $freshPpmp->items->first()->attachmentList->project_title);
     }
 }
 

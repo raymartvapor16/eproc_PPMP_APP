@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { UserPlus, X, Eye, EyeOff, Shield, Building, Phone, Mail, User, Briefcase, Lock, PenTool, Check, Loader2, Sparkles, UploadCloud, Layers } from 'lucide-react';
 import { userService, portalSystemService } from '../../services/api';
 import { SignaturePadModal } from '../UI/SignaturePadModal';
+import { AccountCodeMultiSelect } from '../UI/AccountCodeMultiSelect';
 
 const ROLES_LIST = [
     { value: 'end_user', label: 'End User (Implementing Unit Staff)', desc: 'Prepares and submits PPMP documents' },
@@ -23,8 +24,6 @@ export const CreateUserModal = ({
     offices = [],
     currentUserRole = 'admin',
 }) => {
-    if (!isOpen) return null;
-
     const [formData, setFormData] = useState({
         name: '',
         email: '',
@@ -38,29 +37,45 @@ export const CreateUserModal = ({
     });
 
     const [availableSystems, setAvailableSystems] = useState([
-        { id: 1, name: 'E-Procurement PPMP & APP System', link_url: '/eprocrementppmpapp', badge: 'Primary System' },
-        { id: 2, name: 'OPPMO Real-Time Monitoring System', link_url: '/monitoringsystem', badge: 'Live Monitoring' },
-        { id: 3, name: 'Supplier Evaluation System', link_url: '/supplierevaluation', badge: 'Supplier Rating' },
+        { id: 1, name: 'E-Procurement PPMP & APP System', link_url: '/eprocrementppmpapp', badge: 'Primary System', description: 'PPMP preparation, annual procurement planning, reviews, and BAC approvals.' },
+        { id: 2, name: 'OPPMO Real-Time Monitoring System', link_url: '/monitoringsystem', badge: 'Live Monitoring', description: 'Milestone tracking, and purchase request timelines.' },
+        { id: 3, name: 'Procurement Information Management System (PIMS)', link_url: '/pims', badge: 'PIMS Portal', description: 'Comprehensive procurement surveillance, PR generation & tracking.' },
+        { id: 4, name: 'Supplier Evaluation System', link_url: '/supplierevaluation', badge: 'Supplier Rating', description: 'Province-wide Supplier Performance Evaluation and Purchase Order Management.' },
     ]);
-    const [accessibleSystems, setAccessibleSystems] = useState(['/eprocrementppmpapp']);
-
-    useEffect(() => {
-        const fetchSystems = async () => {
-            try {
-                const res = await portalSystemService.getPublic();
-                if (res.data && res.data.length > 0) {
-                    setAvailableSystems(res.data);
-                }
-            } catch (_) {}
-        };
-        fetchSystems();
-    }, []);
+    const [accessibleSystems, setAccessibleSystems] = useState(['/eprocrementppmpapp', '/pims']);
+    const [assignedAccountCodeIds, setAssignedAccountCodeIds] = useState([]);
 
     const [showPassword, setShowPassword] = useState(false);
     const [signaturePreview, setSignaturePreview] = useState(null);
     const [isDrawPadOpen, setIsDrawPadOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const fetchSystems = async () => {
+            try {
+                const res = await portalSystemService.getPublic();
+                if (res.data && res.data.length > 0) {
+                    setAvailableSystems(prev => {
+                        const merged = [...prev];
+                        res.data.forEach((sys) => {
+                            const idx = merged.findIndex((m) => m.link_url === sys.link_url);
+                            if (idx >= 0) {
+                                merged[idx] = { ...merged[idx], ...sys };
+                            } else {
+                                merged.push(sys);
+                            }
+                        });
+                        return merged;
+                    });
+                }
+            } catch (_) {}
+        };
+        fetchSystems();
+    }, [isOpen]);
+
+    if (!isOpen) return null;
 
     const availableRoles = ROLES_LIST.filter(r => {
         if (r.value === 'super_admin' && currentUserRole !== 'super_admin') {
@@ -145,6 +160,7 @@ export const CreateUserModal = ({
                 ...formData,
                 office_id: formData.office_id ? Number(formData.office_id) : null,
                 accessible_systems: accessibleSystems,
+                account_code_ids: formData.role === 'twg' ? assignedAccountCodeIds : [],
             };
 
             const res = await userService.create(payload);
@@ -304,6 +320,17 @@ export const CreateUserModal = ({
                                     {ROLES_LIST.find(r => r.value === formData.role)?.desc}
                                 </p>
                             </div>
+
+                            {/* TWG Assigned Account Codes Selection */}
+                            {formData.role === 'twg' && (
+                                <div className="sm:col-span-2 bg-amber-50/70 border-2 border-amber-300 rounded-xl p-3.5 space-y-2 animate-fade-in-up">
+                                    <AccountCodeMultiSelect
+                                        selectedIds={assignedAccountCodeIds}
+                                        onChange={setAssignedAccountCodeIds}
+                                        label="Assigned Account Codes (TWG Scope)"
+                                    />
+                                </div>
+                            )}
 
                             {/* Permitted Digital Systems Access */}
                             <div className="sm:col-span-2 bg-slate-50/80 border border-slate-200 rounded-xl p-3">

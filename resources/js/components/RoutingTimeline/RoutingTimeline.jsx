@@ -12,13 +12,11 @@ export const cleanFieldName = (field) => {
 
 /**
  * Returns accurate recipient / next office information strictly following the official PPMP route flow:
- * 1. End User creates Draft (DRAFT_CREATED) & prepares requirements (APP, Attachment List, Market Scoping PDF)
- * 2. End User submits for review -> Provincial Budget Officer (General Fund) OR PACCO (Trust Fund) OR BAC-TWG (Attachment List only)
- * 3. Budget Officer / PACCO certifies & releases -> OPPMO
- * 4. OPPMO approves & releases -> BAC-TWG (or Office Head if PPMP_APP only)
- * 5. BAC-TWG conducts technical review & approves -> Office Head (Final Approval & Endorsement)
- * 6. Office Head grants Final Approval (READY_TO_PRINT) -> Implementing Unit / End User
- * 7. End User acknowledges & receives document for procurement execution
+ * 1. End User creates Draft (DRAFT_CREATED) & submits for review
+ * 2. First reviewer: BAC-TWG conducts technical review
+ * 3. Second reviewer: Provincial Budget Officer (General Fund) OR PACCO (Trust Fund) certifies budget
+ * 4. Third reviewer: OPPMO Reviewer generates/regenerates official APP
+ * 5. Final stage: Ready to Print (PPMP / APP ready for procurement execution)
  */
 export const getAccurateRouteRecipient = (route, ppmp) => {
     if (!route) return { name: '—', role: '', designation: '' };
@@ -31,13 +29,36 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
     const isAttachOnly = ppmp?.amendment_scope === 'ATTACHMENT_LIST';
     const isPpmpAppOnly = ppmp?.amendment_scope === 'PPMP_APP';
 
-    // 1. Initial Draft Created -> next reviewing office upon submission
-    if (action === 'DRAFT_CREATED') {
+    // 1. Initial Draft Created or Submitted -> First reviewing office is BAC-TWG
+    if (action === 'DRAFT_CREATED' || action === 'SUBMITTED_FOR_REVIEW') {
+        if (isPpmpAppOnly) {
+            if (isTrust) {
+                return {
+                    name: ppmp?.default_signatories?.pacco_requirement?.name || 'MAY FERNANDO-UY, CPA',
+                    role: 'pacco',
+                    designation: ppmp?.default_signatories?.pacco_requirement?.position || 'Provincial Accountant (PACCO Review)',
+                };
+            }
+            return {
+                name: ppmp?.default_signatories?.budget_requirement?.name || 'Provincial Budget Officer',
+                role: 'budget_officer',
+                designation: ppmp?.default_signatories?.budget_requirement?.position || 'Provincial Budget Office',
+            };
+        }
+        return {
+            name: 'BAC-TWG',
+            role: 'twg',
+            designation: 'Bids and Awards Committee - Technical Working Group',
+        };
+    }
+
+    // 2. BAC-TWG Review -> next reviewing office is Budget Officer or PACCO
+    if (action === 'TWG_RECEIVED' || action === 'TWG_APPROVED') {
         if (isAttachOnly) {
             return {
-                name: 'BAC-TWG',
-                role: 'twg',
-                designation: 'Bids and Awards Committee - Technical Working Group',
+                name: ppmp?.creator?.name || 'Implementing Unit / End User',
+                role: 'end_user',
+                designation: ppmp?.creator?.designation || 'End User (Implementing Unit - Ready to Print)',
             };
         }
         if (isTrust) {
@@ -54,33 +75,8 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
         };
     }
 
-    // 2. Desk receipt by Budget Officer or PACCO -> next office is OPPMO
-    if (action === 'PACCO_RECEIVED' || action === 'BUDGET_RECEIVED') {
-        return {
-            name: 'OPPMO REVIEW',
-            role: 'oppmo',
-            designation: 'Provincial Procurement Management Office',
-        };
-    }
-
-    // 3. Desk receipt by OPPMO -> next office is BAC-TWG (or Office Head if PPMP_APP only)
-    if (action === 'OPPMO_RECEIVED') {
-        if (isPpmpAppOnly) {
-            return {
-                name: ppmp?.office?.head?.name || 'Office Head',
-                role: 'head',
-                designation: ppmp?.office?.head?.designation || 'Office Head / Implementing Unit Head',
-            };
-        }
-        return {
-            name: 'BAC-TWG',
-            role: 'twg',
-            designation: 'Bids and Awards Committee - Technical Working Group',
-        };
-    }
-
-    // 4. Desk receipt by BAC-TWG -> next office is OPPMO to generate APP
-    if (action === 'TWG_RECEIVED') {
+    // 3. Desk receipt by Budget Officer or PACCO -> next office is OPPMO (Generate APP)
+    if (action === 'PACCO_RECEIVED' || action === 'BUDGET_RECEIVED' || action === 'BUDGET_APPROVED' || action === 'PACCO_APPROVED') {
         return {
             name: route.to_user?.name || 'OPPMO REVIEW',
             role: 'oppmo',
@@ -88,8 +84,8 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
         };
     }
 
-    // 5. Desk receipt by Office Head -> next recipient is End User (Ready to Print)
-    if (action === 'HEAD_RECEIVED') {
+    // 4. Desk receipt by OPPMO -> next recipient is End User (Ready to Print)
+    if (action === 'OPPMO_RECEIVED' || action === 'OPPMO_APPROVED' || action === 'OPPMO_APP_GENERATED') {
         return {
             name: ppmp?.creator?.name || 'Implementing Unit / End User',
             role: 'end_user',
@@ -97,21 +93,12 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
         };
     }
 
-    // 6. BAC-TWG Approved -> routed back to OPPMO for APP generation
-    if (action === 'TWG_APPROVED') {
+    // 5. Desk receipt by Office Head -> next recipient is End User (Ready to Print)
+    if (action === 'HEAD_RECEIVED' || action === 'HEAD_APPROVED') {
         return {
-            name: route.to_user?.name || 'OPPMO Reviewer',
-            role: 'oppmo',
-            designation: route.to_user?.designation || 'Provincial Procurement Management Office',
-        };
-    }
-
-    // 7. OPPMO APP Generated -> forwarded to Office Head for approval
-    if (action === 'OPPMO_APP_GENERATED') {
-        return {
-            name: route.to_user?.name || ppmp?.office?.head?.name || 'Office Head',
-            role: 'head',
-            designation: route.to_user?.designation || ppmp?.office?.head?.designation || 'Office Head / Implementing Unit Head',
+            name: ppmp?.creator?.name || 'Implementing Unit / End User',
+            role: 'end_user',
+            designation: ppmp?.creator?.designation || 'End User (Implementing Unit - Ready to Print)',
         };
     }
 
@@ -532,6 +519,13 @@ export const RoutingTimeline = ({
                                             stageCategory = 'Approved & Released';
                                         }
 
+                                        if (actionStr === 'REASSIGNED') {
+                                            dotClass = 'bg-amber-500 ring-2 ring-amber-200';
+                                            cardBorder = 'border-amber-200 bg-amber-50/25';
+                                            badgeColor = 'bg-amber-100 text-amber-800 border-amber-300';
+                                            stageCategory = 'Reviewer Reassigned';
+                                        }
+
                                         if (isLatest) {
                                             cardBorder += ' ring-2 ring-indigo-500/20 shadow-sm';
                                         }
@@ -551,6 +545,8 @@ export const RoutingTimeline = ({
                                                     return 'Suspended & Returned by Office Head';
                                                 case 'SUBMITTED_FOR_REVIEW':
                                                     return `Passed & Submitted to ${route.to_role ? route.to_role.replace(/_/g, ' ').toUpperCase() : 'Reviewer'} for Review`;
+                                                case 'REASSIGNED':
+                                                    return `Reassigned to ${route.to_user?.name || (route.to_role ? route.to_role.replace(/_/g, ' ').toUpperCase() : 'Reviewer')} for Review`;
                                                 case 'BUDGET_RECEIVED':
                                                     return 'Received by Provincial Budget Officer';
                                                 case 'BUDGET_APPROVED':
@@ -568,19 +564,19 @@ export const RoutingTimeline = ({
                                                         ? 'Received by OPPMO (Awaiting APP Generation)'
                                                         : 'Received by OPPMO';
                                                 case 'OPPMO_APPROVED':
-                                                    return 'OPPMO Approved & Released to BAC-TWG';
+                                                    return 'OPPMO Review Approved (APP Generated) & Released - Ready to Print';
                                                 case 'OPPMO_APP_GENERATED':
-                                                    return 'Annual Procurement Plan (APP) Generated & Released to Office Head';
+                                                    return 'Annual Procurement Plan (APP) Generated & Released - Ready to Print';
                                                 case 'OPPMO_RETURNED':
                                                     return 'Suspended & Returned by OPPMO';
                                                 case 'TWG_RECEIVED':
                                                     return 'Received by BAC-TWG';
                                                 case 'TWG_APPROVED':
-                                                    return 'BAC-TWG Technical Review Approved & Released to OPPMO';
+                                                    return 'BAC-TWG Technical Review Approved & Released';
                                                 case 'TWG_RETURNED':
                                                     return 'Suspended & Returned by BAC-TWG';
                                                 case 'READY_TO_PRINT':
-                                                    return 'Office Head Final Approved & Ready to Print';
+                                                    return 'Final Approved & Ready to Print';
                                                 case 'END_USER_RECEIVED':
                                                     return 'Acknowledged & Received by Implementing Unit';
                                                 case 'ADMIN_RECEIVED_REQUEST':

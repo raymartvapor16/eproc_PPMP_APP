@@ -18,7 +18,7 @@ class DatabaseSeeder extends Seeder
             ['email' => 'admin@system16.com'],
             [
                 'name'         => 'Super Administrator',
-                'password'     => Hash::make('++admin@2026.davsur++'),
+                'password'     => Hash::make('++sadmin@2026.davsur++'),
                 'role'         => 'super_admin',
                 'designation'  => 'Super Administrator',
                 'is_active'    => true,
@@ -39,31 +39,6 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Create or update default PACCO Reviewer account
-        User::updateOrCreate(
-            ['email' => 'pacco@system16.com'],
-            [
-                'name'         => 'MAY FERNANDO-UY, CPA',
-                'password'     => Hash::make('++admin@2026.davsur++'),
-                'role'         => 'pacco',
-                'designation'  => 'Provincial Accountant',
-                'is_active'    => true,
-                'approval_status' => 'approved',
-            ]
-        );
-
-        // Create or update default OPPMO Monitoring Officer account
-        User::updateOrCreate(
-            ['email' => 'monitor@system16.com'],
-            [
-                'name'         => 'OPPMO Monitoring Officer',
-                'password'     => Hash::make('++admin@2026.davsur++'),
-                'role'         => 'monitor',
-                'designation'  => 'Procurement Monitoring Officer',
-                'is_active'    => true,
-                'approval_status' => 'approved',
-            ]
-        );
 
         // Create or update default official PPMP signatories
         \App\Models\PpmpSignatory::updateOrCreate(
@@ -79,7 +54,7 @@ class DatabaseSeeder extends Seeder
             ['signatory_type' => 'budget_requirement'],
             [
                 'name' => 'DESSAMIE BUAT-SANCHEZ, CPA, JD',
-                'position' => 'PGDH - PBO / BAC - Chairman',
+                'position' => 'PGDH - PBO',
                 'is_active' => true,
             ]
         );
@@ -88,7 +63,7 @@ class DatabaseSeeder extends Seeder
             ['signatory_type' => 'bac_secretariat'],
             [
                 'name' => 'NORJANNA M. CAMAGUIN, MPA',
-                'position' => 'PGDH - OPPMO',
+                'position' => 'PGDH - PPMO',
                 'is_active' => true,
             ]
         );
@@ -138,5 +113,9 @@ class DatabaseSeeder extends Seeder
                 'is_active' => true,
             ]
         );
+
+        $this->call(AccountCodeSeeder::class);
+        $this->call(ProgramNameSeeder::class);
+        $this->call(FundSourceSeeder::class);
     }
 }

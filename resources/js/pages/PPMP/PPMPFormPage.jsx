@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { ppmpService, procurementConditionService, otherTermService, supportingDocumentService, procurementModeService } from '../../services/api';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { ppmpService, procurementConditionService, otherTermService, supportingDocumentService, procurementModeService, officeService, notificationService } from '../../services/api';
 import { ProcurementPlanTable } from '../../components/PPMP/ProcurementPlanTable';
+import { SourceOfFundCombobox } from '../../components/PPMP/SourceOfFundCombobox';
+import { CommentableCell } from '../../components/PPMP/CommentableCell';
 import { GreenSpecDropdown } from '../../components/PPMP/GreenSpecDropdown';
-import { ArrowLeft, Save, Send, AlertCircle, FileCheck, Truck, Sparkles, Lock, Leaf } from 'lucide-react';
+import { ArrowLeft, Save, Send, AlertCircle, AlertTriangle, CheckCircle2, FileCheck, Truck, Sparkles, Lock, Leaf, MessageSquare, CheckCheck, Building2, Search, ChevronDown, X } from 'lucide-react';
 import {
     BASE_DELIVERY_PERIODS,
     BASE_PLACES_OF_DELIVERY,
@@ -20,7 +22,14 @@ export const POL_TERMS_TEXT = `POL Condition:
 -Staggered Payment: The end-user must ensure that payment is processed within 10 calendar days upon receiving the billing from the supplier/Credit-basis.
 -The supplier reserves the right to discontinue services if payment is not made after two consecutive billings and will resume only after the outstanding obligations are settled.`;
 
-export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = 'General Fund', onBack, onSaved }) => {
+export const PPMPFormPage = ({
+    user,
+    initialPpmp = null,
+    initialSourceOfFund = 'General Fund',
+    initialWorkflowRoute = null,
+    onBack,
+    onSaved,
+}) => {
     const isEditMode = !!initialPpmp;
 
     const isAttachmentOnly = Boolean(
@@ -29,20 +38,58 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
         !['admin', 'super_admin'].includes(user?.role)
     );
 
+    const resolvedInitialRoute = initialWorkflowRoute ||
+        initialPpmp?.fund_source_ref?.workflow_route ||
+        initialPpmp?.workflow_route ||
+        (initialPpmp?.source_of_fund?.toLowerCase().includes('trust') ? 'pacco' : null) ||
+        (initialSourceOfFund?.toLowerCase().includes('trust') ? 'pacco' : 'budget');
+
+    const [workflowRoute, setWorkflowRoute] = useState(resolvedInitialRoute || 'budget');
+
     const cleanInitialFund = (initialPpmp?.source_of_fund === 'General Fund and etc..' ? 'General Fund' : initialPpmp?.source_of_fund) ||
         (initialSourceOfFund === 'General Fund and etc..' ? 'General Fund' : initialSourceOfFund) ||
-        'General Fund';
+        (resolvedInitialRoute === 'pacco' ? 'Trust Fund' : 'General Fund');
 
     const [sourceOfFund, setSourceOfFund] = useState(cleanInitialFund);
+    const [fundSourceId, setFundSourceId] = useState(initialPpmp?.fund_source_id || null);
     const [ppmpNumber, setPpmpNumber] = useState(
         (initialPpmp?.ppmp_number !== undefined && initialPpmp?.ppmp_number !== null) ? initialPpmp.ppmp_number : ''
     );
     const [title, setTitle] = useState(initialPpmp?.title || '');
     const [accountCode, setAccountCode] = useState(initialPpmp?.account_code || '');
+    const [accountCodeId, setAccountCodeId] = useState(initialPpmp?.account_code_id || null);
     const [fiscalYear, setFiscalYear] = useState(initialPpmp?.fiscal_year || new Date().getFullYear().toString());
     const [planType, setPlanType] = useState(initialPpmp?.plan_type || 'INDICATIVE');
-    const [implementingUnit, setImplementingUnit] = useState(initialPpmp?.implementing_unit || initialPpmp?.office?.name || '');
+
+    // Dynamic Offices state for Search Dropdown
+    const [offices, setOffices] = useState([]);
+    const [loadingOffices, setLoadingOffices] = useState(false);
+    const [isOfficeDropdownOpen, setIsOfficeDropdownOpen] = useState(false);
+    const [officeSearchTerm, setOfficeSearchTerm] = useState('');
+    const officeDropdownRef = useRef(null);
+
+    const formatOfficeOption = (office) => {
+        if (!office) return '';
+        const code = (office.code || '').trim();
+        const name = (office.name || '').trim();
+        if (code && code !== 'NA') {
+            if (name.startsWith(`(${code})`)) {
+                return name;
+            }
+            return `(${code}) ${name}`;
+        }
+        return name;
+    };
+
+    const defaultUserOffice = user?.office?.code && user?.office?.name
+        ? (user.office.code !== 'NA' ? `(${user.office.code}) ${user.office.name}` : user.office.name)
+        : (user?.office?.name || '');
+
+    const [implementingUnit, setImplementingUnit] = useState(
+        initialPpmp?.implementing_unit || initialPpmp?.office?.name || defaultUserOffice
+    );
     const [programName, setProgramName] = useState(initialPpmp?.program_name || '');
+    const [programNameId, setProgramNameId] = useState(initialPpmp?.program_name_id || null);
     const [deliveryPeriod, setDeliveryPeriod] = useState(initialPpmp?.delivery_period || '');
     const [placeOfDelivery, setPlaceOfDelivery] = useState(initialPpmp?.place_of_delivery || '');
     const [paymentMethod, setPaymentMethod] = useState(initialPpmp?.payment_method || '');
@@ -63,6 +110,99 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
 
     // Dynamic Modes of Procurement state
     const [procurementModesList, setProcurementModesList] = useState([]);
+
+    // Reviewer Cell Comments for compliance tracking during edit
+    const [cellComments, setCellComments] = useState(initialPpmp?.cell_comments || initialPpmp?.cellComments || []);
+    const [activeHeaderCellKey, setActiveHeaderCellKey] = useState(null);
+
+    const fetchCellComments = () => {
+        if (initialPpmp?.uuid) {
+            ppmpService.getCellComments(initialPpmp.uuid).then(res => {
+                if (res.data?.data) {
+                    setCellComments(res.data.data);
+                }
+            }).catch(e => {
+                console.error('Error fetching cell comments:', e);
+            });
+        }
+    };
+
+    useEffect(() => {
+        if (initialPpmp?.cell_comments || initialPpmp?.cellComments) {
+            setCellComments(initialPpmp.cell_comments || initialPpmp.cellComments);
+        }
+        fetchCellComments();
+    }, [initialPpmp?.uuid, initialPpmp?.updated_at, initialPpmp?.status]);
+
+    const handleAddCellComment = async (commentData) => {
+        if (!initialPpmp?.uuid) return;
+        try {
+            const res = await ppmpService.addCellComment(initialPpmp.uuid, commentData);
+            const newComment = res.data?.data;
+            if (newComment) {
+                setCellComments(prev => [newComment, ...prev]);
+            }
+            return res.data;
+        } catch (err) {
+            alert(err.response?.data?.message || 'Failed to post cell comment.');
+            throw err;
+        }
+    };
+
+    const handleDeleteCellComment = async (commentId) => {
+        if (!initialPpmp?.uuid) return;
+        try {
+            await ppmpService.deleteCellComment(initialPpmp.uuid, commentId);
+            setCellComments(prev => prev.filter(c => c.id !== commentId));
+        } catch (err) {
+            alert(err.response?.data?.message || 'Failed to delete cell comment.');
+            throw err;
+        }
+    };
+
+    const handleComplyCellComment = async (commentId, complianceNote) => {
+        if (!initialPpmp?.uuid) return;
+        try {
+            const res = await ppmpService.complyCellComment(initialPpmp.uuid, commentId, { compliance_note: complianceNote });
+            const updated = res.data?.data;
+            if (updated) {
+                setCellComments(prev => prev.map(c => c.id === commentId ? updated : c));
+            }
+            return res.data;
+        } catch (err) {
+            alert(err.response?.data?.message || 'Failed to mark compliance.');
+            throw err;
+        }
+    };
+
+    const handleUncomplyCellComment = async (commentId) => {
+        if (!initialPpmp?.uuid) return;
+        try {
+            const res = await ppmpService.uncomplyCellComment(initialPpmp.uuid, commentId);
+            const updated = res.data?.data;
+            if (updated) {
+                setCellComments(prev => prev.map(c => c.id === commentId ? updated : c));
+            }
+            return res.data;
+        } catch (err) {
+            alert(err.response?.data?.message || 'Failed to unmark compliance.');
+            throw err;
+        }
+    };
+
+    const isSuspended = ['HEAD_RETURNED', 'BUDGET_OFFICER_RETURNED', 'PACCO_RETURNED', 'OPPMO_RETURNED', 'TWG_RETURNED'].includes(initialPpmp?.status) || (typeof initialPpmp?.status === 'string' && initialPpmp.status.endsWith('_RETURNED'));
+    const isReviewerRole = ['head', 'authorized_staff', 'budget_officer', 'pacco', 'oppmo', 'twg', 'admin', 'super_admin'].includes(user?.role);
+    const canComment = isReviewerRole;
+    const canComply = isSuspended || ['admin', 'super_admin'].includes(user?.role);
+
+    // End-users must NOT see reviewer cell comments until the PPMP is officially suspended/returned,
+    // BUT comments that have already been complied with remain visible so end-users can see what was complied.
+    const visibleCellComments = (isReviewerRole || isSuspended)
+        ? (cellComments || [])
+        : (cellComments || []).filter(c => c.status === 'complied');
+    const canViewCellComments = isReviewerRole || isSuspended || visibleCellComments.length > 0;
+    const pendingCellComments = visibleCellComments.filter(c => c.status === 'pending');
+    const compliedCellComments = visibleCellComments.filter(c => c.status === 'complied');
 
     const isPolCondition = additionalCondition === 'POL Condition';
 
@@ -157,6 +297,56 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
             window.removeEventListener('procurement-modes:changed', handleModesChanged);
         };
     }, []);
+
+    useEffect(() => {
+        let isMounted = true;
+        const fetchOffices = async () => {
+            setLoadingOffices(true);
+            try {
+                const res = await officeService.getAll();
+                if (isMounted && res.data) {
+                    const validOffices = (res.data || []).filter(o => o && o.name && o.name !== 'NA');
+                    setOffices(validOffices);
+                }
+            } catch (err) {
+                console.error('Failed to load offices for PPMP form', err);
+                try {
+                    const fallback = await notificationService.getOffices();
+                    if (isMounted && fallback.data) {
+                        const validOffices = (fallback.data || []).filter(o => o && o.name && o.name !== 'NA');
+                        setOffices(validOffices);
+                    }
+                } catch (fallbackErr) {
+                    console.error('Failed fallback offices fetch', fallbackErr);
+                }
+            } finally {
+                if (isMounted) setLoadingOffices(false);
+            }
+        };
+        fetchOffices();
+        return () => { isMounted = false; };
+    }, []);
+
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (officeDropdownRef.current && !officeDropdownRef.current.contains(e.target)) {
+                setIsOfficeDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const filteredOffices = useMemo(() => {
+        const term = officeSearchTerm.trim().toLowerCase();
+        if (!term) return offices;
+        return offices.filter(o => {
+            const code = (o.code || '').toLowerCase();
+            const name = (o.name || '').toLowerCase();
+            const combined = formatOfficeOption(o).toLowerCase();
+            return code.includes(term) || name.includes(term) || combined.includes(term);
+        });
+    }, [offices, officeSearchTerm]);
 
     const { cseTerms, nonCseTerms, generalTerms } = useMemo(() => {
         const cse = [];
@@ -275,7 +465,7 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                     delivery_period: it.delivery_period || '',
                     supporting_docs_text: it.supporting_docs_text || '',
                     remarks: it.remarks || '',
-                    estimated_budget: (it.estimated_budget !== null && it.estimated_budget !== undefined) ? it.estimated_budget : 0,
+                    estimated_budget: (it.estimated_budget !== null && it.estimated_budget !== undefined && it.estimated_budget !== '') ? it.estimated_budget : (initialPpmp?.is_continuation ? '' : 0),
                     pre_proc_conference: b >= 5000000 ? true : !!it.pre_proc_conference,
                 };
             });
@@ -290,7 +480,8 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                 start_date: '',
                 end_date: '',
                 delivery_period: '',
-                source_of_fund: '',
+                source_of_fund: sourceOfFund,
+                fund_source_id: fundSourceId,
                 estimated_budget: 0,
                 supporting_docs_text: '',
                 remarks: '',
@@ -303,9 +494,18 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
 
     const totalBudget = items.reduce((sum, item) => sum + (parseFloat(item.estimated_budget) || 0), 0);
 
-    const isTrustFund = Boolean(
-        sourceOfFund && sourceOfFund.toLowerCase().includes('trust')
-    );
+    const isContinuation = !!initialPpmp?.is_continuation;
+    const baselineAnnualBudget = parseFloat(initialPpmp?.baseline_annual_budget) || 0;
+    const isBudgetExceeded = isContinuation && baselineAnnualBudget > 0 && totalBudget > (baselineAnnualBudget + 0.01);
+
+    const isTrustFund = workflowRoute === 'pacco';
+
+    const handleSwitchRoute = (newRoute) => {
+        if (newRoute === workflowRoute) return;
+        setWorkflowRoute(newRoute);
+        const defaultName = newRoute === 'pacco' ? 'Trust Fund' : 'General Fund';
+        handleFundChange(defaultName, null);
+    };
 
     // Hide Funding Source & Review Route banner if editing a PPMP that is on a reviewer or under active review
     const isUnderReviewOrOnReviewer = isEditMode && (
@@ -326,12 +526,16 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
         (initialPpmp?.status && initialPpmp.status !== 'DRAFT')
     );
 
-    const handleFundChange = (newFund) => {
+    const handleFundChange = (newFund, newFundId = null) => {
         setSourceOfFund(newFund);
+        if (newFundId !== undefined && newFundId !== null) {
+            setFundSourceId(newFundId);
+        }
         // Also update any item source of fund that matches old fund or is empty
         setItems(prevItems => prevItems.map(item => ({
             ...item,
-            source_of_fund: item.source_of_fund === sourceOfFund || !item.source_of_fund ? newFund : item.source_of_fund
+            source_of_fund: item.source_of_fund === sourceOfFund || !item.source_of_fund ? newFund : item.source_of_fund,
+            fund_source_id: item.source_of_fund === sourceOfFund || !item.source_of_fund ? (newFundId || fundSourceId) : item.fund_source_id,
         })));
     };
 
@@ -371,7 +575,8 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                 start_date: '',
                 end_date: '',
                 delivery_period: '',
-                source_of_fund: '',
+                source_of_fund: sourceOfFund,
+                fund_source_id: fundSourceId,
                 estimated_budget: 0,
                 supporting_docs_text: '',
                 remarks: '',
@@ -415,7 +620,7 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
         setErrorMessage('');
 
         if (isAttachmentOnly) {
-            setErrorMessage('PPMP procurement items and plan details are locked for this revision. The approved request scope is restricted to the PPMP List of Attachment only.');
+            setErrorMessage('PPMP procurement items and plan details are locked for this revision. The approved request scope is restricted to the Detailed Specifications only.');
             return;
         }
 
@@ -431,17 +636,28 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
             return;
         }
 
+        if (isBudgetExceeded) {
+            setErrorMessage(`Total estimated budget (₱${totalBudget.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) exceeds the baseline Annual PPMP budgetary allocation of ₱${baselineAnnualBudget.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`);
+            return;
+        }
+
         setLoading(true);
+
+        const derivedSourceOfFund = items.find(i => i.source_of_fund && !i.is_header)?.source_of_fund || sourceOfFund || 'General Fund';
+        const derivedFundSourceId = items.find(i => i.fund_source_id && !i.is_header)?.fund_source_id || fundSourceId || null;
 
         const payload = {
             ppmp_number: ppmpNumber.trim(),
             title: title.trim(),
-            source_of_fund: sourceOfFund,
+            source_of_fund: derivedSourceOfFund,
+            fund_source_id: derivedFundSourceId,
             account_code: accountCode.trim(),
+            account_code_id: accountCodeId || null,
             fiscal_year: sanitizeFiscalYear(fiscalYear) || String(new Date().getFullYear()),
             plan_type: planType,
             implementing_unit: implementingUnit.trim(),
             program_name: programName ? programName.trim() : null,
+            program_name_id: programNameId || null,
             delivery_period: isPolCondition ? '' : deliveryPeriod,
             place_of_delivery: isPolCondition ? '' : placeOfDelivery,
             payment_method: isPolCondition ? '' : paymentMethod,
@@ -449,6 +665,7 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
             warranty_and_other_terms: warrantyAndOtherTerms,
             items: items.map(item => ({
                 ...item,
+                fund_source_id: item.fund_source_id || fundSourceId || null,
                 estimated_budget: parseFloat(item.estimated_budget) || 0,
             })),
         };
@@ -504,7 +721,7 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                         <Lock className="w-5 h-5 text-amber-600 shrink-0" />
                         <div>
                             <span className="font-bold uppercase tracking-wider block text-amber-950">Scope Restricted Revision</span>
-                            <span>The approved request scope is restricted to updating the <strong>PPMP List of Attachment</strong> only. Procurement items and plan details cannot be edited.</span>
+                            <span>The approved request scope is restricted to updating the <strong>Detailed Specifications</strong> only. Procurement items and plan details cannot be edited.</span>
                         </div>
                     </div>
                     <button
@@ -517,116 +734,38 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                 </div>
             )}
 
+            {isContinuation && (
+                <div className={`p-4 rounded-xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xs transition ${
+                    isBudgetExceeded
+                        ? 'bg-rose-50/90 border-rose-300 text-rose-900'
+                        : 'bg-emerald-50/80 border-emerald-300 text-emerald-950'
+                }`}>
+                    <div className="flex items-start gap-3">
+                        <div className={`p-1.5 rounded-lg mt-0.5 ${isBudgetExceeded ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            {isBudgetExceeded ? <AlertTriangle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+                        </div>
+                        <div>
+                            <span className="font-bold uppercase tracking-wider block">
+                                Supplemental Continuation (CY {fiscalYear || new Date().getFullYear()})
+                            </span>
+                            <span className="leading-relaxed">
+                                Baseline Annual Allocation Ceiling: <strong>₱{baselineAnnualBudget.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                                {' '}&bull;{' '}Current Total Budget: <strong>₱{totalBudget.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                                {isBudgetExceeded && (
+                                    <span className="block text-rose-700 font-bold mt-1">
+                                        ⚠️ Budget allocation exceeded by ₱{(totalBudget - baselineAnnualBudget).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}! Estimated budget cannot exceed the initial Annual PPMP budget.
+                                    </span>
+                                )}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {errorMessage && (
                 <div className="p-4 bg-rose-50 border border-rose-200 rounded-lg flex items-center gap-3 text-rose-800 text-xs font-medium">
                     <AlertCircle className="w-5 h-5 shrink-0 text-rose-600" />
                     <span>{errorMessage}</span>
-                </div>
-            )}
-
-            {/* Funding Source & Review Workflow Banner */}
-            {!isUnderReviewOrOnReviewer && (
-                <div className={`p-4 rounded-xl border-2 transition-all ${isTrustFund
-                        ? 'bg-teal-50/70 border-teal-300 ring-2 ring-teal-500/10'
-                        : 'bg-blue-50/70 border-blue-300 ring-2 ring-blue-500/10'
-                    }`}>
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80 mb-3">
-                        <div className="flex items-center gap-2.5 flex-wrap">
-                            <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                                Source of Fund:
-                            </span>
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${isTrustFund
-                                    ? 'bg-teal-100 text-teal-900 border border-teal-300'
-                                    : 'bg-blue-100 text-blue-900 border border-blue-300'
-                                }`}>
-                                {sourceOfFund}
-                            </span>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                            <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">Change Fund:</span>
-                            <button
-                                type="button"
-                                onClick={() => handleFundChange('General Fund')}
-                                className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${!isTrustFund
-                                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                                    }`}
-                            >
-                                General Fund
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => handleFundChange('Trust Fund')}
-                                className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${isTrustFund
-                                        ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
-                                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                                    }`}
-                            >
-                                Trust Fund
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Review Route Indicator */}
-                    <div className="flex items-center flex-wrap gap-2 text-xs">
-                        <span className="font-bold text-slate-600 text-[11px] uppercase tracking-wider">
-                            Review Route to Ready to Print:
-                        </span>
-                        {isTrustFund ? (
-                            <div className="flex items-center flex-wrap gap-1.5 text-[11px] font-medium text-slate-700">
-                                <span className="px-2 py-0.5 rounded bg-teal-200/80 text-teal-950 border border-teal-300 font-bold">
-                                    PACCO Reviewer
-                                </span>
-                                <span className="text-slate-400 font-bold">➔</span>
-                                <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-200 font-semibold">
-                                    OPPMO
-                                </span>
-                                <span className="text-slate-400 font-bold">➔</span>
-                                <span className="px-2 py-0.5 rounded bg-cyan-100 text-cyan-900 border border-cyan-200 font-semibold">
-                                    BAC-TWG
-                                </span>
-                                <span className="text-slate-400 font-bold">➔</span>
-                                <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-200 font-semibold">
-                                    OPPMO (Generate APP)
-                                </span>
-                                <span className="text-slate-400 font-bold">➔</span>
-                                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200 font-semibold">
-                                    Head (Approval)
-                                </span>
-                                <span className="text-slate-400 font-bold">➔</span>
-                                <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-200 font-bold">
-                                    Ready to Print
-                                </span>
-                            </div>
-                        ) : (
-                            <div className="flex items-center flex-wrap gap-1.5 text-[11px] font-medium text-slate-700">
-                                <span className="px-2 py-0.5 rounded bg-indigo-200/80 text-indigo-950 border border-indigo-300 font-bold">
-                                    Budget Officer
-                                </span>
-                                <span className="text-slate-400 font-bold">➔</span>
-                                <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-200 font-semibold">
-                                    OPPMO
-                                </span>
-                                <span className="text-slate-400 font-bold">➔</span>
-                                <span className="px-2 py-0.5 rounded bg-cyan-100 text-cyan-900 border border-cyan-200 font-semibold">
-                                    BAC-TWG
-                                </span>
-                                <span className="text-slate-400 font-bold">➔</span>
-                                <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-200 font-semibold">
-                                    OPPMO (Generate APP)
-                                </span>
-                                <span className="text-slate-400 font-bold">➔</span>
-                                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200 font-semibold">
-                                    Head (Approval)
-                                </span>
-                                <span className="text-slate-400 font-bold">➔</span>
-                                <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-200 font-bold">
-                                    Ready to Print
-                                </span>
-                            </div>
-                        )}
-                    </div>
                 </div>
             )}
 
@@ -648,8 +787,26 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                 </div>
 
                 {/* Form fields: PPMP Number, Fiscal Year, Plan Type, Implementing Office */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-5">
-                    <div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+                    <CommentableCell
+                        as="div"
+                        fieldKey="ppmp_number"
+                        fieldLabel="PPMP No."
+                        cellValue={ppmpNumber}
+                        comments={visibleCellComments}
+                        changeLogs={initialPpmp?.change_logs || initialPpmp?.changeLogs || []}
+                        canComment={canComment}
+                        canComply={canComply}
+                        currentUser={user}
+                        activeCellKey={activeHeaderCellKey}
+                        setActiveCellKey={setActiveHeaderCellKey}
+                        onAddCellComment={handleAddCellComment}
+                        onDeleteCellComment={handleDeleteCellComment}
+                        onComplyCellComment={handleComplyCellComment}
+                        onUncomplyCellComment={handleUncomplyCellComment}
+                        onUpdateCellValue={(newVal) => setPpmpNumber(newVal)}
+                        className="p-1 rounded-md"
+                    >
                         <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
                             PPMP No.: <span className="text-rose-600">*</span>
                         </label>
@@ -662,9 +819,27 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                             placeholder="e.g. 0, 1, 2, 3..."
                         />
                         <span className="text-[10px] text-slate-400 mt-0.5 block">Official form sequential number</span>
-                    </div>
+                    </CommentableCell>
 
-                    <div>
+                    <CommentableCell
+                        as="div"
+                        fieldKey="fiscal_year"
+                        fieldLabel="Fiscal Year"
+                        cellValue={`CY ${fiscalYear}`}
+                        comments={visibleCellComments}
+                        changeLogs={initialPpmp?.change_logs || initialPpmp?.changeLogs || []}
+                        canComment={canComment}
+                        canComply={canComply}
+                        currentUser={user}
+                        activeCellKey={activeHeaderCellKey}
+                        setActiveCellKey={setActiveHeaderCellKey}
+                        onAddCellComment={handleAddCellComment}
+                        onDeleteCellComment={handleDeleteCellComment}
+                        onComplyCellComment={handleComplyCellComment}
+                        onUncomplyCellComment={handleUncomplyCellComment}
+                        onUpdateCellValue={(newVal) => setFiscalYear(newVal.replace(/^CY\s*/i, ''))}
+                        className="p-1 rounded-md"
+                    >
                         <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
                             Fiscal Year (CY): <span className="text-rose-600">*</span>
                         </label>
@@ -676,9 +851,27 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                             className="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
                             placeholder={new Date().getFullYear().toString()}
                         />
-                    </div>
+                    </CommentableCell>
 
-                    <div>
+                    <CommentableCell
+                        as="div"
+                        fieldKey="plan_type"
+                        fieldLabel="Plan Type (INDICATIVE / FINAL)"
+                        cellValue={planType}
+                        comments={visibleCellComments}
+                        changeLogs={initialPpmp?.change_logs || initialPpmp?.changeLogs || []}
+                        canComment={canComment}
+                        canComply={canComply}
+                        currentUser={user}
+                        activeCellKey={activeHeaderCellKey}
+                        setActiveCellKey={setActiveHeaderCellKey}
+                        onAddCellComment={handleAddCellComment}
+                        onDeleteCellComment={handleDeleteCellComment}
+                        onComplyCellComment={handleComplyCellComment}
+                        onUncomplyCellComment={handleUncomplyCellComment}
+                        onUpdateCellValue={(newVal) => setPlanType(newVal)}
+                        className="p-1 rounded-md"
+                    >
                         <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
                             Plan Type: <span className="text-rose-600">*</span>
                         </label>
@@ -706,35 +899,197 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                                 FINAL
                             </label>
                         </div>
-                    </div>
+                    </CommentableCell>
 
-                    <div>
+                    <CommentableCell
+                        as="div"
+                        fieldKey="implementing_unit"
+                        fieldLabel="End-User or Implementing Unit"
+                        cellValue={implementingUnit}
+                        comments={visibleCellComments}
+                        changeLogs={initialPpmp?.change_logs || initialPpmp?.changeLogs || []}
+                        canComment={canComment}
+                        canComply={canComply}
+                        currentUser={user}
+                        activeCellKey={activeHeaderCellKey}
+                        setActiveCellKey={setActiveHeaderCellKey}
+                        onAddCellComment={handleAddCellComment}
+                        onDeleteCellComment={handleDeleteCellComment}
+                        onComplyCellComment={handleComplyCellComment}
+                        onUncomplyCellComment={handleUncomplyCellComment}
+                        onUpdateCellValue={(newVal) => setImplementingUnit(newVal)}
+                        className="p-1 rounded-md"
+                    >
+                        <div className="flex items-center justify-between mb-1">
+                            <label className="block text-xs font-bold text-slate-700 uppercase">
+                                Implementing Office / Unit:
+                            </label>
+                            <span className="text-[10px] font-mono font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                                (code)name
+                            </span>
+                        </div>
+
+                        <div className="relative" ref={officeDropdownRef}>
+                            <div className="relative flex items-center">
+                                <input
+                                    type="text"
+                                    required
+                                    value={implementingUnit ?? ''}
+                                    onChange={(e) => {
+                                        setImplementingUnit(e.target.value);
+                                        setOfficeSearchTerm(e.target.value);
+                                        if (!isOfficeDropdownOpen) setIsOfficeDropdownOpen(true);
+                                    }}
+                                    onFocus={() => {
+                                        setIsOfficeDropdownOpen(true);
+                                    }}
+                                    placeholder="Search office by (code) or name..."
+                                    className="w-full text-xs p-2.5 pr-14 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium text-slate-900 shadow-sm"
+                                />
+                                <div className="absolute right-1.5 flex items-center gap-0.5">
+                                    {implementingUnit && (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setImplementingUnit('');
+                                                setOfficeSearchTerm('');
+                                            }}
+                                            className="p-1 text-slate-400 hover:text-slate-600 rounded hover:bg-slate-100 transition"
+                                            title="Clear office selection"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsOfficeDropdownOpen(prev => !prev);
+                                        }}
+                                        className="p-1 text-slate-500 hover:text-slate-800 rounded hover:bg-slate-100 transition"
+                                        title="Toggle office dropdown"
+                                    >
+                                        <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isOfficeDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Search Dropdown Popover */}
+                            {isOfficeDropdownOpen && (
+                                <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-2xl overflow-hidden flex flex-col text-xs animate-in fade-in zoom-in-95 duration-100">
+                                    {/* Search Filter Header */}
+                                    <div className="p-2 border-b border-slate-100 bg-slate-50 flex items-center gap-1.5">
+                                        <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                        <input
+                                            type="text"
+                                            value={officeSearchTerm}
+                                            onChange={(e) => setOfficeSearchTerm(e.target.value)}
+                                            placeholder="Filter by code (e.g. OPPMO, PBO) or name..."
+                                            className="w-full text-xs bg-transparent border-0 focus:outline-none text-slate-800 placeholder-slate-400"
+                                            autoFocus
+                                        />
+                                        {officeSearchTerm && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setOfficeSearchTerm('')}
+                                                className="text-[10px] text-slate-400 hover:text-slate-600 px-1.5 py-0.5 rounded hover:bg-slate-200"
+                                            >
+                                                Clear
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Offices Options List */}
+                                    <div className="overflow-y-auto divide-y divide-slate-100 max-h-56">
+                                        {loadingOffices ? (
+                                            <div className="p-4 text-center text-slate-400 flex items-center justify-center gap-2">
+                                                <span>Loading offices...</span>
+                                            </div>
+                                        ) : filteredOffices.length === 0 ? (
+                                            <div className="p-4 text-center text-slate-400">
+                                                No matching offices found
+                                            </div>
+                                        ) : (
+                                            filteredOffices.map((office) => {
+                                                const formatted = formatOfficeOption(office);
+                                                const isSelected = implementingUnit === formatted;
+                                                return (
+                                                    <button
+                                                        key={office.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setImplementingUnit(formatted);
+                                                            setOfficeSearchTerm('');
+                                                            setIsOfficeDropdownOpen(false);
+                                                        }}
+                                                        className={`w-full text-left px-3 py-2 transition flex items-start gap-2 hover:bg-blue-50/80 group ${
+                                                            isSelected ? 'bg-blue-50 text-blue-900 font-semibold' : 'text-slate-700'
+                                                        }`}
+                                                    >
+                                                        <Building2 className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${isSelected ? 'text-blue-600' : 'text-slate-400 group-hover:text-blue-500'}`} />
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                {office.code && office.code !== 'NA' && (
+                                                                    <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded font-mono font-bold text-[10px] border border-blue-200 shrink-0">
+                                                                        ({office.code})
+                                                                    </span>
+                                                                )}
+                                                                <span className="truncate">{office.name}</span>
+                                                            </div>
+                                                        </div>
+                                                        {isSelected && (
+                                                            <span className="text-blue-600 font-bold text-xs shrink-0">✓</span>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+
+                                    {/* Dropdown Footer */}
+                                    <div className="px-3 py-1.5 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-500 flex items-center justify-between">
+                                        <span>{filteredOffices.length} office{filteredOffices.length === 1 ? '' : 's'} available</span>
+                                        <span className="font-mono text-slate-400">(code)name</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </CommentableCell>
+                </div>
+
+                <div className="mb-5">
+                    <CommentableCell
+                        as="div"
+                        fieldKey="title"
+                        fieldLabel="Project Title"
+                        cellValue={title}
+                        comments={visibleCellComments}
+                        changeLogs={initialPpmp?.change_logs || initialPpmp?.changeLogs || []}
+                        canComment={canComment}
+                        canComply={canComply}
+                        currentUser={user}
+                        activeCellKey={activeHeaderCellKey}
+                        setActiveCellKey={setActiveHeaderCellKey}
+                        onAddCellComment={handleAddCellComment}
+                        onDeleteCellComment={handleDeleteCellComment}
+                        onComplyCellComment={handleComplyCellComment}
+                        onUncomplyCellComment={handleUncomplyCellComment}
+                        onUpdateCellValue={(newVal) => setTitle(newVal)}
+                        className="p-1 rounded-md"
+                    >
                         <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                            Implementing Office / Unit:
+                            Project Procurement Title / General Purpose: <span className="text-rose-600">*</span>
                         </label>
                         <input
                             type="text"
                             required
-                            value={implementingUnit ?? ''}
-                            onChange={(e) => setImplementingUnit(e.target.value)}
-                            placeholder="e.g. Office of the Provincial Procurement Management Officer"
-                            className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium text-slate-900"
+                            value={title ?? ''}
+                            onChange={(e) => setTitle(e.target.value)}
+                            placeholder=""
+                            className="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none font-semibold text-slate-900"
                         />
-                    </div>
-                </div>
-
-                <div className="mb-5">
-                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                        Project Procurement Title / General Purpose: <span className="text-rose-600">*</span>
-                    </label>
-                    <input
-                        type="text"
-                        required
-                        value={title ?? ''}
-                        onChange={(e) => setTitle(e.target.value)}
-                        placeholder=""
-                        className="w-full text-xs p-2.5 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none font-semibold text-slate-900"
-                    />
+                    </CommentableCell>
                 </div>
 
                 {/* Delivery Specifications & Conditions */}
@@ -993,19 +1348,70 @@ export const PPMPFormPage = ({ user, initialPpmp = null, initialSourceOfFund = '
                     </span>
                 </div>
 
+                {canViewCellComments && visibleCellComments.length > 0 && (
+                    <div className={`mb-4 p-3 rounded-xl border text-xs flex items-center justify-between gap-3 ${
+                        pendingCellComments.length > 0
+                            ? 'bg-red-50 border-red-300 text-red-900'
+                            : 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                    }`}>
+                        <div className="flex items-center gap-2">
+                            <span className={`p-1 rounded ${
+                                pendingCellComments.length > 0 ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'
+                            }`}>
+                                <MessageSquare className="w-4 h-4" />
+                            </span>
+                            <div>
+                                <span className="font-bold">Reviewer Cell Findings: </span>
+                                <span>
+                                    {pendingCellComments.length > 0
+                                        ? `${pendingCellComments.length} finding${pendingCellComments.length > 1 ? 's' : ''} pending your compliance.`
+                                        : 'All cell findings complied!'}
+                                </span>
+                                <span className="block text-[11px] text-slate-600 mt-0.5">
+                                    {pendingCellComments.length > 0
+                                        ? 'Click the 💬 badge or corner indicator on any cell to view reviewer comments and click "Mark Complied" once corrected.'
+                                        : 'All reviewer findings have been addressed and marked as complied.'}
+                                </span>
+                            </div>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                            pendingCellComments.length > 0
+                                ? 'bg-red-200 text-red-900 border border-red-400'
+                                : 'bg-emerald-200 text-emerald-900 border border-emerald-400'
+                        }`}>
+                            {pendingCellComments.length > 0 ? `${pendingCellComments.length} PENDING` : 'ALL COMPLIED ✓'}
+                        </span>
+                    </div>
+                )}
+
                 <ProcurementPlanTable
                     items={items}
                     isEditable={true}
+                    fiscalYear={fiscalYear}
+                    workflowRoute={workflowRoute}
                     onAddItem={handleAddItem}
                     onRemoveItem={handleRemoveItem}
                     onUpdateItem={handleUpdateItem}
                     totalBudget={totalBudget}
                     accountCode={accountCode}
                     onAccountCodeChange={setAccountCode}
+                    accountCodeId={accountCodeId}
+                    onAccountCodeIdChange={setAccountCodeId}
                     programName={programName}
                     onProgramNameChange={setProgramName}
+                    programNameId={programNameId}
+                    onProgramNameIdChange={setProgramNameId}
                     supportingDocuments={supportingDocsList}
                     procurementModes={procurementModesList}
+                    cellComments={visibleCellComments}
+                    changeLogs={initialPpmp?.change_logs || initialPpmp?.changeLogs || []}
+                    canComment={canComment}
+                    canComply={canComply}
+                    currentUser={user}
+                    onAddCellComment={handleAddCellComment}
+                    onDeleteCellComment={handleDeleteCellComment}
+                    onComplyCellComment={handleComplyCellComment}
+                    onUncomplyCellComment={handleUncomplyCellComment}
                 />
             </div>
         </form>

@@ -35,8 +35,6 @@ export const MonitoringProjectDetailModal = ({
     canManage = true,
     onProjectUpdated,
 }) => {
-    if (!isOpen || !projectId) return null;
-
     // Only OPPMO Monitors and Admins can manage monitoring projects and steps.
     // End-users, Office Heads, and Reviewers (Budget Officer, TWG, PACCO, etc.) are view-only.
     const isManageable = Boolean(
@@ -87,6 +85,7 @@ export const MonitoringProjectDetailModal = ({
     };
 
     const loadProject = async () => {
+        if (!projectId) return;
         setLoading(true);
         try {
             const res = await monitoringService.getProject(projectId);
@@ -100,8 +99,11 @@ export const MonitoringProjectDetailModal = ({
     };
 
     useEffect(() => {
+        if (!isOpen || !projectId) return;
         loadProject();
-    }, [projectId]);
+    }, [isOpen, projectId]);
+
+    if (!isOpen || !projectId) return null;
 
     const handleStepUpdated = (updatedProject) => {
         setProject(updatedProject);

@@ -14,31 +14,26 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
     const isScopeAttachmentOnly = ppmp?.amendment_scope === 'ATTACHMENT_LIST';
 
     // Reviewer signatures require review approval before their initial/signature is valid
-    const hasHeadApproved = Boolean(
-        ppmp?.head_approved_at ||
-        ppmp?.status === 'READY_TO_PRINT'
-    );
+    // New routing order: TWG -> (Budget Officer or PACCO) -> OPPMO -> Ready to Print
     const hasTwgApproved = Boolean(
         ppmp?.twg_approved_at ||
-        ['HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
-    );
-    const hasOppmoApproved = Boolean(
-        ppmp?.oppmo_approved_at ||
-        ['TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+        ['BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
     );
     const hasBudgetApproved = Boolean(
         ppmp?.budget_approved_at ||
-        ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+        ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
     );
-
-    const isTrustFund = Boolean(
-        (ppmp?.source_of_fund && ppmp.source_of_fund.toLowerCase().includes('trust')) ||
-        ppmp?.items?.some(i => i.source_of_fund && i.source_of_fund.toLowerCase().includes('trust'))
-    );
-
     const hasPaccoApproved = Boolean(
         ppmp?.pacco_approved_at ||
-        ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+        ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+    );
+    const hasOppmoApproved = Boolean(
+        ppmp?.oppmo_approved_at ||
+        ['HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+    );
+    const hasHeadApproved = Boolean(
+        ppmp?.head_approved_at ||
+        ppmp?.status === 'READY_TO_PRINT'
     );
 
     // Signatures mapping
@@ -48,6 +43,11 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
     const headSig = hasHeadApproved
         ? (signatures.find(s => s.role === 'head') || (isScopeAttachmentOnly ? ppmp?.parent?.signatures?.find(s => s.role === 'head') : null))
         : null;
+
+    const isTrustFund = Boolean(
+        (ppmp?.source_of_fund && ppmp.source_of_fund.toLowerCase().includes('trust')) ||
+        ppmp?.items?.some(i => i.source_of_fund && i.source_of_fund.toLowerCase().includes('trust'))
+    );
 
     const paccoSig = isTrustFund
         ? (isScopeAttachmentOnly
@@ -64,6 +64,28 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
         : (hasOppmoApproved ? signatures.find(s => s.role === 'oppmo') : null);
 
     const twgSig = hasTwgApproved ? signatures.find(s => s.role === 'twg') : null;
+
+    const resolvedHeadName =
+        headSig?.signer_name ||
+        ppmp?.office_head_name ||
+        ppmp?.default_signatories?.submitted_by?.name ||
+        ppmp?.default_signatories?.head_of_office?.name ||
+        ppmp?.office?.head?.name ||
+        ppmp?.office?.head_name ||
+        ppmp?.creator?.office?.head?.name ||
+        ppmp?.creator?.office?.head_name ||
+        '';
+
+    const resolvedHeadDesignation =
+        headSig?.signer_designation ||
+        ppmp?.office_head_designation ||
+        ppmp?.default_signatories?.submitted_by?.position ||
+        ppmp?.default_signatories?.head_of_office?.position ||
+        ppmp?.office?.head?.designation ||
+        ppmp?.office?.designation ||
+        ppmp?.creator?.office?.head?.designation ||
+        ppmp?.creator?.office?.designation ||
+        'HEAD OF OFFICE';
 
     return (
         <div className={`mt-6 border border-slate-900 bg-white ${isPrintMode ? 'print-signature-box' : 'shadow-sm rounded-lg overflow-hidden'}`}>
@@ -136,10 +158,10 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
                                     </div>
                                 ) : null}
                                 <div className="font-bold text-sm uppercase text-slate-900 underline decoration-slate-400 underline-offset-4">
-                                    {headSig.signer_name}
+                                    {headSig.signer_name || resolvedHeadName}
                                 </div>
                                 <div className="text-xs text-slate-600 font-bold uppercase">
-                                    {headSig.signer_designation || ppmp?.office?.designation || ppmp?.office?.head?.designation || 'HEAD OF OFFICE'}
+                                    {headSig.signer_designation || resolvedHeadDesignation}
                                 </div>
                                 {isSignatureEnabled && (
                                     <div className="text-[10px] text-slate-500 mt-0.5">
@@ -148,8 +170,16 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
                                 )}
                             </div>
                         ) : (
-                            <div className="h-14 flex items-center justify-center text-xs text-slate-400 italic">
-                                {ppmp?.status === 'HEAD_PENDING' ? 'Awaiting Head Endorsement & E-Signature' : 'Pending Submission'}
+                            <div className="text-center py-1">
+                                <div className="font-bold text-sm uppercase text-slate-700 underline decoration-slate-400 underline-offset-4">
+                                    {resolvedHeadName || 'HEAD OF OFFICE'}
+                                </div>
+                                <div className="text-xs text-slate-600 font-bold uppercase mt-0.5">
+                                    {resolvedHeadDesignation || 'HEAD OF OFFICE'}
+                                </div>
+                                <div className="text-[11px] text-amber-600 font-medium mt-1">
+                                    {ppmp?.status === 'HEAD_PENDING' ? 'Awaiting Head Endorsement & E-Signature' : 'Pending Submission'}
+                                </div>
                             </div>
                         )}
                     </div>

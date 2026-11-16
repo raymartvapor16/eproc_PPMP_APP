@@ -14,6 +14,7 @@ import {
     Check,
 } from 'lucide-react';
 import { signatoryService } from '../../services/api';
+import { showConfirm } from '../../utils/modalAlert';
 import { SignatureControllerManagement } from './SignatureControllerManagement';
 
 const SIGNATORY_TYPE_CONFIG = {
@@ -270,7 +271,14 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
 
     const handleDelete = async (sig) => {
         const config = SIGNATORY_TYPE_CONFIG[sig.signatory_type];
-        if (!confirm(`Are you sure you want to remove the signatory "${sig.name}" for ${config?.label || sig.signatory_type}?`)) {
+        const confirmed = await showConfirm({
+            title: 'Remove Signatory',
+            message: `Are you sure you want to remove the signatory "${sig.name}" for ${config?.label || sig.signatory_type}?`,
+            confirmText: 'Yes, Remove Signatory',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!confirmed) {
             return;
         }
         try {

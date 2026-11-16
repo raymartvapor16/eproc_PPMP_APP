@@ -1,9 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { formatCurrency, formatDate } from '../UI/StatusBadge';
-import { Printer, ArrowLeft, Plus, Trash2, Edit3, Loader2, Sparkles, ShieldCheck, History, X, Eye, AlertCircle, RefreshCw } from 'lucide-react';
+import { Printer, ArrowLeft, Plus, Trash2, Edit3, Loader2, Sparkles, ShieldCheck, History, X, Eye, AlertCircle, RefreshCw, FileText } from 'lucide-react';
 import { ppmpService } from '../../services/api';
+import { PimsPublishModal } from '../Monitoring/PimsPublishModal';
+import { GeneratePurchaseRequestModal } from '../PIMS/GeneratePurchaseRequestModal';
+import { PurchaseRequestPrintView } from '../PIMS/PurchaseRequestPrintView';
 import { formatDescription6Words, formatMonthYear, toMonthInputValue, MonthRangeInput } from './ProcurementPlanTable';
 import { useSignatureSettings } from '../../utils/signatureController';
+import { usePimsStatus } from '../../hooks/usePimsStatus';
+import { canUserAccessSystem } from '../UI/UnauthorizedSystemAccessView';
 
 /**
  * APPPrintView:
@@ -47,6 +52,13 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
     const [saving, setSaving] = useState(false);
     const [showOldAppModal, setShowOldAppModal] = useState(false);
 
+    // PIMS & PR States
+    const { isPimsActive } = usePimsStatus();
+    const [isPimsPublishModalOpen, setIsPimsPublishModalOpen] = useState(false);
+    const [isGeneratePrModalOpen, setIsGeneratePrModalOpen] = useState(false);
+    const [selectedMonitoringProjectId, setSelectedMonitoringProjectId] = useState(null);
+    const [selectedPrForPrint, setSelectedPrForPrint] = useState(null);
+
     // Form states
     const [fiscalYear, setFiscalYear] = useState(
         savedData?.fiscal_year || ppmp?.fiscal_year || new Date().getFullYear().toString()
@@ -65,21 +77,22 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
     const isScopeAttachmentOnly = ppmp?.amendment_scope === 'ATTACHMENT_LIST';
 
     // Reviewer signatures require review approval before their initial/signature is valid
-    const hasHeadApproved = Boolean(
-        ppmp?.head_approved_at ||
-        ppmp?.status === 'READY_TO_PRINT'
-    );
+    // New routing order: TWG -> (Budget Officer or PACCO) -> OPPMO -> Ready to Print
     const hasTwgApproved = Boolean(
         ppmp?.twg_approved_at ||
-        ['HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
-    );
-    const hasOppmoApproved = Boolean(
-        ppmp?.oppmo_approved_at ||
-        ['TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+        ['BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
     );
     const hasBudgetApproved = Boolean(
         ppmp?.budget_approved_at ||
-        ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+        ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+    );
+    const hasOppmoApproved = Boolean(
+        ppmp?.oppmo_approved_at ||
+        ['HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+    );
+    const hasHeadApproved = Boolean(
+        ppmp?.head_approved_at ||
+        ppmp?.status === 'READY_TO_PRINT'
     );
 
     const preparedSig = signatures.find(s => s.role === 'end_user')
@@ -482,14 +495,33 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
 
                     {!isEditing ? (
                         isReadyToPrint ? (
-                            <button
-                                type="button"
-                                onClick={handlePrint}
-                                className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider rounded shadow transition cursor-pointer"
-                            >
-                                <Printer className="w-4 h-4" />
-                                PRINT APP NOW
-                            </button>
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={handlePrint}
+                                    className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider rounded shadow transition cursor-pointer"
+                                >
+                                    <Printer className="w-4 h-4" />
+                                    PRINT APP NOW
+                                </button>
+                                {canUserAccessSystem(user, '/pims') && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (isPimsActive) {
+                                                setIsGeneratePrModalOpen(true);
+                                            } else {
+                                                setIsPimsPublishModalOpen(true);
+                                            }
+                                        }}
+                                        className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-600 hover:to-indigo-600 text-white text-xs font-bold uppercase tracking-wider rounded shadow transition cursor-pointer"
+                                        title={isPimsActive ? "Publish procurement requirement to PIMS and generate official Purchase Request" : "Publish procurement requirement to PIMS & initiate monitoring workflow"}
+                                    >
+                                        <Sparkles className="w-4 h-4 text-amber-300" />
+                                        <span>{isPimsActive ? "PUBLISH TO PIMS / PR" : "PUBLISH TO PIMS"}</span>
+                                    </button>
+                                )}
+                            </>
                         ) : (
                             <button
                                 type="button"
@@ -1164,6 +1196,7 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                         <th className="p-2">End-User</th>
                                         <th className="p-2">General Description</th>
                                         <th className="p-2">Mode of Procurement</th>
+                                        <th className="p-2">Source of Funds</th>
                                         <th className="p-2 text-right">Estimated Budget</th>
                                         <th className="p-2 min-w-[150px]">Remarks / Tracker</th>
                                     </tr>
@@ -1177,6 +1210,7 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                                 <td className="p-2">{r.endUser}</td>
                                                 <td className="p-2">{r.generalDescription}</td>
                                                 <td className="p-2">{r.modeOfProcurement}</td>
+                                                <td className="p-2">{r.sourceOfFund || r.source_of_fund || 'General Fund'}</td>
                                                 <td className="p-2 text-right font-mono font-bold text-blue-900">
                                                     {formatCurrency(r.estimatedBudget)}
                                                 </td>
@@ -1185,7 +1219,7 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                         ))
                                     ) : (
                                         <tr>
-                                            <td colSpan={7} className="p-4 text-center text-slate-500 italic">
+                                            <td colSpan={8} className="p-4 text-center text-slate-500 italic">
                                                 No previous APP line items recorded in baseline.
                                             </td>
                                         </tr>
@@ -1203,6 +1237,41 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* 1. If PIMS is INACTIVE: Show PIMS Publish Confirmation & Procurement Input Modal (NO Generate PR modal) */}
+            {!isPimsActive && (
+                <PimsPublishModal
+                    isOpen={isPimsPublishModalOpen}
+                    onClose={() => setIsPimsPublishModalOpen(false)}
+                    ppmp={ppmp}
+                    onSuccess={(project) => {
+                        setSelectedMonitoringProjectId(project?.id);
+                    }}
+                />
+            )}
+
+            {/* 2. If PIMS is ACTIVE: Show Generate Purchase Request (PR) Popup */}
+            {isPimsActive && (
+                <GeneratePurchaseRequestModal
+                    isOpen={isGeneratePrModalOpen}
+                    onClose={() => setIsGeneratePrModalOpen(false)}
+                    ppmpUuid={ppmp?.uuid}
+                    monitoringProjectId={selectedMonitoringProjectId}
+                    onSuccess={(newPr) => {
+                        setSelectedPrForPrint(newPr);
+                    }}
+                />
+            )}
+
+            {/* PR Print View Modal */}
+            {selectedPrForPrint && (
+                <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs">
+                    <PurchaseRequestPrintView
+                        purchaseRequest={selectedPrForPrint}
+                        onBack={() => setSelectedPrForPrint(null)}
+                    />
                 </div>
             )}
         </div>

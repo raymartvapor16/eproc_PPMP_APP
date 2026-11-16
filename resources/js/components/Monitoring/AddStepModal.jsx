@@ -9,14 +9,14 @@ export const AddStepModal = ({
     division,
     onSuccess,
 }) => {
-    if (!isOpen) return null;
-
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [stepName, setStepName] = useState('');
     const [handledBy, setHandledBy] = useState('');
     const [actionDate, setActionDate] = useState(new Date().toISOString().split('T')[0]);
     const [notes, setNotes] = useState('');
+
+    if (!isOpen) return null;
 
     const divisionLabels = {
         pr_division: 'PR Division',

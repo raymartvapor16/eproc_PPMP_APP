@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { portalSystemService } from '../../services/api';
+import { showConfirm } from '../../utils/modalAlert';
 import {
     Globe,
     Plus,
@@ -166,6 +167,8 @@ export const PortalSystemsManagement = () => {
             }
             setModalOpen(false);
             await fetchSystems();
+            window.dispatchEvent(new CustomEvent('portal-systems:updated'));
+            window.dispatchEvent(new CustomEvent('pims:status_changed'));
         } catch (err) {
             setFeedback({
                 type: 'error',
@@ -177,7 +180,14 @@ export const PortalSystemsManagement = () => {
     };
 
     const handleDelete = async (id, name) => {
-        if (!confirm(`Are you sure you want to delete "${name}" from the system catalog?`)) return;
+        const confirmed = await showConfirm({
+            title: 'Delete System from Catalog',
+            message: `Are you sure you want to delete "${name}" from the system catalog?`,
+            confirmText: 'Yes, Delete System',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!confirmed) return;
         setDeletingId(id);
         try {
             await portalSystemService.delete(id);
@@ -195,6 +205,8 @@ export const PortalSystemsManagement = () => {
             const res = await portalSystemService.toggleStatus(id);
             setSystems(prev => prev.map(s => s.id === id ? res.data.system : s));
             setFeedback({ type: 'success', text: res.data.message || 'Status updated.' });
+            window.dispatchEvent(new CustomEvent('portal-systems:updated'));
+            window.dispatchEvent(new CustomEvent('pims:status_changed'));
         } catch (err) {
             setFeedback({ type: 'error', text: err.response?.data?.message || 'Failed to update status.' });
         }

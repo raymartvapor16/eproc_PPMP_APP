@@ -11,6 +11,7 @@ use App\Models\PpmpRoute;
 use App\Models\PpmpSignatory;
 use App\Models\SystemNotification;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -32,6 +33,7 @@ class DashboardController extends Controller
             'signatures',
             'attachments',
             'monitoringProjects',
+            'amendment',
         ];
 
         if ($user->isEndUser()) {
@@ -67,65 +69,151 @@ class DashboardController extends Controller
             $headRecent = clone $base;
             $recentPpmps = $headRecent->with($commonRecentRelations)->latest('updated_at')->take(100)->get();
         } elseif ($user->isBudgetOfficer()) {
-            $base = Ppmp::whereDoesntHave('children');
+            $base = Ppmp::whereDoesntHave('children')->where(function ($q) use ($user) {
+                $q->where(function ($subQ) use ($user) {
+                    $subQ->whereNull('budget_reviewer_id')
+                         ->orWhere('budget_reviewer_id', $user->id)
+                         ->orWhere('created_by', $user->id)
+                         ->orWhereHas('signatures', function ($sq) use ($user) {
+                             $sq->where('role', 'budget_officer')->where('user_id', $user->id);
+                         });
+                })->orWhere('status', 'READY_TO_PRINT');
+            });
             $byStatus = (clone $base)->selectRaw('status, count(*) as cnt')->groupBy('status')->pluck('cnt', 'status');
             $c = fn (string $s): int => (int) ($byStatus[$s] ?? 0);
+
+            // Calculate approved count from existing grouped status counts without an extra round-trip
+            $myApproved = $c('OPPMO_REVIEW') + $c('HEAD_PENDING') + $c('HEAD_RETURNED');
+            $myReady = Ppmp::whereDoesntHave('children')
+                ->where('status', 'READY_TO_PRINT')
+                ->where(function ($q) use ($user) {
+                    $q->where('budget_reviewer_id', $user->id)
+                      ->orWhereHas('signatures', fn($sq) => $sq->where('role', 'budget_officer')->where('user_id', $user->id));
+                })->count();
 
             $metrics = [
                 'pending_review' => $c('BUDGET_OFFICER_REVIEW'),
                 'returned' => $c('BUDGET_OFFICER_RETURNED'),
-                'approved' => $c('OPPMO_REVIEW') + $c('TWG_REVIEW') + $c('HEAD_PENDING') + $c('READY_TO_PRINT'),
+                'approved' => $myApproved + $myReady,
+                'ready_to_print' => $c('READY_TO_PRINT'),
             ];
 
             $budgetRecent = clone $base;
-            $recentPpmps = $budgetRecent->whereIn('status', ['BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'OPPMO_REVIEW', 'TWG_REVIEW', 'HEAD_PENDING', 'READY_TO_PRINT'])
+            $recentPpmps = $budgetRecent->whereIn('status', ['BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'OPPMO_REVIEW', 'HEAD_PENDING', 'READY_TO_PRINT'])
                 ->with($commonRecentRelations)
                 ->latest('updated_at')
                 ->take(100)
                 ->get();
         } elseif ($user->isOppmo()) {
-            $base = Ppmp::whereDoesntHave('children');
+            $base = Ppmp::whereDoesntHave('children')->where(function ($q) use ($user) {
+                $q->where(function ($subQ) use ($user) {
+                    $subQ->whereNull('oppmo_reviewer_id')
+                         ->orWhere('oppmo_reviewer_id', $user->id)
+                         ->orWhere('created_by', $user->id)
+                         ->orWhereHas('signatures', function ($sq) use ($user) {
+                             $sq->where('role', 'oppmo')->where('user_id', $user->id);
+                         });
+                })->orWhere('status', 'READY_TO_PRINT');
+            });
             $byStatus = (clone $base)->selectRaw('status, count(*) as cnt')->groupBy('status')->pluck('cnt', 'status');
             $c = fn (string $s): int => (int) ($byStatus[$s] ?? 0);
+
+            $myApproved = (clone $base)->where('status', '!=', 'READY_TO_PRINT')
+                ->whereIn('status', ['HEAD_PENDING', 'HEAD_RETURNED'])
+                ->count();
+            $myReady = Ppmp::whereDoesntHave('children')
+                ->where('status', 'READY_TO_PRINT')
+                ->where(function ($q) use ($user) {
+                    $q->where('oppmo_reviewer_id', $user->id)
+                      ->orWhereHas('signatures', fn($sq) => $sq->where('role', 'oppmo')->where('user_id', $user->id));
+                })->count();
 
             $metrics = [
                 'pending_review' => $c('OPPMO_REVIEW'),
                 'returned' => $c('OPPMO_RETURNED'),
-                'approved' => $c('TWG_REVIEW') + $c('HEAD_PENDING') + $c('READY_TO_PRINT'),
+                'approved' => $myApproved + $myReady,
+                'ready_to_print' => $c('READY_TO_PRINT'),
             ];
 
             $oppmoRecent = clone $base;
-            $recentPpmps = $oppmoRecent->whereIn('status', ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'TWG_REVIEW', 'HEAD_PENDING', 'READY_TO_PRINT'])
+            $recentPpmps = $oppmoRecent->whereIn('status', ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'READY_TO_PRINT'])
                 ->with($commonRecentRelations)
                 ->latest('updated_at')
                 ->take(100)
                 ->get();
         } elseif ($user->isTwg()) {
-            $base = Ppmp::whereDoesntHave('children');
+            $base = Ppmp::whereDoesntHave('children')->where(function ($q) use ($user) {
+                $q->where(function ($subQ) use ($user) {
+                    $subQ->whereNull('twg_reviewer_id')
+                         ->orWhere('twg_reviewer_id', $user->id)
+                         ->orWhere('created_by', $user->id)
+                         ->orWhereHas('signatures', function ($sq) use ($user) {
+                             $sq->where('role', 'twg')->where('user_id', $user->id);
+                         });
+                })->orWhere('status', 'READY_TO_PRINT');
+            });
             $byStatus = (clone $base)->selectRaw('status, count(*) as cnt')->groupBy('status')->pluck('cnt', 'status');
             $c = fn (string $s): int => (int) ($byStatus[$s] ?? 0);
+
+            $myApproved = (clone $base)->where('status', '!=', 'READY_TO_PRINT')
+                ->whereIn('status', [
+                    'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED',
+                    'PACCO_REVIEW', 'PACCO_RETURNED',
+                    'OPPMO_REVIEW', 'OPPMO_RETURNED'
+                ])->count();
+            $myReady = Ppmp::whereDoesntHave('children')
+                ->where('status', 'READY_TO_PRINT')
+                ->where(function ($q) use ($user) {
+                    $q->where('twg_reviewer_id', $user->id)
+                      ->orWhereHas('signatures', fn($sq) => $sq->where('role', 'twg')->where('user_id', $user->id));
+                })->count();
 
             $metrics = [
                 'pending_review' => $c('TWG_REVIEW'),
                 'returned' => $c('TWG_RETURNED'),
+                'approved' => $myApproved + $myReady,
                 'ready_to_print' => $c('READY_TO_PRINT'),
             ];
 
             $twgRecent = clone $base;
-            $recentPpmps = $twgRecent->whereIn('status', ['TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'])
+            $recentPpmps = $twgRecent->whereIn('status', [
+                'TWG_REVIEW', 'TWG_RETURNED',
+                'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED',
+                'PACCO_REVIEW', 'PACCO_RETURNED',
+                'OPPMO_REVIEW', 'OPPMO_RETURNED',
+                'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'
+            ])
                 ->with($commonRecentRelations)
                 ->latest('updated_at')
                 ->take(100)
                 ->get();
         } elseif ($user->isPacco()) {
-            $base = Ppmp::whereDoesntHave('children');
+            $base = Ppmp::whereDoesntHave('children')->where(function ($q) use ($user) {
+                $q->where(function ($subQ) use ($user) {
+                    $subQ->whereNull('budget_reviewer_id')
+                         ->orWhere('budget_reviewer_id', $user->id)
+                         ->orWhere('created_by', $user->id)
+                         ->orWhereHas('signatures', function ($sq) use ($user) {
+                             $sq->where('role', 'pacco')->where('user_id', $user->id);
+                         });
+                })->orWhere('status', 'READY_TO_PRINT');
+            });
             $byStatus = (clone $base)->selectRaw('status, count(*) as cnt')->groupBy('status')->pluck('cnt', 'status');
             $c = fn (string $s): int => (int) ($byStatus[$s] ?? 0);
+
+            $myApproved = $c('OPPMO_REVIEW') + $c('HEAD_PENDING') + $c('HEAD_RETURNED');
+            $myReady = Ppmp::whereDoesntHave('children')
+                ->where('status', 'READY_TO_PRINT')
+                ->where(function ($q) use ($user) {
+                    $q->where('budget_reviewer_id', $user->id)
+                      ->orWhereHas('milestones', fn($mq) => $mq->whereNotNull('pacco_approved_at'))
+                      ->orWhereHas('signatures', fn($sq) => $sq->where('role', 'pacco')->where('user_id', $user->id));
+                })->count();
 
             $metrics = [
                 'pending_review' => $c('PACCO_REVIEW'),
                 'returned' => $c('PACCO_RETURNED'),
-                'approved' => $c('OPPMO_REVIEW') + $c('TWG_REVIEW') + $c('HEAD_PENDING') + $c('READY_TO_PRINT'),
+                'approved' => $myApproved + $myReady,
                 'ready_to_print' => $c('READY_TO_PRINT'),
                 'total_review' => (int) $byStatus->except(['DRAFT'])->sum(),
             ];
@@ -134,7 +222,8 @@ class DashboardController extends Controller
             $recentPpmps = $paccoRecent->where(function ($q) {
                 $q->whereIn('status', ['PACCO_REVIEW', 'PACCO_RETURNED'])
                     ->orWhereHas('milestones', fn($mq) => $mq->whereNotNull('pacco_approved_at'))
-                    ->orWhere('source_of_fund', 'like', '%trust%');
+                    ->orWhere('source_of_fund', 'like', '%trust%')
+                    ->orWhere('status', 'READY_TO_PRINT');
             })
                 ->with($commonRecentRelations)
                 ->latest('updated_at')
@@ -215,7 +304,7 @@ class DashboardController extends Controller
         }
 
         $signatories = $user->isAdmin() ? PpmpSignatory::latest('id')->get() : [];
-        $users = ($user->isSuperAdmin() || $user->isAdminRole()) ? User::with('office')->orderBy('name')->get() : [];
+        $users = ($user->isSuperAdmin() || $user->isAdminRole()) ? User::with(['office', 'accountCodes'])->latest('id')->get() : [];
         $offices = ($user->isSuperAdmin() || $user->isAdminRole()) ? Office::with('head')->orderBy('name')->get() : [];
 
         return response()->json([
@@ -236,7 +325,7 @@ class DashboardController extends Controller
      * Compute rich executive visual analytics metrics for Admin & Super Admin,
      * including instant pre-computed datasets for all fiscal years and per fiscal year.
      */
-    private function buildAdminAnalytics($base, array $metrics): array
+    private function buildAdminAnalytics(Builder $base, array $metrics): array
     {
         // 1. Fiscal years distinct breakdown
         $fiscalYears = (clone $base)
@@ -293,7 +382,7 @@ class DashboardController extends Controller
     /**
      * Compute analytics dataset scoped to a specific fiscal year (or null for all)
      */
-    private function computeAnalyticsForScope($base, ?string $fiscalYear = null): array
+    private function computeAnalyticsForScope(Builder $base, ?string $fiscalYear = null): array
     {
         $scopedBase = clone $base;
         if ($fiscalYear) {
@@ -473,11 +562,10 @@ class DashboardController extends Controller
         // 9. Detailed Workflow Stages (reusing grouped $statusRows counts)
         $workflowStages = [
             ['stage' => 'DRAFT', 'label' => 'End-User Drafting', 'count' => $c('DRAFT'), 'color' => '#64748b'],
-            ['stage' => 'HEAD_PENDING', 'label' => 'Office Head Approval', 'count' => $c('HEAD_PENDING'), 'color' => '#f59e0b'],
+            ['stage' => 'TWG_REVIEW', 'label' => 'Technical Working Group (TWG)', 'count' => $c('TWG_REVIEW'), 'color' => '#ec4899'],
             ['stage' => 'BUDGET_OFFICER_REVIEW', 'label' => 'Provincial Budget (PBO)', 'count' => $c('BUDGET_OFFICER_REVIEW'), 'color' => '#3b82f6'],
             ['stage' => 'PACCO_REVIEW', 'label' => 'Accounting Office (PACCO)', 'count' => $c('PACCO_REVIEW'), 'color' => '#06b6d4'],
             ['stage' => 'OPPMO_REVIEW', 'label' => 'Procurement Management (OPPMO)', 'count' => $c('OPPMO_REVIEW'), 'color' => '#8b5cf6'],
-            ['stage' => 'TWG_REVIEW', 'label' => 'Technical Working Group (TWG)', 'count' => $c('TWG_REVIEW'), 'color' => '#ec4899'],
             ['stage' => 'READY_TO_PRINT', 'label' => 'Cleared / Ready to Print', 'count' => $c('READY_TO_PRINT'), 'color' => '#10b981'],
         ];
 

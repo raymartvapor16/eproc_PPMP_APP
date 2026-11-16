@@ -8,13 +8,12 @@ export const PimsPublishModal = ({
     ppmp = null,
     onSuccess,
 }) => {
-    if (!isOpen) return null;
-
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [modesList, setModesList] = useState([]);
 
     useEffect(() => {
+        if (!isOpen) return;
         let isMounted = true;
         procurementModeService.getAll({ active_only: 1 })
             .then((res) => {
@@ -26,7 +25,7 @@ export const PimsPublishModal = ({
         return () => {
             isMounted = false;
         };
-    }, []);
+    }, [isOpen]);
 
     const [formData, setFormData] = useState({
         project_title: '',
@@ -42,6 +41,7 @@ export const PimsPublishModal = ({
     });
 
     useEffect(() => {
+        if (!isOpen) return;
         if (ppmp) {
             // Determine project category from items or default
             let detectedCategory = 'GOODS_CONSULTING';
@@ -63,7 +63,7 @@ export const PimsPublishModal = ({
                 procurement_mode: detectedMode,
                 abc_amount: ppmp.total_budget || '',
                 pr_number: ppmp.tracking_number || ppmp.ppmp_number || '',
-                pims_pr_id: ppmp.pims_pr_id || '',
+                pims_pr_id: ppmp.pims_pr_id || ppmp.tracking_number || ppmp.ppmp_number || '',
                 implementing_unit: ppmp.implementing_unit || ppmp.office?.name || '',
                 end_user_name: ppmp.creator?.name || '',
                 remarks: `Published to PIMS from PPMP Tracker No. ${ppmp.tracking_number || ppmp.ppmp_number || ''}`,
@@ -83,7 +83,9 @@ export const PimsPublishModal = ({
                 ppmp_uuid: '',
             });
         }
-    }, [ppmp]);
+    }, [isOpen, ppmp]);
+
+    if (!isOpen) return null;
 
     const handleSubmit = async (e) => {
         e.preventDefault();

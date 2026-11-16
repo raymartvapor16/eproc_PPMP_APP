@@ -44,6 +44,17 @@ export const SignaturePadModal = ({
 
     // Keep track of current stroke points for smooth bezier interpolation
     const currentPointsRef = useRef([]);
+    const isDrawingRef = useRef(false);
+    const strokeColorRef = useRef(strokeColor);
+    const strokeWidthRef = useRef(strokeWidth);
+
+    useEffect(() => {
+        strokeColorRef.current = strokeColor;
+    }, [strokeColor]);
+
+    useEffect(() => {
+        strokeWidthRef.current = strokeWidth;
+    }, [strokeWidth]);
 
     // Initialize canvas sizing with devicePixelRatio for ultra sharp strokes
     const setupCanvas = useCallback(() => {
@@ -115,8 +126,9 @@ export const SignaturePadModal = ({
         const canvas = canvasRef.current;
         if (!canvas) return { x: 0, y: 0 };
         const rect = canvas.getBoundingClientRect();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const touch = e.touches && e.touches.length > 0 ? e.touches[0] : (e.changedTouches && e.changedTouches.length > 0 ? e.changedTouches[0] : null);
+        const clientX = touch ? touch.clientX : e.clientX;
+        const clientY = touch ? touch.clientY : e.clientY;
         return {
             x: clientX - rect.left,
             y: clientY - rect.top,
@@ -136,29 +148,37 @@ export const SignaturePadModal = ({
     };
 
     const startDrawing = (e) => {
-        e.preventDefault();
+        if (e && e.cancelable) {
+            e.preventDefault();
+        }
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         const coords = getCoordinates(e);
 
         currentPointsRef.current = [coords];
+        isDrawingRef.current = true;
         setIsDrawing(true);
 
-        ctx.strokeStyle = strokeColor;
-        ctx.fillStyle = strokeColor;
-        ctx.lineWidth = strokeWidth;
+        const color = strokeColorRef.current;
+        const width = strokeWidthRef.current;
+
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = width;
 
         // Draw an initial point dot for tap/click
         ctx.beginPath();
-        ctx.arc(coords.x, coords.y, strokeWidth / 2, 0, Math.PI * 2);
+        ctx.arc(coords.x, coords.y, width / 2, 0, Math.PI * 2);
         ctx.fill();
         setHasStrokes(true);
     };
 
     const draw = (e) => {
-        if (!isDrawing) return;
-        e.preventDefault();
+        if (!isDrawingRef.current) return;
+        if (e && e.cancelable) {
+            e.preventDefault();
+        }
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
@@ -167,8 +187,11 @@ export const SignaturePadModal = ({
         const points = currentPointsRef.current;
         points.push(coords);
 
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = strokeWidth;
+        const color = strokeColorRef.current;
+        const width = strokeWidthRef.current;
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
 
@@ -196,11 +219,43 @@ export const SignaturePadModal = ({
     };
 
     const stopDrawing = () => {
-        if (!isDrawing) return;
+        if (!isDrawingRef.current) return;
+        isDrawingRef.current = false;
         setIsDrawing(false);
         currentPointsRef.current = [];
         saveStateToHistory();
     };
+
+    // Attach non-passive native touch event listeners so touch drawing on mobile/tablets
+    // doesn't scroll the screen and prevents "Unable to preventDefault inside passive event listener"
+    useEffect(() => {
+        if (!isOpen) return;
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const onTouchStart = (e) => {
+            startDrawing(e);
+        };
+        const onTouchMove = (e) => {
+            draw(e);
+        };
+        const onTouchEnd = (e) => {
+            if (e && e.cancelable) e.preventDefault();
+            stopDrawing();
+        };
+
+        canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+        canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+        canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+        canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+        return () => {
+            canvas.removeEventListener('touchstart', onTouchStart);
+            canvas.removeEventListener('touchmove', onTouchMove);
+            canvas.removeEventListener('touchend', onTouchEnd);
+            canvas.removeEventListener('touchcancel', onTouchEnd);
+        };
+    }, [isOpen]);
 
     const handleClear = () => {
         const canvas = canvasRef.current;
@@ -389,10 +444,8 @@ export const SignaturePadModal = ({
                             onMouseMove={draw}
                             onMouseUp={stopDrawing}
                             onMouseLeave={stopDrawing}
-                            onTouchStart={startDrawing}
-                            onTouchMove={draw}
-                            onTouchEnd={stopDrawing}
-                            className="absolute inset-0 w-full h-full block bg-transparent"
+                            style={{ touchAction: 'none' }}
+                            className="absolute inset-0 w-full h-full block bg-transparent touch-none cursor-crosshair"
                         />
 
                         {/* Guidance overlay when empty */}

@@ -31,12 +31,14 @@ import { monitoringService, ppmpService, procurementModeService } from '../../se
 import { formatCurrency } from '../../components/UI/StatusBadge';
 import { PimsPublishModal } from '../../components/Monitoring/PimsPublishModal';
 import { MonitoringProjectDetailModal } from '../../components/Monitoring/MonitoringProjectDetailModal';
+import { SystemSwitcherDropdown } from '../../components/Layout/SystemSwitcherDropdown';
 
 export const MonitoringDashboard = ({
     user,
     onBackToPpmpSystem,
     onNavigateToPortal,
     onLogout,
+    onNavigate,
 }) => {
     // Only OPPMO Monitors and Admins can manage monitoring projects and steps
     // End-users, Office Heads, and Reviewers (Budget Officer, TWG, PACCO, etc.) are view-only
@@ -295,29 +297,14 @@ export const MonitoringDashboard = ({
 
                     {/* Navigation Actions */}
                     <div className="flex items-center gap-2">
-                        {onNavigateToPortal && (
-                            <button
-                                type="button"
-                                onClick={onNavigateToPortal}
-                                className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5"
-                                title="Portal Landing Page"
-                            >
-                                <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
-                                <span className="hidden sm:inline">Portal Home</span>
-                            </button>
-                        )}
-
-                        {onBackToPpmpSystem && (
-                            <button
-                                type="button"
-                                onClick={onBackToPpmpSystem}
-                                className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
-                                title="Switch to E-Procurement PPMP/APP System"
-                            >
-                                <ArrowLeft className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">PPMP & APP System</span>
-                            </button>
-                        )}
+                        <SystemSwitcherDropdown
+                            user={user}
+                            currentSystem="monitoring"
+                            onNavigate={onNavigate || ((view) => {
+                                if (view === 'dashboard' || view === 'ppmps') onBackToPpmpSystem && onBackToPpmpSystem();
+                                else if (view === 'landing') onNavigateToPortal && onNavigateToPortal();
+                            })}
+                        />
 
                         <button
                             type="button"

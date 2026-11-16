@@ -3,9 +3,34 @@ import { X, Layers, Check, Shield, AlertCircle, Loader2, Sparkles, CheckCircle2 
 import { userService, portalSystemService } from '../../services/api';
 
 const DEFAULT_SYSTEMS = [
-    { id: 1, name: 'E-Procurement PPMP & APP System', link_url: '/eprocrementppmpapp', badge: 'Primary System', description: 'PPMP preparation, annual procurement planning, reviews, and BAC approvals.' },
-    { id: 2, name: 'OPPMO Real-Time Monitoring System', link_url: '/monitoringsystem', badge: 'Live Monitoring', description: 'Milestone tracking, and purchase request timelines.' },
-    { id: 3, name: 'Supplier Evaluation System', link_url: '/supplierevaluation', badge: 'Supplier Rating', description: 'Province-wide Supplier Performance Evaluation, Purchase Order Management, and Semester Analytics.' },
+    {
+        id: 1,
+        name: 'E-Procurement PPMP & APP System',
+        link_url: '/eprocrementppmpapp',
+        badge: 'Primary System',
+        description: 'Automated preparation, review lifecycle, e-signature validation, and consolidation of Project Procurement Management Plans (PPMP) and Annual Procurement Plans (APP).',
+    },
+    {
+        id: 2,
+        name: 'OPPMO Real-Time Monitoring System',
+        link_url: '/monitoringsystem',
+        badge: 'Live Monitoring',
+        description: 'Procurement implementation monitoring, milestone stage tracking, PIMS automatic publishing, and purchase request timelines across provincial offices.',
+    },
+    {
+        id: 3,
+        name: 'Procurement Information Management System (PIMS)',
+        link_url: '/pims',
+        badge: 'PIMS Portal',
+        description: 'Comprehensive procurement surveillance, Purchase Request (PR) generation, and multi-stage evaluation across provincial offices.',
+    },
+    {
+        id: 4,
+        name: 'Supplier Evaluation System',
+        link_url: '/supplierevaluation',
+        badge: 'Supplier Rating',
+        description: 'Official Supplier Performance Assessment & Rating System across Price, Quality, Customer Care, and Delivery Fulfillment with digital authorization.',
+    },
 ];
 
 export const UserSystemAccessModal = ({
@@ -14,8 +39,6 @@ export const UserSystemAccessModal = ({
     targetUser,
     onSuccess,
 }) => {
-    if (!isOpen || !targetUser) return null;
-
     const [systems, setSystems] = useState(DEFAULT_SYSTEMS);
     const [selectedUrls, setSelectedUrls] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -25,13 +48,25 @@ export const UserSystemAccessModal = ({
 
     // Fetch latest portal systems
     useEffect(() => {
+        if (!isOpen) return;
         let isMounted = true;
         const fetchSystems = async () => {
             setLoading(true);
             try {
                 const res = await portalSystemService.getPublic();
-                if (isMounted && res.data && res.data.length > 0) {
-                    setSystems(res.data);
+                if (isMounted) {
+                    const merged = [...DEFAULT_SYSTEMS];
+                    if (Array.isArray(res.data) && res.data.length > 0) {
+                        res.data.forEach((sys) => {
+                            const existingIdx = merged.findIndex((m) => m.link_url === sys.link_url);
+                            if (existingIdx >= 0) {
+                                merged[existingIdx] = { ...merged[existingIdx], ...sys };
+                            } else {
+                                merged.push(sys);
+                            }
+                        });
+                    }
+                    setSystems(merged);
                 }
             } catch (err) {
                 console.warn('Failed to fetch public systems for access modal, using defaults', err);
@@ -42,11 +77,11 @@ export const UserSystemAccessModal = ({
 
         fetchSystems();
         return () => { isMounted = false; };
-    }, []);
+    }, [isOpen]);
 
     // Initialize user's current accessible systems
     useEffect(() => {
-        if (!targetUser) return;
+        if (!isOpen || !targetUser) return;
         setError('');
         setSuccessMessage('');
 
@@ -55,16 +90,18 @@ export const UserSystemAccessModal = ({
         } else {
             // Default based on role
             if (targetUser.role === 'super_admin' || targetUser.role === 'admin' || targetUser.role === 'administrator') {
-                setSelectedUrls(['/eprocrementppmpapp', '/monitoringsystem', '/supplierevaluation']);
+                setSelectedUrls(['/eprocrementppmpapp', '/monitoringsystem', '/pims', '/supplierevaluation']);
             } else if (targetUser.role === 'monitor') {
-                setSelectedUrls(['/monitoringsystem']);
+                setSelectedUrls(['/monitoringsystem', '/pims']);
             } else if (targetUser.role === 'pgso' || targetUser.role === 'presentative_staff') {
                 setSelectedUrls(['/supplierevaluation']);
             } else {
-                setSelectedUrls(['/eprocrementppmpapp']);
+                setSelectedUrls(['/eprocrementppmpapp', '/pims']);
             }
         }
-    }, [targetUser]);
+    }, [isOpen, targetUser]);
+
+    if (!isOpen || !targetUser) return null;
 
     const handleToggleSystem = (url) => {
         setSelectedUrls((prev) => {

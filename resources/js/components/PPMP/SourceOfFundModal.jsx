@@ -1,69 +1,62 @@
-import React, { useState, useEffect } from 'react';
-import { X, Landmark, ShieldCheck, ArrowRight, CheckCircle2, ChevronRight, RefreshCw } from 'lucide-react';
-import { fundSourceService } from '../../services/api';
+import React, { useState } from 'react';
+import { X, Landmark, ShieldCheck, ArrowRight, CheckCircle2, ChevronRight } from 'lucide-react';
+
+export const FUND_ROUTES = {
+    BUDGET: 'budget',
+    PACCO: 'pacco',
+};
 
 export const FUND_SOURCES = {
     GENERAL_FUND: 'General Fund',
     TRUST_FUND: 'Trust Fund',
 };
 
+export const ROUTING_OPTIONS = [
+    {
+        id: FUND_ROUTES.BUDGET,
+        route: FUND_ROUTES.BUDGET,
+        name: 'Budget Routing (General Funds and etc.,)',
+        badge: 'GF & Special Budget',
+        routeLabel: 'Budget Officer Route',
+        defaultFund: 'General Fund',
+        description: 'Provincial General Fund, 20% Local Development Fund, Special Education Fund (SEF), and standard budgetary allocations.',
+        flow: [
+            { name: 'BAC-TWG', color: 'bg-cyan-100 text-cyan-900 border-cyan-200' },
+            { name: 'Budget Officer', color: 'bg-indigo-100 text-indigo-900 border-indigo-200' },
+            { name: 'OPPMO (Generate APP)', color: 'bg-purple-100 text-purple-900 border-purple-200' },
+            { name: 'Ready to Print', color: 'bg-emerald-100 text-emerald-900 border-emerald-200' },
+        ],
+    },
+    {
+        id: FUND_ROUTES.PACCO,
+        route: FUND_ROUTES.PACCO,
+        name: 'PACCO Routing (Trust Funds)',
+        badge: 'Trust Funds',
+        routeLabel: 'PACCO Review Route',
+        defaultFund: 'Trust Fund',
+        description: 'National agency subsidies, grants, trust deposits, fiduciary accounts, and special projects requiring Provincial Accountant (PACCO) certification.',
+        flow: [
+            { name: 'BAC-TWG', color: 'bg-cyan-100 text-cyan-900 border-cyan-200' },
+            { name: 'PACCO Reviewer', color: 'bg-teal-100 text-teal-900 border-teal-200' },
+            { name: 'OPPMO (Generate APP)', color: 'bg-purple-100 text-purple-900 border-purple-200' },
+            { name: 'Ready to Print', color: 'bg-emerald-100 text-emerald-900 border-emerald-200' },
+        ],
+    },
+];
+
 export const SourceOfFundModal = ({ isOpen, onClose, onSelect }) => {
-    const [fundOptions, setFundOptions] = useState([
-        {
-            id: 'default_gf',
-            name: FUND_SOURCES.GENERAL_FUND,
-            workflow_route: 'budget',
-            description: 'General Fund, 20% Development Fund, Special Education Fund (SEF), and standard budgetary allocations.',
-        },
-        {
-            id: 'default_tf',
-            name: FUND_SOURCES.TRUST_FUND,
-            workflow_route: 'pacco',
-            description: 'National agency subsidies, grants, trust deposits, and fiduciary funds requiring Provincial Accounting Office (PACCO) certification.',
-        },
-    ]);
-    const [selectedFund, setSelectedFund] = useState(FUND_SOURCES.GENERAL_FUND);
-    const [loading, setLoading] = useState(false);
-
-    // Fetch dynamic active fund sources when modal opens
-    useEffect(() => {
-        if (!isOpen) return;
-
-        let isMounted = true;
-        const loadSources = async () => {
-            setLoading(true);
-            try {
-                const res = await fundSourceService.getAll({ active_only: 1 });
-                if (isMounted && Array.isArray(res.data) && res.data.length > 0) {
-                    setFundOptions(res.data);
-                    // If current selection is not in list, select the first option
-                    const currentExists = res.data.some((f) => f.name === selectedFund);
-                    if (!currentExists) {
-                        setSelectedFund(res.data[0].name);
-                    }
-                }
-            } catch (err) {
-                // Keep default fallback options
-            } finally {
-                if (isMounted) setLoading(false);
-            }
-        };
-
-        loadSources();
-        return () => {
-            isMounted = false;
-        };
-    }, [isOpen]);
+    const [selectedRoute, setSelectedRoute] = useState(FUND_ROUTES.BUDGET);
 
     if (!isOpen) return null;
 
     const handleConfirm = () => {
-        if (!selectedFund) return;
-        onSelect(selectedFund);
+        const selected = ROUTING_OPTIONS.find((opt) => opt.route === selectedRoute) || ROUTING_OPTIONS[0];
+        if (typeof onSelect === 'function') {
+            onSelect(selected.defaultFund, selected.route);
+        }
     };
 
-    const selectedOption = fundOptions.find((f) => f.name === selectedFund) || fundOptions[0];
-    const isPaccoRoute = selectedOption?.workflow_route === 'pacco';
+    const isPaccoRoute = selectedRoute === FUND_ROUTES.PACCO;
 
     return (
         <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -87,46 +80,38 @@ export const SourceOfFundModal = ({ isOpen, onClose, onSelect }) => {
                                 </div>
                                 <div>
                                     <h3 className="text-lg font-bold tracking-tight text-white">
-                                        Select Source of Fund
+                                        Select Source of Fund Routing
                                     </h3>
                                     <p className="text-xs text-blue-200/80 mt-0.5">
-                                        Determine the official review and approval route for this PPMP
+                                        Choose the official review and approval hierarchy for this procurement plan
                                     </p>
                                 </div>
                             </div>
                             <button
                                 type="button"
                                 onClick={onClose}
-                                className="rounded-lg p-1.5 text-blue-200/70 hover:bg-white/10 hover:text-white transition-colors"
+                                className="rounded-lg p-1.5 text-blue-200/70 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
                             >
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
                     </div>
 
-                    {/* Content */}
-                    <div className="p-6 space-y-4 bg-slate-50/50 max-h-[70vh] overflow-y-auto">
-                        <div className="flex items-center justify-between">
-                            <p className="text-xs text-slate-600">
-                                Please select the funding type for this procurement plan. The system will automatically configure the correct review hierarchy:
-                            </p>
-                            {loading && (
-                                <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
-                                    <RefreshCw className="w-3 h-3 animate-spin" />
-                                    <span>Syncing...</span>
-                                </span>
-                            )}
-                        </div>
+                    {/* Content: Only the 2 routing options */}
+                    <div className="p-6 space-y-4 bg-slate-50/50">
+                        <p className="text-xs text-slate-600 font-medium">
+                            Please select the review route for this PPMP. The table input search will automatically filter the appropriate funds catalog:
+                        </p>
 
                         <div className="grid grid-cols-1 gap-3.5">
-                            {fundOptions.map((option) => {
-                                const isSelected = selectedFund === option.name;
-                                const isPacco = option.workflow_route === 'pacco';
+                            {ROUTING_OPTIONS.map((option) => {
+                                const isSelected = selectedRoute === option.route;
+                                const isPacco = option.route === FUND_ROUTES.PACCO;
 
                                 return (
                                     <div
-                                        key={option.id || option.name}
-                                        onClick={() => setSelectedFund(option.name)}
+                                        key={option.id}
+                                        onClick={() => setSelectedRoute(option.route)}
                                         onDoubleClick={handleConfirm}
                                         className={`relative group cursor-pointer rounded-xl p-4.5 transition-all border-2 ${
                                             isSelected
@@ -162,11 +147,6 @@ export const SourceOfFundModal = ({ isOpen, onClose, onSelect }) => {
                                                         <h4 className="font-bold text-sm text-slate-900">
                                                             {option.name}
                                                         </h4>
-                                                        {option.code && (
-                                                            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 font-bold text-slate-600">
-                                                                {option.code}
-                                                            </span>
-                                                        )}
                                                         <span
                                                             className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
                                                                 isPacco
@@ -174,13 +154,11 @@ export const SourceOfFundModal = ({ isOpen, onClose, onSelect }) => {
                                                                     : 'bg-blue-100 text-blue-800 border-blue-200'
                                                             }`}
                                                         >
-                                                            {isPacco ? 'PACCO Review Route' : 'Budget Officer Route'}
+                                                            {option.routeLabel}
                                                         </span>
                                                     </div>
-                                                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                                                        {option.description || (isPacco
-                                                            ? 'Trust fund and fiduciary allocation requiring PACCO review certification.'
-                                                            : 'Standard budgetary appropriations requiring Budget Office review.')}
+                                                    <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                                                        {option.description}
                                                     </p>
                                                 </div>
                                             </div>
@@ -202,41 +180,22 @@ export const SourceOfFundModal = ({ isOpen, onClose, onSelect }) => {
                                             </div>
                                         </div>
 
-                                        {/* Routing Diagram */}
+                                        {/* Review Routing Flow Diagram */}
                                         <div className="mt-3.5 pt-3 border-t border-slate-200/70">
                                             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
                                                 Review Routing Flow:
                                             </span>
                                             <div className="flex items-center flex-wrap gap-1.5 text-[11px] font-medium text-slate-700">
-                                                <span
-                                                    className={`inline-flex items-center px-2 py-0.5 rounded border font-semibold ${
-                                                        isPacco
-                                                            ? 'bg-teal-100 text-teal-900 border-teal-200'
-                                                            : 'bg-indigo-100 text-indigo-900 border-indigo-200'
-                                                    }`}
-                                                >
-                                                    {isPacco ? 'PACCO Reviewer' : 'Budget Officer'}
-                                                </span>
-                                                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-200 font-semibold">
-                                                    OPPMO
-                                                </span>
-                                                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-cyan-100 text-cyan-900 border border-cyan-200 font-semibold">
-                                                    BAC-TWG
-                                                </span>
-                                                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-200 font-semibold">
-                                                    OPPMO (Generate APP)
-                                                </span>
-                                                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200 font-semibold">
-                                                    Head (Approval)
-                                                </span>
-                                                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-200 font-semibold">
-                                                    Ready to Print
-                                                </span>
+                                                {option.flow.map((step, idx) => (
+                                                    <React.Fragment key={step.name}>
+                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded border font-semibold ${step.color}`}>
+                                                            {step.name}
+                                                        </span>
+                                                        {idx < option.flow.length - 1 && (
+                                                            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                                                        )}
+                                                    </React.Fragment>
+                                                ))}
                                             </div>
                                         </div>
                                     </div>

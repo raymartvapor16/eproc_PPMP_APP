@@ -3,6 +3,10 @@ import { formatCurrency } from '../UI/StatusBadge';
 import { Plus, Trash2, FileCheck2 } from 'lucide-react';
 import { SupportingDocsDropdown } from './SupportingDocsDropdown';
 import { supportingDocumentService, procurementModeService } from '../../services/api';
+import { CommentableCell } from './CommentableCell';
+import { AccountCodeCombobox } from './AccountCodeCombobox';
+import { ProgramNameCombobox } from './ProgramNameCombobox';
+import { SourceOfFundCombobox } from './SourceOfFundCombobox';
 
 /**
  * Automatically wraps long text so each line has at most 6 words,
@@ -215,18 +219,39 @@ export const ProcurementPlanTable = ({
     onAddItem,
     onRemoveItem,
     onUpdateItem,
+    onUpdateCellValue = null,
     totalBudget = 0,
     accountCode = '',
     onAccountCodeChange,
+    accountCodeId = null,
+    onAccountCodeIdChange = null,
+    accountCodes = null,
     programName = '',
     onProgramNameChange,
+    programNameId = null,
+    onProgramNameIdChange = null,
+    programNames = null,
+    fiscalYear = null,
+    fundSources = null,
+    workflowRoute = null,
     deliveryPeriod = '',
     placeOfDelivery = '',
     paymentMethod = '',
     warrantyAndOtherTerms = '',
     supportingDocuments = DEFAULT_DOCUMENTS,
     procurementModes = null,
+    // Google Sheets style Cell Comments props
+    cellComments = [],
+    changeLogs = [],
+    canComment = false,
+    canComply = false,
+    currentUser = null,
+    onAddCellComment = null,
+    onDeleteCellComment = null,
+    onComplyCellComment = null,
+    onUncomplyCellComment = null,
 }) => {
+    const [activeCellKey, setActiveCellKey] = useState(null);
     const [showProgramInput, setShowProgramInput] = useState(Boolean(programName && String(programName).trim()));
     const [docsList, setDocsList] = useState(supportingDocuments);
     const [modesList, setModesList] = useState(Array.isArray(procurementModes) && procurementModes.length > 0 ? procurementModes : []);
@@ -302,11 +327,30 @@ export const ProcurementPlanTable = ({
         }
     }, [programName]);
 
+    const getCellUpdateHandler = (fieldKey, fieldLabel, item, realIdx) => {
+        if (onUpdateItem) {
+            return (newVal) => {
+                if (fieldKey === 'pre_proc_conference') {
+                    onUpdateItem(realIdx, fieldKey, newVal === 'YES' || newVal === true || newVal === '1');
+                } else if (fieldKey === 'estimated_budget') {
+                    const cleanNum = parseFloat(String(newVal).replace(/[^0-9.-]+/g, ''));
+                    onUpdateItem(realIdx, fieldKey, isNaN(cleanNum) ? 0 : cleanNum);
+                } else {
+                    onUpdateItem(realIdx, fieldKey, newVal);
+                }
+            };
+        }
+        if (onUpdateCellValue) {
+            return (newVal) => onUpdateCellValue(fieldKey, newVal, item?.id, realIdx + 1, fieldLabel);
+        }
+        return null;
+    };
+
     return (
         <div className="mt-4">
             <div className="overflow-x-auto border border-slate-900 shadow-sm bg-white rounded-t-lg">
                 <table className="w-full text-left text-xs border-collapse print-table">
-                    <thead>
+                    <thead className="sticky top-0 z-10 bg-slate-100 shadow-2xs">
                         <tr className="bg-slate-100 text-slate-900 border-b border-slate-900 font-bold divide-x divide-slate-400 text-center text-[11px] leading-tight">
                             <th className="p-2 min-w-[320px]">
                                 General Description and Objective of the<br />
@@ -361,64 +405,73 @@ export const ProcurementPlanTable = ({
                     <tbody className="divide-y divide-slate-300">
                         {/* 2nd Row after the header row: Category / Account Title (e.g. Representation Expenses (5-02-99-030)) */}
                         <tr className="bg-slate-50 font-bold border-b border-slate-300 divide-x divide-slate-300">
-                            <td className="p-2 font-bold uppercase tracking-wide text-slate-900 bg-slate-50">
+                            <CommentableCell
+                                itemId={null}
+                                itemNo={null}
+                                fieldKey="program_name"
+                                fieldLabel="Category / Program Name & Account Code"
+                                cellValue={`${programName ? programName + ' • ' : ''}${accountCode || items.find(i => i.is_header)?.description || ''}`}
+                                comments={cellComments}
+                                changeLogs={changeLogs}
+                                canComment={canComment}
+                                canComply={canComply}
+                                currentUser={currentUser}
+                                activeCellKey={activeCellKey}
+                                setActiveCellKey={setActiveCellKey}
+                                onAddCellComment={onAddCellComment}
+                                onDeleteCellComment={onDeleteCellComment}
+                                onComplyCellComment={onComplyCellComment}
+                                onUncomplyCellComment={onUncomplyCellComment}
+                                onUpdateCellValue={(newVal) => {
+                                    if (onUpdateCellValue) {
+                                        onUpdateCellValue('program_name', newVal, null, null, 'Category / Program Name & Account Code');
+                                    }
+                                    if (newVal.includes(' • ')) {
+                                        const [pName, ...rest] = newVal.split(' • ');
+                                        const aCode = rest.join(' • ');
+                                        if (onProgramNameChange) onProgramNameChange(pName.trim());
+                                        if (onAccountCodeChange) onAccountCodeChange(aCode.trim());
+                                    } else {
+                                        if (onAccountCodeChange) onAccountCodeChange(newVal.trim());
+                                    }
+                                }}
+                                className="p-2 font-bold uppercase tracking-wide text-slate-900 bg-slate-50"
+                            >
                                 {isEditable ? (
                                     <div className="flex flex-col gap-2">
-                                        {/* Program Name Input Section */}
-                                        {!showProgramInput ? (
-                                            <div className="flex justify-center">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowProgramInput(true)}
-                                                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-300 rounded shadow-2xs transition cursor-pointer"
-                                                    title="Click to input Program Name"
-                                                >
-                                                    <Plus className="w-3.5 h-3.5" />
-                                                    Program Name
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-1 bg-blue-50/60 p-2 rounded-md border border-blue-200">
-                                                <div className="flex items-center justify-between text-[10px] font-bold text-blue-900 px-0.5">
-                                                    <span>Program Name:</span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            if (onProgramNameChange) onProgramNameChange('');
-                                                            setShowProgramInput(false);
-                                                        }}
-                                                        className="text-[10px] text-rose-600 hover:text-rose-800 font-semibold px-1 rounded hover:bg-rose-50 cursor-pointer"
-                                                        title="Remove Program Name"
-                                                    >
-                                                        ✕ Remove
-                                                    </button>
-                                                </div>
-                                                <textarea
-                                                    value={programName || ''}
-                                                    onChange={(e) => onProgramNameChange && onProgramNameChange(e.target.value)}
-                                                    rows={2}
-                                                    placeholder="Input Program Name here..."
-                                                    className="w-full text-[11px] p-2 font-bold text-center border border-blue-300 rounded bg-white text-blue-950 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 leading-snug resize-y placeholder:font-normal placeholder:italic placeholder:text-slate-400"
-                                                />
-                                            </div>
-                                        )}
+                                        {/* Searchable Program Name Dropdown */}
+                                        <ProgramNameCombobox
+                                            value={programName || ''}
+                                            selectedId={programNameId}
+                                            onSelectId={onProgramNameIdChange}
+                                            programNames={programNames}
+                                            onChange={(newVal, record) => {
+                                                if (onProgramNameChange) onProgramNameChange(newVal);
+                                                if (onProgramNameIdChange) onProgramNameIdChange(record ? record.id : null);
+                                            }}
+                                            placeholder="Search Program Name..."
+                                        />
 
-                                        <textarea
+                                        <AccountCodeCombobox
                                             value={(accountCode !== undefined && accountCode !== null && onAccountCodeChange ? accountCode : (items.find(i => i.is_header)?.description || '')) || ''}
-                                            onChange={(e) => {
+                                            selectedId={accountCodeId}
+                                            onSelectId={onAccountCodeIdChange}
+                                            accountCodes={accountCodes}
+                                            onChange={(newVal, record) => {
                                                 if (onAccountCodeChange) {
-                                                    onAccountCodeChange(e.target.value);
+                                                    onAccountCodeChange(newVal);
+                                                }
+                                                if (onAccountCodeIdChange && record) {
+                                                    onAccountCodeIdChange(record.id);
                                                 }
                                                 const headerIdx = items.findIndex(i => i.is_header);
                                                 if (headerIdx >= 0) {
-                                                    onUpdateItem(headerIdx, 'description', e.target.value);
+                                                    onUpdateItem(headerIdx, 'description', newVal);
                                                 } else if (!onAccountCodeChange) {
-                                                    onAddItem({ is_header: true, description: e.target.value });
+                                                    onAddItem({ is_header: true, description: newVal });
                                                 }
                                             }}
-                                            rows={2}
-                                            placeholder="Semi-Expendable Furnitures, Fixtures & Books Expenses&#10;5-02-03-220"
-                                            className="w-full text-[11px] p-2 font-bold text-center border border-slate-400 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 leading-snug resize-y placeholder:font-normal placeholder:italic placeholder:text-slate-400"
+                                            placeholder="Search Account Code (e.g. 5-02-03-220 or Office Supplies)..."
                                         />
                                     </div>
                                 ) : (
@@ -431,7 +484,7 @@ export const ProcurementPlanTable = ({
                                         {formatDescription6Words(accountCode || items.find(i => i.is_header)?.description || '')}
                                     </div>
                                 )}
-                            </td>
+                            </CommentableCell>
                             <td className="p-2"></td>
                             <td className="p-2"></td>
                             <td className="p-2"></td>
@@ -458,7 +511,26 @@ export const ProcurementPlanTable = ({
                                 return (
                                 <tr key={item.id || index} className="divide-x divide-slate-200 hover:bg-slate-50 transition-colors">
                                     {/* Description & Objective */}
-                                    <td className="p-2 align-top">
+                                    <CommentableCell
+                                        itemId={item.id}
+                                        itemNo={realIdx + 1}
+                                        fieldKey="description"
+                                        fieldLabel="General Description and Objective"
+                                        cellValue={item.description}
+                                        comments={cellComments}
+                                        changeLogs={changeLogs}
+                                        canComment={canComment}
+                                        canComply={canComply}
+                                        currentUser={currentUser}
+                                        activeCellKey={activeCellKey}
+                                        setActiveCellKey={setActiveCellKey}
+                                        onAddCellComment={onAddCellComment}
+                                        onDeleteCellComment={onDeleteCellComment}
+                                        onComplyCellComment={onComplyCellComment}
+                                        onUncomplyCellComment={onUncomplyCellComment}
+                                        className="align-top"
+                                    
+                                        onUpdateCellValue={getCellUpdateHandler('description', 'General Description and Objective', item, realIdx)}>
                                         {isEditable ? (
                                             <textarea
                                                 value={item.description || ''}
@@ -473,12 +545,30 @@ export const ProcurementPlanTable = ({
                                                 {formatDescription6Words(item.description)}
                                             </div>
                                         )}
-                                    </td>
+                                    </CommentableCell>
 
                                     {!item.is_header && (
                                         <>
                                             {/* Type of Project */}
-                                            <td className="p-2">
+                                            <CommentableCell
+                                                itemId={item.id}
+                                                itemNo={realIdx + 1}
+                                                fieldKey="project_type"
+                                                fieldLabel="Type of Project"
+                                                cellValue={item.project_type || 'Goods'}
+                                                comments={cellComments}
+                                        changeLogs={changeLogs}
+                                                canComment={canComment}
+                                                canComply={canComply}
+                                                currentUser={currentUser}
+                                                activeCellKey={activeCellKey}
+                                                setActiveCellKey={setActiveCellKey}
+                                                onAddCellComment={onAddCellComment}
+                                                onDeleteCellComment={onDeleteCellComment}
+                                                onComplyCellComment={onComplyCellComment}
+                                                onUncomplyCellComment={onUncomplyCellComment}
+                                            
+                                        onUpdateCellValue={getCellUpdateHandler('project_type', 'Type of Project', item, realIdx)}>
                                                 {isEditable ? (
                                                     <select
                                                         value={item.project_type || 'Goods'}
@@ -492,10 +582,29 @@ export const ProcurementPlanTable = ({
                                                 ) : (
                                                     <span className="text-slate-800">{item.project_type || 'Goods'}</span>
                                                 )}
-                                            </td>
+                                            </CommentableCell>
 
                                             {/* Quantity & Size */}
-                                            <td className="p-2 align-top">
+                                            <CommentableCell
+                                                itemId={item.id}
+                                                itemNo={realIdx + 1}
+                                                fieldKey="quantity_size"
+                                                fieldLabel="Quantity and Size"
+                                                cellValue={item.quantity_size}
+                                                comments={cellComments}
+                                        changeLogs={changeLogs}
+                                                canComment={canComment}
+                                                canComply={canComply}
+                                                currentUser={currentUser}
+                                                activeCellKey={activeCellKey}
+                                                setActiveCellKey={setActiveCellKey}
+                                                onAddCellComment={onAddCellComment}
+                                                onDeleteCellComment={onDeleteCellComment}
+                                                onComplyCellComment={onComplyCellComment}
+                                                onUncomplyCellComment={onUncomplyCellComment}
+                                                className="align-top"
+                                            
+                                        onUpdateCellValue={getCellUpdateHandler('quantity_size', 'Quantity and Size', item, realIdx)}>
                                                 {isEditable ? (
                                                     <textarea
                                                         value={item.quantity_size || ''}
@@ -507,10 +616,28 @@ export const ProcurementPlanTable = ({
                                                 ) : (
                                                     <span className="whitespace-pre-wrap">{item.quantity_size || '—'}</span>
                                                 )}
-                                            </td>
+                                            </CommentableCell>
 
                                             {/* Mode of Procurement */}
-                                            <td className="p-2">
+                                            <CommentableCell
+                                                itemId={item.id}
+                                                itemNo={realIdx + 1}
+                                                fieldKey="procurement_mode"
+                                                fieldLabel="Recommended Mode of Procurement"
+                                                cellValue={item.procurement_mode}
+                                                comments={cellComments}
+                                        changeLogs={changeLogs}
+                                                canComment={canComment}
+                                                canComply={canComply}
+                                                currentUser={currentUser}
+                                                activeCellKey={activeCellKey}
+                                                setActiveCellKey={setActiveCellKey}
+                                                onAddCellComment={onAddCellComment}
+                                                onDeleteCellComment={onDeleteCellComment}
+                                                onComplyCellComment={onComplyCellComment}
+                                                onUncomplyCellComment={onUncomplyCellComment}
+                                            
+                                        onUpdateCellValue={getCellUpdateHandler('procurement_mode', 'Recommended Mode of Procurement', item, realIdx)}>
                                                 {isEditable ? (
                                                     <select
                                                         value={item.procurement_mode || (modesList[0]?.name || 'Competitive Bidding (RA 12009)')}
@@ -532,10 +659,29 @@ export const ProcurementPlanTable = ({
                                                 ) : (
                                                     <span className="font-medium text-slate-800">{item.procurement_mode}</span>
                                                 )}
-                                            </td>
+                                            </CommentableCell>
 
                                             {/* Pre-Proc Conf */}
-                                            <td className="p-2 text-center">
+                                            <CommentableCell
+                                                itemId={item.id}
+                                                itemNo={realIdx + 1}
+                                                fieldKey="pre_proc_conference"
+                                                fieldLabel="Pre-Procurement Conference"
+                                                cellValue={item.pre_proc_conference ? 'YES' : 'NO'}
+                                                comments={cellComments}
+                                        changeLogs={changeLogs}
+                                                canComment={canComment}
+                                                canComply={canComply}
+                                                currentUser={currentUser}
+                                                activeCellKey={activeCellKey}
+                                                setActiveCellKey={setActiveCellKey}
+                                                onAddCellComment={onAddCellComment}
+                                                onDeleteCellComment={onDeleteCellComment}
+                                                onComplyCellComment={onComplyCellComment}
+                                                onUncomplyCellComment={onUncomplyCellComment}
+                                                className="text-center"
+                                            
+                                        onUpdateCellValue={getCellUpdateHandler('pre_proc_conference', 'Pre-Procurement Conference', item, realIdx)}>
                                                 {isEditable ? (
                                                     <div className="flex flex-col items-center justify-center gap-0.5">
                                                         <input
@@ -556,10 +702,29 @@ export const ProcurementPlanTable = ({
                                                         {item.pre_proc_conference ? 'YES' : 'NO'}
                                                     </span>
                                                 )}
-                                            </td>
+                                            </CommentableCell>
 
                                             {/* Start Activity */}
-                                            <td className="p-2 text-center align-top">
+                                            <CommentableCell
+                                                itemId={item.id}
+                                                itemNo={realIdx + 1}
+                                                fieldKey="start_date"
+                                                fieldLabel="Start of Procurement Activity"
+                                                cellValue={item.start_date}
+                                                comments={cellComments}
+                                        changeLogs={changeLogs}
+                                                canComment={canComment}
+                                                canComply={canComply}
+                                                currentUser={currentUser}
+                                                activeCellKey={activeCellKey}
+                                                setActiveCellKey={setActiveCellKey}
+                                                onAddCellComment={onAddCellComment}
+                                                onDeleteCellComment={onDeleteCellComment}
+                                                onComplyCellComment={onComplyCellComment}
+                                                onUncomplyCellComment={onUncomplyCellComment}
+                                                className="text-center align-top"
+                                            
+                                        onUpdateCellValue={getCellUpdateHandler('start_date', 'Start of Procurement Activity', item, realIdx)}>
                                                 {isEditable ? (
                                                     <MonthRangeInput
                                                         value={item.start_date}
@@ -568,10 +733,29 @@ export const ProcurementPlanTable = ({
                                                 ) : (
                                                     <span>{formatMonthYear(item.start_date)}</span>
                                                 )}
-                                            </td>
+                                            </CommentableCell>
 
                                             {/* End Activity */}
-                                            <td className="p-2 text-center align-top">
+                                            <CommentableCell
+                                                itemId={item.id}
+                                                itemNo={realIdx + 1}
+                                                fieldKey="end_date"
+                                                fieldLabel="End of Procurement Activity"
+                                                cellValue={item.end_date}
+                                                comments={cellComments}
+                                        changeLogs={changeLogs}
+                                                canComment={canComment}
+                                                canComply={canComply}
+                                                currentUser={currentUser}
+                                                activeCellKey={activeCellKey}
+                                                setActiveCellKey={setActiveCellKey}
+                                                onAddCellComment={onAddCellComment}
+                                                onDeleteCellComment={onDeleteCellComment}
+                                                onComplyCellComment={onComplyCellComment}
+                                                onUncomplyCellComment={onUncomplyCellComment}
+                                                className="text-center align-top"
+                                            
+                                        onUpdateCellValue={getCellUpdateHandler('end_date', 'End of Procurement Activity', item, realIdx)}>
                                                 {isEditable ? (
                                                     <MonthRangeInput
                                                         value={item.end_date}
@@ -580,10 +764,29 @@ export const ProcurementPlanTable = ({
                                                 ) : (
                                                     <span>{formatMonthYear(item.end_date)}</span>
                                                 )}
-                                            </td>
+                                            </CommentableCell>
 
                                             {/* Expected Delivery Period */}
-                                            <td className="p-2 text-center align-top">
+                                            <CommentableCell
+                                                itemId={item.id}
+                                                itemNo={realIdx + 1}
+                                                fieldKey="delivery_period"
+                                                fieldLabel="Expected Delivery / Implementation Period"
+                                                cellValue={item.delivery_period}
+                                                comments={cellComments}
+                                        changeLogs={changeLogs}
+                                                canComment={canComment}
+                                                canComply={canComply}
+                                                currentUser={currentUser}
+                                                activeCellKey={activeCellKey}
+                                                setActiveCellKey={setActiveCellKey}
+                                                onAddCellComment={onAddCellComment}
+                                                onDeleteCellComment={onDeleteCellComment}
+                                                onComplyCellComment={onComplyCellComment}
+                                                onUncomplyCellComment={onUncomplyCellComment}
+                                                className="text-center align-top"
+                                            
+                                        onUpdateCellValue={getCellUpdateHandler('delivery_period', 'Expected Delivery / Implementation Period', item, realIdx)}>
                                                 {isEditable ? (
                                                     <MonthRangeInput
                                                         value={item.delivery_period}
@@ -592,25 +795,66 @@ export const ProcurementPlanTable = ({
                                                 ) : (
                                                     <span>{formatMonthYear(item.delivery_period)}</span>
                                                 )}
-                                            </td>
+                                            </CommentableCell>
 
                                             {/* Source of Funds */}
-                                            <td className="p-2 align-top">
+                                            <CommentableCell
+                                                itemId={item.id}
+                                                itemNo={realIdx + 1}
+                                                fieldKey="source_of_fund"
+                                                fieldLabel="Source of Funds"
+                                                cellValue={item.source_of_fund}
+                                                comments={cellComments}
+                                        changeLogs={changeLogs}
+                                                canComment={canComment}
+                                                canComply={canComply}
+                                                currentUser={currentUser}
+                                                activeCellKey={activeCellKey}
+                                                setActiveCellKey={setActiveCellKey}
+                                                onAddCellComment={onAddCellComment}
+                                                onDeleteCellComment={onDeleteCellComment}
+                                                onComplyCellComment={onComplyCellComment}
+                                                onUncomplyCellComment={onUncomplyCellComment}
+                                                className="align-top"
+                                            
+                                        onUpdateCellValue={getCellUpdateHandler('source_of_fund', 'Source of Funds', item, realIdx)}>
                                                 {isEditable ? (
-                                                    <textarea
+                                                    <SourceOfFundCombobox
                                                         value={item.source_of_fund || ''}
-                                                        onChange={(e) => onUpdateItem(realIdx, 'source_of_fund', e.target.value)}
-                                                        placeholder="Enter source of funds..."
-                                                        rows={3}
-                                                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none resize-y leading-tight"
+                                                        onChange={(val) => onUpdateItem(realIdx, 'source_of_fund', val)}
+                                                        selectedId={item.fund_source_id}
+                                                        onSelectId={(id) => onUpdateItem(realIdx, 'fund_source_id', id)}
+                                                        fiscalYear={fiscalYear}
+                                                        fundSources={fundSources}
+                                                        workflowRoute={workflowRoute}
+                                                        placeholder="Select source of funds..."
                                                     />
                                                 ) : (
                                                     <span className="whitespace-pre-wrap">{item.source_of_fund || '—'}</span>
                                                 )}
-                                            </td>
+                                            </CommentableCell>
 
                                             {/* Estimated Budget */}
-                                            <td className="p-2 text-right">
+                                            <CommentableCell
+                                                itemId={item.id}
+                                                itemNo={realIdx + 1}
+                                                fieldKey="estimated_budget"
+                                                fieldLabel="Estimated Budget / Authorized Allocation"
+                                                cellValue={formatCurrency(item.estimated_budget)}
+                                                comments={cellComments}
+                                        changeLogs={changeLogs}
+                                                canComment={canComment}
+                                                canComply={canComply}
+                                                currentUser={currentUser}
+                                                activeCellKey={activeCellKey}
+                                                setActiveCellKey={setActiveCellKey}
+                                                onAddCellComment={onAddCellComment}
+                                                onDeleteCellComment={onDeleteCellComment}
+                                                onComplyCellComment={onComplyCellComment}
+                                                onUncomplyCellComment={onUncomplyCellComment}
+                                                className="text-right"
+                                            
+                                        onUpdateCellValue={getCellUpdateHandler('estimated_budget', 'Estimated Budget / Authorized Allocation', item, realIdx)}>
                                                 {isEditable ? (
                                                     <input
                                                         type="number"
@@ -629,10 +873,29 @@ export const ProcurementPlanTable = ({
                                                         {formatCurrency(item.estimated_budget)}
                                                     </span>
                                                 )}
-                                            </td>
+                                            </CommentableCell>
 
                                             {/* Attached Supporting Documents */}
-                                            <td className="p-2 align-top min-w-[170px]">
+                                            <CommentableCell
+                                                itemId={item.id}
+                                                itemNo={realIdx + 1}
+                                                fieldKey="supporting_docs_text"
+                                                fieldLabel="Attached Supporting Documents"
+                                                cellValue={item.supporting_docs_text}
+                                                comments={cellComments}
+                                        changeLogs={changeLogs}
+                                                canComment={canComment}
+                                                canComply={canComply}
+                                                currentUser={currentUser}
+                                                activeCellKey={activeCellKey}
+                                                setActiveCellKey={setActiveCellKey}
+                                                onAddCellComment={onAddCellComment}
+                                                onDeleteCellComment={onDeleteCellComment}
+                                                onComplyCellComment={onComplyCellComment}
+                                                onUncomplyCellComment={onUncomplyCellComment}
+                                                className="align-top min-w-[170px]"
+                                            
+                                        onUpdateCellValue={getCellUpdateHandler('supporting_docs_text', 'Attached Supporting Documents', item, realIdx)}>
                                                 {isEditable ? (
                                                     <SupportingDocsDropdown
                                                         value={item.supporting_docs_text || ''}
@@ -661,10 +924,29 @@ export const ProcurementPlanTable = ({
                                                         <span className="text-slate-400 italic text-[11px]">—</span>
                                                     )
                                                 )}
-                                            </td>
+                                            </CommentableCell>
 
                                             {/* Remarks */}
-                                            <td className="p-2 align-top">
+                                            <CommentableCell
+                                                itemId={item.id}
+                                                itemNo={realIdx + 1}
+                                                fieldKey="remarks"
+                                                fieldLabel="Remarks"
+                                                cellValue={item.remarks}
+                                                comments={cellComments}
+                                        changeLogs={changeLogs}
+                                                canComment={canComment}
+                                                canComply={canComply}
+                                                currentUser={currentUser}
+                                                activeCellKey={activeCellKey}
+                                                setActiveCellKey={setActiveCellKey}
+                                                onAddCellComment={onAddCellComment}
+                                                onDeleteCellComment={onDeleteCellComment}
+                                                onComplyCellComment={onComplyCellComment}
+                                                onUncomplyCellComment={onUncomplyCellComment}
+                                                className="align-top"
+                                            
+                                        onUpdateCellValue={getCellUpdateHandler('remarks', 'Remarks', item, realIdx)}>
                                                 {isEditable ? (
                                                     <textarea
                                                         value={item.remarks || ''}
@@ -676,7 +958,7 @@ export const ProcurementPlanTable = ({
                                                 ) : (
                                                     <span className="text-slate-600 whitespace-pre-wrap">{item.remarks || '—'}</span>
                                                 )}
-                                            </td>
+                                            </CommentableCell>
                                         </>
                                     )}
 

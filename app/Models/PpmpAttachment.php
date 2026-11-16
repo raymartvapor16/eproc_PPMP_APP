@@ -16,6 +16,8 @@ class PpmpAttachment extends Model
         'original_filename',
         'stored_filename',
         'storage_path',
+        'external_url',
+        'link_description',
         'mime_type',
         'attachment_type',
         'file_size',

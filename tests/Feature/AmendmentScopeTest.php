@@ -172,7 +172,7 @@ class AmendmentScopeTest extends TestCase
         ]);
         $appRegenRes->assertStatus(403);
         $appRegenRes->assertJsonFragment([
-            'message' => 'The Annual Procurement Plan (APP) cannot be modified or regenerated for this revision. The approved request scope is restricted to the PPMP List of Attachment only.'
+            'message' => 'The Annual Procurement Plan (APP) cannot be modified or regenerated for this revision. The approved request scope is restricted to the Detailed Specifications only.'
         ]);
 
         // Attempting to update PPMP items on the reopened PPMP should be forbidden by scope lock
@@ -186,7 +186,7 @@ class AmendmentScopeTest extends TestCase
         ]);
         $itemUpdateRes->assertStatus(403);
         $itemUpdateRes->assertJsonFragment([
-            'message' => 'PPMP items and plan details cannot be modified for this revision. The approved request scope is restricted to the PPMP List of Attachment only.'
+            'message' => 'PPMP items and plan details cannot be modified for this revision. The approved request scope is restricted to the Detailed Specifications only.'
         ]);
 
         // Updating attachment list should succeed
@@ -255,7 +255,53 @@ class AmendmentScopeTest extends TestCase
         ]);
         $attSaveRes->assertStatus(403);
         $attSaveRes->assertJsonFragment([
-            'message' => 'PPMP List of Attachment cannot be modified for this revision. The approved request scope is restricted to PPMP/APP procurement items only.'
+            'message' => 'Detailed Specifications cannot be modified for this revision. The approved request scope is restricted to PPMP/APP procurement items only.'
         ]);
+    }
+
+    public function test_rejects_non_pdf_and_disguised_request_letter_files()
+    {
+        // 1. .url file is rejected
+        $urlFile = UploadedFile::fake()->create('Counter Staff Panel.url', 1, 'application/octet-stream');
+        $res1 = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmpReady->uuid}/request-amendment-or-supplemental", [
+            'request_scope' => 'PPMP_APP',
+            'request_type' => 'SUPPLEMENTAL',
+            'reason' => 'Testing non-pdf upload rejection.',
+            'letter_file' => $urlFile,
+        ]);
+        $res1->assertStatus(422);
+
+        // 2. Multi-extension disguised file (.exe.pdf) is rejected
+        $disguisedFile = UploadedFile::fake()->createWithContent('malware.exe.pdf', "%PDF-1.4\nMalicious code");
+        $res2 = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmpReady->uuid}/request-amendment-or-supplemental", [
+            'request_scope' => 'PPMP_APP',
+            'request_type' => 'SUPPLEMENTAL',
+            'reason' => 'Testing disguised upload rejection.',
+            'letter_file' => $disguisedFile,
+        ]);
+        $res2->assertStatus(422)
+            ->assertJsonPath('message', 'Security Error: Suspicious disguised multi-extension filename detected.');
+
+        // 3. Fake PDF without %PDF- header is rejected
+        $fakePdf = UploadedFile::fake()->createWithContent('letter.pdf', "This is not a pdf file");
+        $res3 = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmpReady->uuid}/request-amendment-or-supplemental", [
+            'request_scope' => 'PPMP_APP',
+            'request_type' => 'SUPPLEMENTAL',
+            'reason' => 'Testing invalid header rejection.',
+            'letter_file' => $fakePdf,
+        ]);
+        $res3->assertStatus(422)
+            ->assertJsonPath('message', 'Security Error: Invalid file content. The uploaded document does not have a genuine PDF header.');
+
+        // 4. PDF exceeding 5MB (5120 KB) is rejected
+        $oversizedPdf = UploadedFile::fake()->create('large_letter.pdf', 6000, 'application/pdf');
+        $res4 = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmpReady->uuid}/request-amendment-or-supplemental", [
+            'request_scope' => 'PPMP_APP',
+            'request_type' => 'SUPPLEMENTAL',
+            'reason' => 'Testing oversized file rejection.',
+            'letter_file' => $oversizedPdf,
+        ]);
+        $res4->assertStatus(422)
+            ->assertJsonValidationErrors(['letter_file']);
     }
 }

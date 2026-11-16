@@ -14,7 +14,7 @@ const DEFAULT_FALLBACK_DOCS = [
     { id: 'def_1', name: '3 Pre Canvass', description: 'At least three canvass price quotations' },
     { id: 'def_2', name: 'Market Scoping', description: 'Market price analysis / scoping report' },
     { id: 'def_3', name: 'Latest PO', description: 'Copy of latest purchase order' },
-    { id: 'def_4', name: 'List of Attachment', description: 'Summary list of all project attachments' },
+    { id: 'def_4', name: 'Detailed Specifications', description: 'Detailed procurement item specifications breakdown' },
     { id: 'def_5', name: 'Activity Design / Project Proposal', description: 'Approved activity design or proposal' },
     { id: 'def_6', name: 'Technical Specifications', description: 'Detailed technical specifications sheet' },
     { id: 'def_7', name: 'Purchase Request (PR)', description: 'Signed purchase request' },

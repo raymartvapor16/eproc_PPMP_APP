@@ -111,6 +111,14 @@ class SystemSetting extends Model
     }
 
     /**
+     * Check if Cloudflare Turnstile security verification is enabled on Login & Registration.
+     */
+    public static function isTurnstileEnabled(): bool
+    {
+        return (bool) static::get('turnstile_enabled', true);
+    }
+
+    /**
      * Get signature insertion settings for PPMP, APP, and Attachment List.
      */
     public static function getSignatureSettings(): array

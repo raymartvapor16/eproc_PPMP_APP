@@ -22,6 +22,7 @@ import {
     ExternalLink,
 } from 'lucide-react';
 import { supplierEvaluationService } from '../../services/api';
+import { showConfirm } from '../../utils/modalAlert';
 import {
     CRITERIA_WEIGHT_MAP,
     RATING_DESCRIPTIONS,
@@ -79,6 +80,16 @@ export function EvaluateOrViewModal({
         }
     }, [evaluation, approvedPdfs]);
 
+    // Live Asia/Manila (Philippines timezone) clock during active evaluation / signing
+    const [livePhTime, setLivePhTime] = useState(() => getNowPhDateTime());
+    useEffect(() => {
+        if (!evaluation) return;
+        const timer = setInterval(() => {
+            setLivePhTime(getNowPhDateTime());
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [evaluation]);
+
     if (!evaluation) return null;
 
     const isReadOnly = mode === 'view';
@@ -106,15 +117,6 @@ export function EvaluateOrViewModal({
             (a.role || '').toLowerCase().trim()
         )
     );
-
-    // Live Asia/Manila (Philippines timezone) clock during active evaluation / signing
-    const [livePhTime, setLivePhTime] = useState(() => getNowPhDateTime());
-    useEffect(() => {
-        const timer = setInterval(() => {
-            setLivePhTime(getNowPhDateTime());
-        }, 1000);
-        return () => clearInterval(timer);
-    }, []);
 
     // Formatted timestamps in Asia/Manila (PHT) timezone
     const preparedDateStr = formatPhDateTime(preparedBy?.updated_at || preparedBy?.created_at);
@@ -983,8 +985,28 @@ export function PurchaseOrdersModal({
         }
     };
 
+    const validateSupplierPdfFile = (file) => {
+        if (!file) return null;
+        const filename = (file.name || '').toLowerCase();
+        if (!filename.endsWith('.pdf')) {
+            return `"${file.name}" is not a valid PDF. Only official PDF documents (.pdf) are permitted.`;
+        }
+        if (/\.(php|phtml|phar|exe|bat|cmd|sh|vbs|js|jar|py|pl|url|lnk)\.pdf$/i.test(filename)) {
+            return `Security Warning: Disguised executable file naming detected for "${file.name}". Upload rejected.`;
+        }
+        if (file.size > 15 * 1024 * 1024) {
+            return `File size exceeds the 15MB maximum limit (${(file.size / (1024 * 1024)).toFixed(1)} MB). Only PDF documents up to 15MB are allowed in Supplier Evaluation.`;
+        }
+        return null;
+    };
+
     const handleQuickPdfUpload = async (poId, file) => {
         if (!file) return;
+        const valErr = validateSupplierPdfFile(file);
+        if (valErr) {
+            alert(valErr);
+            return;
+        }
         const fd = new FormData();
         fd.append('pdf_po', file);
         try {
@@ -1009,6 +1031,12 @@ export function PurchaseOrdersModal({
             fd.append('status', editForm.status);
             fd.append('remove_pdf', editForm.remove_pdf);
             if (editForm.pdf_file) {
+                const valErr = validateSupplierPdfFile(editForm.pdf_file);
+                if (valErr) {
+                    alert(valErr);
+                    setSavingPo(false);
+                    return;
+                }
                 fd.append('pdf_po', editForm.pdf_file);
             }
             await supplierEvaluationService.updatePurchaseOrder(editingPo.id, fd);
@@ -1033,6 +1061,12 @@ export function PurchaseOrdersModal({
             fd.append('end_user', newPo.end_user);
             fd.append('item', newPo.item || '');
             if (newPo.pdf_file) {
+                const valErr = validateSupplierPdfFile(newPo.pdf_file);
+                if (valErr) {
+                    alert(valErr);
+                    setSavingPo(false);
+                    return;
+                }
                 fd.append('pdf_po', newPo.pdf_file);
             }
             await supplierEvaluationService.createPurchaseOrder(fd);
@@ -2034,6 +2068,13 @@ export function ImportAndAuthorizeModal({ effectiveRole, onClose, onSuccess }) {
     const handleUploadAuthPdf = async (e) => {
         e.preventDefault();
         if (!authPdfFile) return;
+
+        const valErr = validateSupplierPdfFile(authPdfFile);
+        if (valErr) {
+            alert(valErr);
+            return;
+        }
+
         setImporting(true);
         try {
             const fd = new FormData();
@@ -2127,9 +2168,14 @@ export function ImportAndAuthorizeModal({ effectiveRole, onClose, onSuccess }) {
                         onSubmit={handleUploadAuthPdf}
                         className="bg-orange-50/60 border border-orange-200 rounded-2xl p-5 space-y-3"
                     >
-                        <h4 className="font-black text-slate-800 text-sm">
-                            {isAdminOrPgso ? '2. Upload Authorize Personnel PDF' : 'Upload Authorize Personnel PDF'}
-                        </h4>
+                        <div className="flex items-center justify-between">
+                            <h4 className="font-black text-slate-800 text-sm">
+                                {isAdminOrPgso ? '2. Upload Authorize Personnel PDF' : 'Upload Authorize Personnel PDF'}
+                            </h4>
+                            <span className="text-[10px] font-bold text-orange-800 bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200">
+                                🔒 PDF Only • Max 15MB
+                            </span>
+                        </div>
                         <div className="flex items-center gap-3">
                             <input
                                 type="file"
@@ -2256,7 +2302,14 @@ export function RecycleBinModal({ onClose, onRestored }) {
     };
 
     const handleForceDelete = async (id) => {
-        if (!window.confirm('Permanently delete this evaluation? This action cannot be undone.')) return;
+        const confirmed = await showConfirm({
+            title: 'Permanently Delete Evaluation',
+            message: 'Permanently delete this evaluation? This action cannot be undone.',
+            confirmText: 'Yes, Permanently Delete',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!confirmed) return;
         await supplierEvaluationService.forceDeleteEvaluation(id);
         loadDeleted();
         if (onRestored) onRestored();

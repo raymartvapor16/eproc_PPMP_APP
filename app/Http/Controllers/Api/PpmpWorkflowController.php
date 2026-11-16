@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AccountCode;
 use App\Models\AuditLog;
 use App\Models\Office;
 use App\Models\Ppmp;
@@ -35,12 +36,24 @@ class PpmpWorkflowController extends Controller
             return response()->json(['message' => 'Only the creator of this PPMP can submit it to the Office Head.'], 403);
         }
 
+        if ($err = $this->validateContinuationRequirements($ppmp)) {
+            return $err;
+        }
+
         if ($ppmp->status === 'DRAFT') {
             return $this->submitForReview($request, $uuid);
         }
 
         if (!in_array($ppmp->status, ['DRAFT', 'HEAD_RETURNED'])) {
             return response()->json(['message' => "Cannot submit to Head in current status: {$ppmp->status}."], 422);
+        }
+
+        $pendingHeadComments = $ppmp->cellComments()->where('status', 'pending')->count();
+        if ($pendingHeadComments > 0) {
+            return response()->json([
+                'message' => "Cannot resubmit to Office Head. You have {$pendingHeadComments} pending reviewer comment(s) on the PPMP form cells that must be complied with first.",
+                'pending_comments_count' => $pendingHeadComments,
+            ], 422);
         }
 
         DB::transaction(function () use ($ppmp, $user) {
@@ -292,6 +305,398 @@ class PpmpWorkflowController extends Controller
     }
 
     /**
+     * Get available reviewers categorized for PPMP review assignment.
+     */
+    public function getAvailableReviewers(Request $request, string $uuid): JsonResponse
+    {
+        $ppmp = Ppmp::with(['items', 'accountCodeRef'])->where('uuid', $uuid)->firstOrFail();
+
+        // 1. Collect all PPMP Account Code IDs and Code strings
+        $extractCodesFromText = function ($text) {
+            if (!$text) return [];
+            $found = [];
+            if (preg_match_all('/\b\d+(?:-\d+)+\b/', (string)$text, $matches)) {
+                $found = $matches[0];
+            }
+            return $found;
+        };
+
+        $ppmpAccountCodeIds = collect([$ppmp->account_code_id])
+            ->filter()
+            ->unique()
+            ->values();
+
+        $ppmpCodeStrings = collect();
+        if ($ppmp->accountCodeRef?->code) {
+            $ppmpCodeStrings->push($ppmp->accountCodeRef->code);
+        }
+        foreach ($extractCodesFromText($ppmp->account_code) as $c) {
+            $ppmpCodeStrings->push($c);
+        }
+        foreach ($ppmp->items as $item) {
+            foreach ($extractCodesFromText($item->description ?? null) as $c) {
+                $ppmpCodeStrings->push($c);
+            }
+        }
+        $ppmpCodeStrings = $ppmpCodeStrings->filter()->unique()->values();
+
+        // Cross-resolve IDs from code strings
+        if ($ppmpCodeStrings->isNotEmpty()) {
+            $lookupIds = AccountCode::whereIn('code', $ppmpCodeStrings)->pluck('id');
+            $ppmpAccountCodeIds = $ppmpAccountCodeIds->merge($lookupIds)->unique()->values();
+        }
+
+        // Cross-resolve code strings from IDs
+        if ($ppmpAccountCodeIds->isNotEmpty()) {
+            $lookupCodes = AccountCode::whereIn('id', $ppmpAccountCodeIds)->pluck('code');
+            $ppmpCodeStrings = $ppmpCodeStrings->merge($lookupCodes)->unique()->values();
+        }
+
+        // 1. TWG Reviewers
+        $twgUsers = User::with('accountCodes')
+            ->where('role', 'twg')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+
+        $twgList = $twgUsers->map(function ($twg) use ($ppmpAccountCodeIds, $ppmpCodeStrings) {
+            $matchingCodeObjs = $twg->accountCodes->filter(function ($ac) use ($ppmpAccountCodeIds, $ppmpCodeStrings) {
+                return $ppmpAccountCodeIds->contains($ac->id) || $ppmpCodeStrings->contains($ac->code);
+            });
+
+            $hasMatch = $matchingCodeObjs->isNotEmpty();
+            $matchingCodesList = $matchingCodeObjs->pluck('code')->unique()->values();
+
+            return [
+                'id' => $twg->id,
+                'name' => $twg->name,
+                'email' => $twg->email,
+                'designation' => $twg->designation,
+                'role' => $twg->role,
+                'profile_photo_path' => $twg->profile_photo_path,
+                'profile_photo_url' => $twg->profile_photo_url,
+                'account_codes' => $twg->accountCodes->map(fn($ac) => [
+                    'id' => $ac->id,
+                    'code' => $ac->code,
+                    'name' => $ac->name,
+                ]),
+                'matches_ppmp_account_code' => $hasMatch,
+                'matching_codes' => $matchingCodesList,
+            ];
+        })->sortByDesc('matches_ppmp_account_code')->values();
+
+        // 2. Budget Officers (PBO)
+        $budgetList = User::where('role', 'budget_officer')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'designation', 'role', 'profile_photo_path']);
+
+        // 3. PACCO Reviewers (Provincial Accounting)
+        $paccoList = User::where('role', 'pacco')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'designation', 'role', 'profile_photo_path']);
+
+        // 4. OPPMO Reviewers
+        $oppmoList = User::where('role', 'oppmo')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'designation', 'role', 'profile_photo_path']);
+
+        $primaryCode = $ppmp->accountCodeRef?->code ?: ($ppmpCodeStrings->first() ?: $ppmp->account_code);
+        $primaryName = $ppmp->accountCodeRef?->name ?: null;
+        if (!$primaryName && $primaryCode) {
+            $primaryName = AccountCode::where('code', $primaryCode)->value('name');
+        }
+
+        return response()->json([
+            'is_trust_fund' => $ppmp->isTrustFund(),
+            'source_of_fund' => $ppmp->source_of_fund,
+            'ppmp_account_code' => $primaryCode,
+            'ppmp_account_name' => $primaryName,
+            'ppmp_program_name' => $ppmp->program_name ?: ($ppmp->programNameRef?->name ?: ''),
+            'ppmp_matching_codes' => $ppmpCodeStrings,
+            'twg_reviewers' => $twgList,
+            'budget_reviewers' => $budgetList,
+            'pacco_reviewers' => $paccoList,
+            'oppmo_reviewers' => $oppmoList,
+            'assigned_reviewers' => [
+                'twg_reviewer_id' => $ppmp->twg_reviewer_id,
+                'budget_reviewer_id' => $ppmp->budget_reviewer_id,
+                'oppmo_reviewer_id' => $ppmp->oppmo_reviewer_id,
+            ],
+        ]);
+    }
+
+    /**
+     * Reassign assigned reviewers for a PPMP (End User, Reviewers, and Admin).
+     */
+    public function reassignReviewers(Request $request, string $uuid): JsonResponse
+    {
+        $user = $request->user();
+        $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
+
+        $isCreator = $ppmp->created_by === $user->id;
+        $isReviewer = in_array($user->role, ['twg', 'budget_officer', 'pacco', 'oppmo', 'head', 'authorized_staff']);
+        $isAdmin = $user->isAdmin();
+
+        if (!$isCreator && !$isReviewer && !$isAdmin) {
+            return response()->json(['message' => 'Unauthorized. Only the PPMP preparer, reviewers, or administrators can reassign reviewers.'], 403);
+        }
+
+        if (in_array($ppmp->status, ['READY_TO_PRINT', 'APPROVED', 'HEAD_APPROVED', 'COMPLETED'])) {
+            return response()->json(['message' => 'Cannot reassign reviewers. This PPMP has completed all reviews and is Ready to Print.'], 422);
+        }
+
+        // Reviewers cannot reassign if they have already approved their stage
+        if ($user->role === 'twg' && ($ppmp->twg_approved_at || in_array($ppmp->status, ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'READY_TO_PRINT', 'HEAD_APPROVED']))) {
+            return response()->json(['message' => 'Unauthorized. BAC-TWG technical review has already been approved.'], 403);
+        }
+        if (in_array($user->role, ['budget_officer', 'pacco']) && ($ppmp->budget_approved_at || $ppmp->pacco_approved_at || in_array($ppmp->status, ['OPPMO_REVIEW', 'READY_TO_PRINT', 'HEAD_APPROVED']))) {
+            return response()->json(['message' => 'Unauthorized. Budget certification review has already been approved.'], 403);
+        }
+        if ($user->role === 'oppmo' && ($ppmp->oppmo_approved_at || in_array($ppmp->status, ['READY_TO_PRINT', 'HEAD_APPROVED']))) {
+            return response()->json(['message' => 'Unauthorized. OPPMO review has already been approved.'], 403);
+        }
+
+        $validated = $request->validate([
+            'twg_reviewer_id' => 'nullable|integer|exists:users,id',
+            'budget_reviewer_id' => 'nullable|integer|exists:users,id',
+            'oppmo_reviewer_id' => 'nullable|integer|exists:users,id',
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        $oldTwgId = $ppmp->twg_reviewer_id;
+        $oldBudgetId = $ppmp->budget_reviewer_id;
+        $oldOppmoId = $ppmp->oppmo_reviewer_id;
+
+        $newTwgId = array_key_exists('twg_reviewer_id', $validated) ? $validated['twg_reviewer_id'] : $oldTwgId;
+        $newBudgetId = array_key_exists('budget_reviewer_id', $validated) ? $validated['budget_reviewer_id'] : $oldBudgetId;
+        $newOppmoId = array_key_exists('oppmo_reviewer_id', $validated) ? $validated['oppmo_reviewer_id'] : $oldOppmoId;
+        $reason = trim($validated['reason'] ?? '');
+
+        // Role-based reassignment restrictions:
+        // A TWG reviewer can only reassign to another TWG reviewer.
+        // A Budget Officer / PACCO reviewer can only reassign to another Budget / PACCO reviewer.
+        // An OPPMO reviewer can only reassign to another OPPMO reviewer.
+        // End-user (preparer) and Administrator can reassign any reviewer.
+        if (!$isAdmin && !$isCreator) {
+            if ($user->role === 'twg') {
+                if ($newBudgetId != $oldBudgetId || $newOppmoId != $oldOppmoId) {
+                    return response()->json([
+                        'message' => 'Unauthorized. As a BAC-TWG reviewer, you may only reassign to another BAC-TWG reviewer.'
+                    ], 403);
+                }
+            } elseif (in_array($user->role, ['budget_officer', 'pacco'])) {
+                if ($newTwgId != $oldTwgId || $newOppmoId != $oldOppmoId) {
+                    return response()->json([
+                        'message' => 'Unauthorized. As a Budget/PACCO reviewer, you may only reassign to another Budget/PACCO reviewer.'
+                    ], 403);
+                }
+            } elseif ($user->role === 'oppmo') {
+                if ($newTwgId != $oldTwgId || $newBudgetId != $oldBudgetId) {
+                    return response()->json([
+                        'message' => 'Unauthorized. As an OPPMO reviewer, you may only reassign to another OPPMO reviewer.'
+                    ], 403);
+                }
+            }
+        }
+
+        // Validate target reviewer roles and stages
+        if ($newTwgId && $newTwgId != $oldTwgId) {
+            if ($ppmp->twg_approved_at || in_array($ppmp->status, ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'READY_TO_PRINT', 'HEAD_APPROVED'])) {
+                return response()->json(['message' => 'Cannot reassign BAC-TWG reviewer because BAC-TWG technical review has already been approved.'], 422);
+            }
+            $targetTwg = User::find($newTwgId);
+            if (!$targetTwg || $targetTwg->role !== 'twg') {
+                return response()->json(['message' => 'Selected TWG reviewer must have the BAC-TWG Reviewer role.'], 422);
+            }
+        }
+        if ($newBudgetId && $newBudgetId != $oldBudgetId) {
+            if ($ppmp->budget_approved_at || $ppmp->pacco_approved_at || in_array($ppmp->status, ['OPPMO_REVIEW', 'READY_TO_PRINT', 'HEAD_APPROVED'])) {
+                return response()->json(['message' => 'Cannot reassign Budget/PACCO reviewer because budget certification has already been approved.'], 422);
+            }
+            $targetBudget = User::find($newBudgetId);
+            if (!$targetBudget || !in_array($targetBudget->role, ['budget_officer', 'pacco'])) {
+                return response()->json(['message' => 'Selected Budget reviewer must have the Budget Officer or PACCO role.'], 422);
+            }
+        }
+        if ($newOppmoId && $newOppmoId != $oldOppmoId) {
+            if ($ppmp->oppmo_approved_at || in_array($ppmp->status, ['READY_TO_PRINT', 'HEAD_APPROVED'])) {
+                return response()->json(['message' => 'Cannot reassign OPPMO reviewer because OPPMO review has already been approved.'], 422);
+            }
+            $targetOppmo = User::find($newOppmoId);
+            if (!$targetOppmo || $targetOppmo->role !== 'oppmo') {
+                return response()->json(['message' => 'Selected OPPMO reviewer must have the OPPMO Reviewer role.'], 422);
+            }
+        }
+
+        $now = now();
+        $idLabel = $this->getPpmpIdentifier($ppmp);
+        $reasonSuffix = $reason ? " (Reason: {$reason})" : '';
+        $changes = [];
+
+        // 1. Process TWG Reassignment
+        if ($newTwgId != $oldTwgId) {
+            $ppmp->twg_reviewer_id = $newTwgId;
+            $newTwg = User::find($newTwgId);
+            $changes[] = 'TWG: ' . ($newTwg ? $newTwg->name : 'Unassigned');
+
+            // If currently in TWG_REVIEW, the new reviewer must receive the PPMP first for monitoring purposes
+            if ($ppmp->status === 'TWG_REVIEW') {
+                $ppmp->twg_received_at = null;
+
+                PpmpRoute::where('ppmp_id', $ppmp->id)
+                    ->where('to_role', 'twg')
+                    ->whereNull('acted_at')
+                    ->update([
+                        'to_user_id' => $newTwgId,
+                        'received_at' => null,
+                    ]);
+
+                PpmpRoute::create([
+                    'ppmp_id' => $ppmp->id,
+                    'from_user_id' => $user->id,
+                    'to_user_id' => $newTwgId,
+                    'from_role' => $user->role,
+                    'to_role' => 'twg',
+                    'action' => 'REASSIGNED',
+                    'status' => 'TWG_REVIEW',
+                    'remarks' => "PPMP reassigned to BAC-TWG reviewer {$newTwg->name} by {$user->name}." . ($reason ? " Reason: {$reason}" : ''),
+                    'submitted_at' => $now,
+                    'received_at' => null, // Awaiting receipt by new reviewer
+                ]);
+
+                if ($newTwgId) {
+                    SystemNotification::notify(
+                        $newTwgId,
+                        'PPMP Reassigned for Technical Review',
+                        "PPMP {$idLabel} ({$ppmp->title}) was reassigned to you for BAC-TWG technical review by {$user->name}{$reasonSuffix}. Please receive the document to proceed.",
+                        $ppmp->id,
+                        'info'
+                    );
+                }
+            }
+        }
+
+        // 2. Process Budget / PACCO Reassignment
+        if ($newBudgetId != $oldBudgetId) {
+            $ppmp->budget_reviewer_id = $newBudgetId;
+            $newBudget = User::find($newBudgetId);
+            $changes[] = 'Budget/PACCO: ' . ($newBudget ? $newBudget->name : 'Unassigned');
+
+            if (in_array($ppmp->status, ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW'])) {
+                $targetRole = $ppmp->status === 'PACCO_REVIEW' ? 'pacco' : 'budget_officer';
+
+                if ($ppmp->status === 'PACCO_REVIEW') {
+                    $ppmp->pacco_received_at = null;
+                } else {
+                    $ppmp->budget_received_at = null;
+                }
+
+                PpmpRoute::where('ppmp_id', $ppmp->id)
+                    ->where('to_role', $targetRole)
+                    ->whereNull('acted_at')
+                    ->update([
+                        'to_user_id' => $newBudgetId,
+                        'received_at' => null,
+                    ]);
+
+                PpmpRoute::create([
+                    'ppmp_id' => $ppmp->id,
+                    'from_user_id' => $user->id,
+                    'to_user_id' => $newBudgetId,
+                    'from_role' => $user->role,
+                    'to_role' => $targetRole,
+                    'action' => 'REASSIGNED',
+                    'status' => $ppmp->status,
+                    'remarks' => "PPMP reassigned to {$newBudget->name} by {$user->name}." . ($reason ? " Reason: {$reason}" : ''),
+                    'submitted_at' => $now,
+                    'received_at' => null,
+                ]);
+
+                if ($newBudgetId) {
+                    SystemNotification::notify(
+                        $newBudgetId,
+                        'PPMP Reassigned for Review',
+                        "PPMP {$idLabel} ({$ppmp->title}) was reassigned to you for review by {$user->name}{$reasonSuffix}. Please receive the document to proceed.",
+                        $ppmp->id,
+                        'info'
+                    );
+                }
+            }
+        }
+
+        // 3. Process OPPMO Reassignment
+        if ($newOppmoId != $oldOppmoId) {
+            $ppmp->oppmo_reviewer_id = $newOppmoId;
+            $newOppmo = User::find($newOppmoId);
+            $changes[] = 'OPPMO: ' . ($newOppmo ? $newOppmo->name : 'Unassigned');
+
+            if ($ppmp->status === 'OPPMO_REVIEW') {
+                $ppmp->oppmo_received_at = null;
+
+                PpmpRoute::where('ppmp_id', $ppmp->id)
+                    ->where('to_role', 'oppmo')
+                    ->whereNull('acted_at')
+                    ->update([
+                        'to_user_id' => $newOppmoId,
+                        'received_at' => null,
+                    ]);
+
+                PpmpRoute::create([
+                    'ppmp_id' => $ppmp->id,
+                    'from_user_id' => $user->id,
+                    'to_user_id' => $newOppmoId,
+                    'from_role' => $user->role,
+                    'to_role' => 'oppmo',
+                    'action' => 'REASSIGNED',
+                    'status' => 'OPPMO_REVIEW',
+                    'remarks' => "PPMP reassigned to OPPMO reviewer {$newOppmo->name} by {$user->name}." . ($reason ? " Reason: {$reason}" : ''),
+                    'submitted_at' => $now,
+                    'received_at' => null,
+                ]);
+
+                if ($newOppmoId) {
+                    SystemNotification::notify(
+                        $newOppmoId,
+                        'PPMP Reassigned for Review',
+                        "PPMP {$idLabel} ({$ppmp->title}) was reassigned to you for OPPMO evaluation by {$user->name}{$reasonSuffix}. Please receive the document to proceed.",
+                        $ppmp->id,
+                        'info'
+                    );
+                }
+            }
+        }
+
+        $ppmp->save();
+
+        $changeDesc = implode(', ', $changes);
+
+        AuditLog::log('PPMP_REVIEWERS_REASSIGNED', 'ppmps', $ppmp->id, null, [
+            'changes' => $changes,
+            'reason' => $reason,
+            'twg_reviewer_id' => $newTwgId,
+            'budget_reviewer_id' => $newBudgetId,
+            'oppmo_reviewer_id' => $newOppmoId,
+        ], $user->id);
+
+        return response()->json([
+            'message' => 'Assigned reviewers updated successfully.' . ($changes ? " ({$changeDesc})" : ''),
+            'ppmp' => $ppmp->fresh([
+                'office.head',
+                'creator',
+                'signatures.user',
+                'routes.fromUser',
+                'routes.toUser',
+                'twgReviewer',
+                'budgetReviewer',
+                'oppmoReviewer',
+            ]),
+        ]);
+    }
+
+    /**
      * 3. Submit PPMP for formal government review
      * HEAD_APPROVED / RETURNED -> BUDGET_OFFICER_REVIEW (or appropriate reviewer)
      */
@@ -318,12 +723,41 @@ class PpmpWorkflowController extends Controller
             return response()->json(['message' => "PPMP cannot be submitted for review from status {$ppmp->status}."], 422);
         }
 
+        $pendingCellComments = $ppmp->cellComments()->where('status', 'pending')->count();
+        if ($pendingCellComments > 0) {
+            return response()->json([
+                'message' => "Cannot submit for review. You have {$pendingCellComments} pending reviewer comment(s) on the PPMP form cells that must be complied with first.",
+                'pending_comments_count' => $pendingCellComments,
+            ], 422);
+        }
+
+        if ($err = $this->validateContinuationRequirements($ppmp)) {
+            return $err;
+        }
+
+        $validated = $request->validate([
+            'twg_reviewer_id' => 'nullable|integer|exists:users,id',
+            'budget_reviewer_id' => 'nullable|integer|exists:users,id',
+            'oppmo_reviewer_id' => 'nullable|integer|exists:users,id',
+        ]);
+
+        if (array_key_exists('twg_reviewer_id', $validated)) {
+            $ppmp->twg_reviewer_id = $validated['twg_reviewer_id'];
+        }
+        if (array_key_exists('budget_reviewer_id', $validated)) {
+            $ppmp->budget_reviewer_id = $validated['budget_reviewer_id'];
+        }
+        if (array_key_exists('oppmo_reviewer_id', $validated)) {
+            $ppmp->oppmo_reviewer_id = $validated['oppmo_reviewer_id'];
+        }
+        $ppmp->save();
+
         // Before submitting for review: PPMP List of Attachment and Market Scoping PDF must be generated and attached
         // Note: Annual Procurement Plan (APP) is generated exclusively by OPPMO after BAC-TWG technical review
         $missingRequirements = [];
 
         if (!$ppmp->hasAttachmentListGenerated()) {
-            $missingRequirements[] = 'PPMP List of Attachment must be generated';
+            $missingRequirements[] = 'Detailed Specifications must be generated';
         }
 
         if (!$ppmp->hasMarketScopingPdf()) {
@@ -346,17 +780,15 @@ class PpmpWorkflowController extends Controller
             $nextStatus = 'TWG_REVIEW';
             $nextRole = 'twg';
         } else {
-            $isTrust = $ppmp->isTrustFund();
-
             // Determine destination: if returned by a reviewer, route back directly;
-            // Otherwise if from DRAFT/initial: Trust Fund routes to PACCO, General Fund routes to Budget Officer.
+            // Otherwise initial submission routes directly to TWG (first to review is BAC-TWG)
             $nextStatus = match ($ppmp->status) {
                 'PACCO_RETURNED' => 'PACCO_REVIEW',
                 'OPPMO_RETURNED' => 'OPPMO_REVIEW',
                 'TWG_RETURNED' => 'TWG_REVIEW',
                 'BUDGET_OFFICER_RETURNED' => 'BUDGET_OFFICER_REVIEW',
                 'HEAD_RETURNED' => 'HEAD_PENDING',
-                default => $isTrust ? 'PACCO_REVIEW' : 'BUDGET_OFFICER_REVIEW',
+                default => 'TWG_REVIEW',
             };
 
             $nextRole = match ($nextStatus) {
@@ -364,12 +796,20 @@ class PpmpWorkflowController extends Controller
                 'OPPMO_REVIEW' => 'oppmo',
                 'TWG_REVIEW' => 'twg',
                 'HEAD_PENDING' => 'head',
-                default => 'budget_officer',
+                default => 'twg',
             };
         }
 
         DB::transaction(function () use ($ppmp, $user, $nextStatus, $nextRole) {
             $now = now();
+            $previousStatus = $ppmp->status;
+            $isResubmission = in_array($previousStatus, [
+                'TWG_RETURNED',
+                'BUDGET_OFFICER_RETURNED',
+                'PACCO_RETURNED',
+                'OPPMO_RETURNED',
+                'HEAD_RETURNED',
+            ]) || str_ends_with((string)$previousStatus, '_RETURNED');
             $receivedAt = $ppmp->enduser_received_at ?? $now;
 
             // Mark the returned / head approved route to end_user as received
@@ -439,25 +879,47 @@ class PpmpWorkflowController extends Controller
                     );
                 }
             } else {
-                $targetReviewers = User::where('role', $nextRole)->where('is_active', true)->get();
+                $targetReviewerId = null;
+                if ($nextRole === 'twg' && $ppmp->twg_reviewer_id) {
+                    $targetReviewerId = $ppmp->twg_reviewer_id;
+                    $targetReviewers = User::where('id', $targetReviewerId)->where('is_active', true)->get();
+                } elseif (in_array($nextRole, ['budget_officer', 'pacco']) && $ppmp->budget_reviewer_id) {
+                    $targetReviewerId = $ppmp->budget_reviewer_id;
+                    $targetReviewers = User::where('id', $targetReviewerId)->where('is_active', true)->get();
+                } elseif ($nextRole === 'oppmo' && $ppmp->oppmo_reviewer_id) {
+                    $targetReviewerId = $ppmp->oppmo_reviewer_id;
+                    $targetReviewers = User::where('id', $targetReviewerId)->where('is_active', true)->get();
+                } else {
+                    $targetReviewers = User::where('role', $nextRole)->where('is_active', true)->get();
+                    $targetReviewerId = $targetReviewers->first()?->id;
+                }
 
                 PpmpRoute::create([
                     'ppmp_id' => $ppmp->id,
                     'from_user_id' => $user->id,
-                    'to_user_id' => $targetReviewers->first()?->id,
+                    'to_user_id' => $targetReviewerId,
                     'from_role' => 'end_user',
                     'to_role' => $nextRole,
                     'action' => 'SUBMITTED_FOR_REVIEW',
                     'status' => $nextStatus,
-                    'remarks' => "Submitted for review to {$nextRole}.",
+                    'remarks' => $isResubmission
+                        ? "Resubmitted for {$nextRole} review following compliance."
+                        : ($nextStatus === 'TWG_REVIEW'
+                            ? 'Submitted for BAC-TWG technical review.'
+                            : "Resubmitted for review to {$nextRole}."),
                     'submitted_at' => $now,
                 ]);
+
+                $notifTitle = $isResubmission ? 'PPMP Resubmitted for Review' : 'PPMP Submitted for Review';
+                $notifMsg = $isResubmission
+                    ? "PPMP {$idLabel} ({$ppmp->title}) was resubmitted by {$user->name} following compliance."
+                    : "PPMP {$idLabel} ({$ppmp->title}) is ready for your review.";
 
                 foreach ($targetReviewers as $rev) {
                     SystemNotification::notify(
                         $rev->id,
-                        'PPMP Submitted for Review',
-                        "PPMP {$idLabel} ({$ppmp->title}) is ready for your review.",
+                        $notifTitle,
+                        $notifMsg,
                         $ppmp->id,
                         'info'
                     );
@@ -469,7 +931,16 @@ class PpmpWorkflowController extends Controller
 
         return response()->json([
             'message' => 'PPMP submitted for formal review successfully.',
-            'ppmp' => $ppmp->fresh(['office.head', 'creator', 'signatures.user', 'routes.fromUser', 'routes.toUser']),
+            'ppmp' => $ppmp->fresh([
+                'office.head',
+                'creator',
+                'signatures.user',
+                'routes.fromUser',
+                'routes.toUser',
+                'twgReviewer',
+                'budgetReviewer',
+                'oppmoReviewer',
+            ]),
         ]);
     }
 
@@ -484,6 +955,10 @@ class PpmpWorkflowController extends Controller
 
         if (!$user->isBudgetOfficer() && !$user->isAdmin()) {
             return response()->json(['message' => 'Only the Provincial Budget Officer or Admin can certify budget.'], 403);
+        }
+
+        if ($user->isBudgetOfficer() && $ppmp->budget_reviewer_id && $ppmp->budget_reviewer_id !== $user->id && !$user->isAdmin()) {
+            return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different Budget Officer.'], 403);
         }
 
         if ($ppmp->status !== 'BUDGET_OFFICER_REVIEW') {
@@ -531,12 +1006,19 @@ class PpmpWorkflowController extends Controller
                 'user_agent' => request()->userAgent(),
             ]);
 
-            $oppmoUsers = User::where('role', 'oppmo')->where('is_active', true)->get();
+            $targetOppmoId = null;
+            if ($ppmp->oppmo_reviewer_id && User::where('id', $ppmp->oppmo_reviewer_id)->where('is_active', true)->exists()) {
+                $targetOppmoId = $ppmp->oppmo_reviewer_id;
+                $oppmoUsers = User::where('id', $targetOppmoId)->get();
+            } else {
+                $oppmoUsers = User::where('role', 'oppmo')->where('is_active', true)->get();
+                $targetOppmoId = $oppmoUsers->first()?->id;
+            }
 
             PpmpRoute::create([
                 'ppmp_id' => $ppmp->id,
                 'from_user_id' => $user->id,
-                'to_user_id' => $oppmoUsers->first()?->id,
+                'to_user_id' => $targetOppmoId,
                 'from_role' => 'budget_officer',
                 'to_role' => 'oppmo',
                 'action' => 'BUDGET_APPROVED',
@@ -567,51 +1049,267 @@ class PpmpWorkflowController extends Controller
     }
 
     /**
-     * 4b. Budget Officer Returns
-     * BUDGET_OFFICER_REVIEW -> BUDGET_OFFICER_RETURNED
+     * Unified Return Review Endpoint:
+     * Reviewers (or Admin) can return the PPMP to:
+     * - 'end_user': The preparer (standard correction loop)
+     * - 'twg': The assigned BAC-TWG Reviewer (for technical re-evaluation)
+     * - 'budget': The assigned Budget Officer (for budget re-evaluation)
+     * - 'pacco': The assigned PACCO Reviewer (for trust fund re-evaluation)
      */
-    public function budgetReturn(Request $request, string $uuid): JsonResponse
+    public function returnReview(Request $request, string $uuid): JsonResponse
     {
         $user = $request->user();
         $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
+        $isAdmin = $user->isAdmin();
 
-        if (!$user->isBudgetOfficer() && !$user->isAdmin()) {
-            return response()->json(['message' => 'Only the Budget Officer or Admin can perform this action.'], 403);
+        $allowedStatuses = ['TWG_REVIEW', 'BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'HEAD_PENDING'];
+        if (!in_array($ppmp->status, $allowedStatuses, true) && !$isAdmin) {
+            return response()->json(['message' => "PPMP cannot be returned in its current status: {$ppmp->status}."], 422);
         }
 
-        if ($ppmp->status !== 'BUDGET_OFFICER_REVIEW') {
-            return response()->json(['message' => "PPMP is not awaiting budget officer review."], 422);
+        if ($ppmp->status === 'TWG_REVIEW') {
+            if (!$user->isTwg() && !$isAdmin) {
+                return response()->json(['message' => 'Only BAC-TWG or Admin can return this PPMP.'], 403);
+            }
+            if ($user->isTwg() && $ppmp->twg_reviewer_id && $ppmp->twg_reviewer_id !== $user->id && !$isAdmin) {
+                return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different BAC-TWG reviewer.'], 403);
+            }
+        } elseif ($ppmp->status === 'BUDGET_OFFICER_REVIEW') {
+            if (!$user->isBudgetOfficer() && !$isAdmin) {
+                return response()->json(['message' => 'Only the Budget Officer or Admin can return this PPMP.'], 403);
+            }
+            if ($user->isBudgetOfficer() && $ppmp->budget_reviewer_id && $ppmp->budget_reviewer_id !== $user->id && !$isAdmin) {
+                return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different Budget Officer.'], 403);
+            }
+        } elseif ($ppmp->status === 'PACCO_REVIEW') {
+            if (!$user->isPacco() && !$isAdmin) {
+                return response()->json(['message' => 'Only the PACCO Reviewer or Admin can return this PPMP.'], 403);
+            }
+            if ($user->isPacco() && $ppmp->budget_reviewer_id && $ppmp->budget_reviewer_id !== $user->id && !$isAdmin) {
+                return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different PACCO reviewer.'], 403);
+            }
+        } elseif ($ppmp->status === 'OPPMO_REVIEW') {
+            if (!$user->isOppmo() && !$isAdmin) {
+                return response()->json(['message' => 'Only OPPMO or Admin can return this PPMP.'], 403);
+            }
+            if ($user->isOppmo() && $ppmp->oppmo_reviewer_id && $ppmp->oppmo_reviewer_id !== $user->id && !$isAdmin) {
+                return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different OPPMO reviewer.'], 403);
+            }
         }
 
         $validated = $request->validate([
+            'target' => 'nullable|string|in:end_user,twg,budget,pacco,oppmo',
+            'return_target' => 'nullable|string|in:end_user,twg,budget,pacco,oppmo',
+            'target_reviewer_id' => 'nullable|exists:users,id',
             'remarks' => 'required|string|min:3',
             'field_changes' => 'nullable|array',
         ]);
 
-        DB::transaction(function () use ($ppmp, $user, $validated) {
-            $now = now();
-            $receivedAt = $ppmp->budget_received_at ?? $now;
+        $target = $validated['target'] ?? $validated['return_target'] ?? 'end_user';
+        $remarks = trim($validated['remarks']);
+        $now = now();
+        $idLabel = $this->getPpmpIdentifier($ppmp);
+
+        return DB::transaction(function () use ($ppmp, $user, $target, $remarks, $validated, $now, $idLabel) {
+            $isTrustFund = $ppmp->isTrustFund();
+            $statusBefore = $ppmp->status;
+
+            // CASE 1: RETURN TO BAC-TWG REVIEWER
+            if ($target === 'twg') {
+                $targetUser = null;
+                if (!empty($validated['target_reviewer_id'])) {
+                    $targetUser = User::find($validated['target_reviewer_id']);
+                }
+                if (!$targetUser && $ppmp->twg_reviewer_id) {
+                    $targetUser = $ppmp->twgReviewer ?: User::find($ppmp->twg_reviewer_id);
+                }
+                if (!$targetUser) {
+                    $targetUser = User::where('role', 'twg')->where('is_active', true)->first();
+                }
+
+                if (!$targetUser) {
+                    return response()->json(['message' => 'No active BAC-TWG reviewer found to return this PPMP to.'], 422);
+                }
+
+                $ppmp->update([
+                    'status' => 'TWG_REVIEW',
+                    'twg_received_at' => null,
+                    'twg_reviewer_id' => $targetUser->id,
+                ]);
+
+                // Clear downstream milestones so re-approval is required
+                $ppmp->milestones()->update([
+                    'twg_approved_at' => null,
+                    'budget_approved_at' => null,
+                    'pacco_approved_at' => null,
+                    'oppmo_approved_at' => null,
+                ]);
+
+                $this->applyFieldModifications($ppmp, $validated['field_changes'] ?? [], $user, $user->role);
+                $this->markLatestPendingRouteReceived($ppmp->id, $now);
+
+                PpmpReview::create([
+                    'ppmp_id' => $ppmp->id,
+                    'reviewer_id' => $user->id,
+                    'reviewer_role' => $user->role,
+                    'action' => 'return',
+                    'remarks' => "[Returned to BAC-TWG Reviewer {$targetUser->name}]: {$remarks}",
+                    'status_before' => $statusBefore,
+                    'status_after' => 'TWG_REVIEW',
+                    'submitted_at' => $now,
+                    'received_at' => $now,
+                    'acted_at' => $now,
+                    'ip_address' => request()->ip(),
+                    'user_agent' => request()->userAgent(),
+                ]);
+
+                PpmpRoute::create([
+                    'ppmp_id' => $ppmp->id,
+                    'from_user_id' => $user->id,
+                    'to_user_id' => $targetUser->id,
+                    'from_role' => $user->role,
+                    'to_role' => 'twg',
+                    'action' => 'RETURNED_TO_TWG',
+                    'status' => 'TWG_REVIEW',
+                    'remarks' => $remarks,
+                    'submitted_at' => $now,
+                    'acted_at' => $now,
+                ]);
+
+                SystemNotification::notify(
+                    $targetUser->id,
+                    'PPMP Returned for Technical Re-evaluation',
+                    "PPMP {$idLabel} has been returned to you by {$user->name} ({$user->role}) with remarks: " . Str::limit($remarks, 120),
+                    $ppmp->id,
+                    'warning'
+                );
+
+                AuditLog::log('PPMP_RETURNED_TO_TWG', 'ppmps', $ppmp->id, null, [
+                    'returned_by' => $user->id,
+                    'target_twg_id' => $targetUser->id,
+                    'remarks' => $remarks,
+                ], $user->id);
+
+                return response()->json([
+                    'message' => "PPMP returned to BAC-TWG Reviewer ({$targetUser->name}) for re-evaluation.",
+                    'ppmp' => $ppmp->fresh(['office.head', 'creator', 'signatures.user', 'routes.fromUser', 'routes.toUser', 'twgReviewer', 'budgetReviewer', 'oppmoReviewer']),
+                ]);
+            }
+
+            // CASE 2: RETURN TO BUDGET / PACCO REVIEWER
+            if ($target === 'budget' || $target === 'pacco') {
+                $targetRole = ($target === 'pacco' || $isTrustFund) ? 'pacco' : 'budget_officer';
+                $targetStatus = $targetRole === 'pacco' ? 'PACCO_REVIEW' : 'BUDGET_OFFICER_REVIEW';
+
+                $targetUser = null;
+                if (!empty($validated['target_reviewer_id'])) {
+                    $targetUser = User::find($validated['target_reviewer_id']);
+                }
+                if (!$targetUser && $ppmp->budget_reviewer_id) {
+                    $targetUser = $ppmp->budgetReviewer ?: User::find($ppmp->budget_reviewer_id);
+                }
+                if (!$targetUser) {
+                    $targetUser = User::where('role', $targetRole)->where('is_active', true)->first();
+                }
+
+                if (!$targetUser) {
+                    return response()->json(['message' => "No active {$targetRole} reviewer found to return this PPMP to."], 422);
+                }
+
+                $ppmp->update([
+                    'status' => $targetStatus,
+                    'budget_received_at' => null,
+                    'pacco_received_at' => null,
+                    'budget_reviewer_id' => $targetUser->id,
+                ]);
+
+                $ppmp->milestones()->update([
+                    'budget_approved_at' => null,
+                    'pacco_approved_at' => null,
+                    'oppmo_approved_at' => null,
+                ]);
+
+                $this->applyFieldModifications($ppmp, $validated['field_changes'] ?? [], $user, $user->role);
+                $this->markLatestPendingRouteReceived($ppmp->id, $now);
+
+                $targetLabel = $targetRole === 'pacco' ? 'PACCO Reviewer' : 'Budget Officer';
+
+                PpmpReview::create([
+                    'ppmp_id' => $ppmp->id,
+                    'reviewer_id' => $user->id,
+                    'reviewer_role' => $user->role,
+                    'action' => 'return',
+                    'remarks' => "[Returned to {$targetLabel} {$targetUser->name}]: {$remarks}",
+                    'status_before' => $statusBefore,
+                    'status_after' => $targetStatus,
+                    'submitted_at' => $now,
+                    'received_at' => $now,
+                    'acted_at' => $now,
+                    'ip_address' => request()->ip(),
+                    'user_agent' => request()->userAgent(),
+                ]);
+
+                PpmpRoute::create([
+                    'ppmp_id' => $ppmp->id,
+                    'from_user_id' => $user->id,
+                    'to_user_id' => $targetUser->id,
+                    'from_role' => $user->role,
+                    'to_role' => $targetRole,
+                    'action' => 'RETURNED_TO_' . strtoupper($targetRole),
+                    'status' => $targetStatus,
+                    'remarks' => $remarks,
+                    'submitted_at' => $now,
+                    'acted_at' => $now,
+                ]);
+
+                SystemNotification::notify(
+                    $targetUser->id,
+                    "PPMP Returned for {$targetLabel} Review",
+                    "PPMP {$idLabel} has been returned to you by {$user->name} ({$user->role}) with remarks: " . Str::limit($remarks, 120),
+                    $ppmp->id,
+                    'warning'
+                );
+
+                AuditLog::log('PPMP_RETURNED_TO_' . strtoupper($targetRole), 'ppmps', $ppmp->id, null, [
+                    'returned_by' => $user->id,
+                    'target_user_id' => $targetUser->id,
+                    'remarks' => $remarks,
+                ], $user->id);
+
+                return response()->json([
+                    'message' => "PPMP returned to {$targetLabel} ({$targetUser->name}) for re-evaluation.",
+                    'ppmp' => $ppmp->fresh(['office.head', 'creator', 'signatures.user', 'routes.fromUser', 'routes.toUser', 'twgReviewer', 'budgetReviewer', 'oppmoReviewer']),
+                ]);
+            }
+
+            // CASE 3: RETURN TO END USER (PREPARER)
+            $returnedStatus = match ($ppmp->status) {
+                'TWG_REVIEW' => 'TWG_RETURNED',
+                'BUDGET_OFFICER_REVIEW' => 'BUDGET_OFFICER_RETURNED',
+                'PACCO_REVIEW' => 'PACCO_RETURNED',
+                'OPPMO_REVIEW' => 'OPPMO_RETURNED',
+                'HEAD_PENDING' => 'HEAD_RETURNED',
+                default => 'TWG_RETURNED',
+            };
 
             $ppmp->update([
-                'status' => 'BUDGET_OFFICER_RETURNED',
+                'status' => $returnedStatus,
                 'enduser_received_at' => null,
             ]);
 
-            // Mark incoming route as received
-            $this->markLatestPendingRouteReceived($ppmp->id, $receivedAt);
-
-            $this->applyFieldModifications($ppmp, $validated['field_changes'] ?? [], $user, 'budget_officer');
+            $this->applyFieldModifications($ppmp, $validated['field_changes'] ?? [], $user, $user->role);
+            $this->markLatestPendingRouteReceived($ppmp->id, $now);
 
             PpmpReview::create([
                 'ppmp_id' => $ppmp->id,
                 'reviewer_id' => $user->id,
-                'reviewer_role' => 'budget_officer',
+                'reviewer_role' => $user->role,
                 'action' => 'return',
-                'remarks' => $validated['remarks'],
-                'status_before' => 'BUDGET_OFFICER_REVIEW',
-                'status_after' => 'BUDGET_OFFICER_RETURNED',
-                'submitted_at' => $ppmp->review_submitted_at ?? $now,
-                'received_at' => $receivedAt,
+                'remarks' => $remarks,
+                'status_before' => $statusBefore,
+                'status_after' => $returnedStatus,
+                'submitted_at' => $now,
+                'received_at' => $now,
                 'acted_at' => $now,
                 'ip_address' => request()->ip(),
                 'user_agent' => request()->userAgent(),
@@ -621,32 +1319,39 @@ class PpmpWorkflowController extends Controller
                 'ppmp_id' => $ppmp->id,
                 'from_user_id' => $user->id,
                 'to_user_id' => $ppmp->created_by,
-                'from_role' => 'budget_officer',
+                'from_role' => $user->role,
                 'to_role' => 'end_user',
-                'action' => 'BUDGET_RETURNED',
-                'status' => 'BUDGET_OFFICER_RETURNED',
-                'remarks' => $validated['remarks'],
+                'action' => $returnedStatus,
+                'status' => $returnedStatus,
+                'remarks' => $remarks,
                 'submitted_at' => $now,
                 'acted_at' => $now,
             ]);
 
-            $idLabel = $this->getPpmpIdentifier($ppmp);
-
             SystemNotification::notify(
                 $ppmp->created_by,
-                'PPMP Returned by Budget Officer',
-                "PPMP {$idLabel} returned: " . Str::limit($validated['remarks'], 100),
+                "PPMP Returned by Reviewer ({$user->name})",
+                "PPMP {$idLabel} returned: " . Str::limit($remarks, 100),
                 $ppmp->id,
                 'warning'
             );
 
-            AuditLog::log('PPMP_BUDGET_RETURNED', 'ppmps', $ppmp->id, null, ['remarks' => $validated['remarks']], $user->id);
-        });
+            AuditLog::log('PPMP_RETURNED_TO_END_USER', 'ppmps', $ppmp->id, null, ['remarks' => $remarks], $user->id);
 
-        return response()->json([
-            'message' => 'PPMP returned by Budget Officer.',
-            'ppmp' => $ppmp->fresh(['office.head', 'creator', 'signatures.user', 'routes.fromUser', 'routes.toUser']),
-        ]);
+            return response()->json([
+                'message' => 'PPMP returned to End User for correction.',
+                'ppmp' => $ppmp->fresh(['office.head', 'creator', 'signatures.user', 'routes.fromUser', 'routes.toUser', 'twgReviewer', 'budgetReviewer', 'oppmoReviewer']),
+            ]);
+        });
+    }
+
+    /**
+     * 4b. Budget Officer Returns
+     * BUDGET_OFFICER_REVIEW -> BUDGET_OFFICER_RETURNED (or TWG_REVIEW if returned to TWG)
+     */
+    public function budgetReturn(Request $request, string $uuid): JsonResponse
+    {
+        return $this->returnReview($request, $uuid);
     }
 
     /**
@@ -660,6 +1365,10 @@ class PpmpWorkflowController extends Controller
 
         if (!$user->isPacco() && !$user->isAdmin()) {
             return response()->json(['message' => 'Only the PACCO Reviewer or Admin can certify trust funds.'], 403);
+        }
+
+        if ($user->isPacco() && $ppmp->budget_reviewer_id && $ppmp->budget_reviewer_id !== $user->id && !$user->isAdmin()) {
+            return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different PACCO reviewer.'], 403);
         }
 
         if ($ppmp->status !== 'PACCO_REVIEW') {
@@ -711,12 +1420,19 @@ class PpmpWorkflowController extends Controller
                 'user_agent' => request()->userAgent(),
             ]);
 
-            $oppmoUsers = User::where('role', 'oppmo')->where('is_active', true)->get();
+            $targetOppmoId = null;
+            if ($ppmp->oppmo_reviewer_id && User::where('id', $ppmp->oppmo_reviewer_id)->where('is_active', true)->exists()) {
+                $targetOppmoId = $ppmp->oppmo_reviewer_id;
+                $oppmoUsers = User::where('id', $targetOppmoId)->get();
+            } else {
+                $oppmoUsers = User::where('role', 'oppmo')->where('is_active', true)->get();
+                $targetOppmoId = $oppmoUsers->first()?->id;
+            }
 
             PpmpRoute::create([
                 'ppmp_id' => $ppmp->id,
                 'from_user_id' => $user->id,
-                'to_user_id' => $oppmoUsers->first()?->id,
+                'to_user_id' => $targetOppmoId,
                 'from_role' => 'pacco',
                 'to_role' => 'oppmo',
                 'action' => 'PACCO_APPROVED',
@@ -748,85 +1464,11 @@ class PpmpWorkflowController extends Controller
 
     /**
      * 4d. PACCO Reviewer Returns (Trust Fund PPMP)
-     * PACCO_REVIEW -> PACCO_RETURNED
+     * PACCO_REVIEW -> PACCO_RETURNED (or TWG_REVIEW if returned to TWG)
      */
     public function paccoReturn(Request $request, string $uuid): JsonResponse
     {
-        $user = $request->user();
-        $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
-
-        if (!$user->isPacco() && !$user->isAdmin()) {
-            return response()->json(['message' => 'Only the PACCO Reviewer or Admin can perform this action.'], 403);
-        }
-
-        if ($ppmp->status !== 'PACCO_REVIEW') {
-            return response()->json(['message' => "PPMP is not awaiting PACCO review."], 422);
-        }
-
-        $validated = $request->validate([
-            'remarks' => 'required|string|min:3',
-            'field_changes' => 'nullable|array',
-        ]);
-
-        DB::transaction(function () use ($ppmp, $user, $validated) {
-            $now = now();
-            $receivedAt = $ppmp->pacco_received_at ?? $now;
-
-            $ppmp->update([
-                'status' => 'PACCO_RETURNED',
-                'enduser_received_at' => null,
-            ]);
-
-            // Mark incoming route as received
-            $this->markLatestPendingRouteReceived($ppmp->id, $receivedAt);
-
-            $this->applyFieldModifications($ppmp, $validated['field_changes'] ?? [], $user, 'pacco');
-
-            PpmpReview::create([
-                'ppmp_id' => $ppmp->id,
-                'reviewer_id' => $user->id,
-                'reviewer_role' => 'pacco',
-                'action' => 'return',
-                'remarks' => $validated['remarks'],
-                'status_before' => 'PACCO_REVIEW',
-                'status_after' => 'PACCO_RETURNED',
-                'submitted_at' => $ppmp->review_submitted_at ?? $now,
-                'received_at' => $receivedAt,
-                'acted_at' => $now,
-                'ip_address' => request()->ip(),
-                'user_agent' => request()->userAgent(),
-            ]);
-
-            PpmpRoute::create([
-                'ppmp_id' => $ppmp->id,
-                'from_user_id' => $user->id,
-                'to_user_id' => $ppmp->created_by,
-                'from_role' => 'pacco',
-                'to_role' => 'end_user',
-                'action' => 'PACCO_RETURNED',
-                'status' => 'PACCO_RETURNED',
-                'remarks' => $validated['remarks'],
-                'submitted_at' => $now,
-                'acted_at' => $now,
-            ]);
-
-            $idLabel = $this->getPpmpIdentifier($ppmp);
-
-            SystemNotification::notify(
-                $ppmp->created_by,
-                'PPMP Returned by PACCO Reviewer',
-                "PPMP {$idLabel} returned: " . Str::limit($validated['remarks'], 100),
-                $ppmp->id,
-                'warning'
-            );
-
-            AuditLog::log('PPMP_PACCO_RETURNED', 'ppmps', $ppmp->id, null, ['remarks' => $validated['remarks']], $user->id);
-        });
-
-        return response()->json([
-            'message' => 'PPMP returned by PACCO Reviewer.',
-            'ppmp' => $ppmp->fresh(['office.head', 'creator', 'signatures.user', 'routes.fromUser', 'routes.toUser']),
-        ]);
+        return $this->returnReview($request, $uuid);
     }
 
     /**
@@ -842,243 +1484,67 @@ class PpmpWorkflowController extends Controller
             return response()->json(['message' => 'Only OPPMO or Admin can approve this stage.'], 403);
         }
 
-        if ($ppmp->status !== 'OPPMO_REVIEW') {
-            return response()->json(['message' => "PPMP is not awaiting OPPMO review."], 422);
-        }
-
-        $isTwgSkipped = ($ppmp->amendment_scope === 'PPMP_APP');
-        $isPostTwg = $isTwgSkipped || $ppmp->twg_approved_at !== null || $ppmp->signatures()->where('role', 'twg')->exists();
-
-        if ($isPostTwg) {
-            // Must have generated the APP before forwarding to Head
-            if (!$ppmp->hasAppGenerated()) {
-                return response()->json([
-                    'message' => 'Please generate the Annual Procurement Plan (APP) before forwarding to the Office Head.'
-                ], 422);
-            }
-
-            $nextStatus = 'HEAD_PENDING';
-            $nextRole = 'head';
-        } else {
-            $nextStatus = 'TWG_REVIEW';
-            $nextRole = 'twg';
-        }
-
-        DB::transaction(function () use ($ppmp, $user, $isPostTwg, $isTwgSkipped, $nextStatus, $nextRole) {
-            $now = now();
-            $receivedAt = $ppmp->oppmo_received_at ?? $now;
-
-            if ($isPostTwg) {
-                $targetHeadUsers = $this->getTargetHeadUsers($ppmp->office_id);
-                $primaryHeadId = $targetHeadUsers->first()?->id;
-
-                $appData = is_array($ppmp->app_data) ? $ppmp->app_data : [];
-                $appData['is_oppmo_approved'] = true;
-                $appData['oppmo_approved_at'] = $now->toIso8601String();
-                $appData['oppmo_approved_by_id'] = $user->id;
-                $appData['oppmo_approved_by_name'] = $user->name;
-
-                $updateData = [
-                    'status' => 'HEAD_PENDING',
-                    'app_data' => $appData,
-                    'oppmo_app_approved_at' => $now,
-                    'oppmo_received_at' => $receivedAt,
-                    'head_submitted_at' => $now,
-                    'head_received_at' => null, // requires Head to click Receive
-                ];
-
-                $ppmp->update($updateData);
-
-                // Mark incoming route as received
-                $this->markLatestPendingRouteReceived($ppmp->id, $receivedAt);
-
-                PpmpReview::create([
-                    'ppmp_id' => $ppmp->id,
-                    'reviewer_id' => $user->id,
-                    'reviewer_role' => 'oppmo',
-                    'action' => 'approve',
-                    'remarks' => 'Annual Procurement Plan (APP) generated and verified. Forwarded to Office Head for approval.',
-                    'status_before' => 'OPPMO_REVIEW',
-                    'status_after' => 'HEAD_PENDING',
-                    'submitted_at' => $ppmp->twg_approved_at ?? $now,
-                    'received_at' => $receivedAt,
-                    'acted_at' => $now,
-                    'ip_address' => request()->ip(),
-                    'user_agent' => request()->userAgent(),
-                ]);
-
-                $oppmoRouteRemarks = $isTwgSkipped
-                    ? 'Annual Procurement Plan (APP) generated and verified. BAC-TWG technical review bypassed (Amendment: PPMP/APP Only). Forwarded to Office Head for approval.'
-                    : 'Annual Procurement Plan (APP) generated. Forwarded to Office Head for approval.';
-
-                PpmpRoute::create([
-                    'ppmp_id' => $ppmp->id,
-                    'from_user_id' => $user->id,
-                    'to_user_id' => $primaryHeadId,
-                    'from_role' => 'oppmo',
-                    'to_role' => 'head',
-                    'action' => 'OPPMO_APP_GENERATED',
-                    'status' => 'HEAD_PENDING',
-                    'remarks' => $oppmoRouteRemarks,
-                    'submitted_at' => $now,
-                    'acted_at' => $now,
-                ]);
-
-                $idLabel = $this->getPpmpIdentifier($ppmp);
-                foreach ($targetHeadUsers as $head) {
-                    SystemNotification::notify(
-                        $head->id,
-                        'PPMP Awaiting Office Head Approval',
-                        "PPMP {$idLabel} ({$ppmp->title}) has completed OPPMO APP generation and requires your approval.",
-                        $ppmp->id,
-                        'info'
-                    );
-                }
-
-                $authStaffUserIds = User::where('office_id', $ppmp->office_id)
-                    ->where('role', 'authorized_staff')
-                    ->where('is_active', true)
-                    ->whereNotIn('id', $targetHeadUsers->pluck('id'))
-                    ->pluck('id');
-
-                foreach ($authStaffUserIds as $staffId) {
-                    SystemNotification::notify(
-                        $staffId,
-                        'PPMP Awaiting Office Head Approval (Acting Head)',
-                        "PPMP {$idLabel} ({$ppmp->title}) has completed OPPMO APP generation and requires your approval on behalf of the Office Head.",
-                        $ppmp->id,
-                        'info'
-                    );
-                }
-
-                AuditLog::log('PPMP_OPPMO_APP_APPROVED', 'ppmps', $ppmp->id, null, ['status' => 'HEAD_PENDING'], $user->id);
-            } else {
-                $updateData = [
-                    'status' => 'TWG_REVIEW',
-                    'oppmo_approved_at' => $now,
-                    'oppmo_received_at' => $receivedAt,
-                    'twg_received_at' => null,
-                ];
-
-                $ppmp->update($updateData);
-
-                // Mark incoming route as received
-                $this->markLatestPendingRouteReceived($ppmp->id, $receivedAt);
-
-                PpmpSignature::updateOrCreate(
-                    ['ppmp_id' => $ppmp->id, 'role' => 'oppmo'],
-                    [
-                        'user_id' => $user->id,
-                        'signature_type' => 'initial_indicator',
-                        'signature_indicator' => 'INIT-OPPMO-' . strtoupper(substr(md5($user->id . $ppmp->id . $now), 0, 8)),
-                        'signer_name' => $user->name,
-                        'signer_designation' => $user->designation ?? 'OPPMO Officer',
-                        'signed_at' => $now,
-                    ]
-                );
-
-                PpmpReview::create([
-                    'ppmp_id' => $ppmp->id,
-                    'reviewer_id' => $user->id,
-                    'reviewer_role' => 'oppmo',
-                    'action' => 'approve',
-                    'remarks' => 'Procurement management review approved. Forwarded to BAC-TWG.',
-                    'status_before' => 'OPPMO_REVIEW',
-                    'status_after' => 'TWG_REVIEW',
-                    'submitted_at' => $ppmp->budget_approved_at ?? ($ppmp->pacco_approved_at ?? $now),
-                    'received_at' => $receivedAt,
-                    'acted_at' => $now,
-                    'ip_address' => request()->ip(),
-                    'user_agent' => request()->userAgent(),
-                ]);
-
-                $twgUsers = User::where('role', 'twg')->where('is_active', true)->get();
-
-                PpmpRoute::create([
-                    'ppmp_id' => $ppmp->id,
-                    'from_user_id' => $user->id,
-                    'to_user_id' => $twgUsers->first()?->id,
-                    'from_role' => 'oppmo',
-                    'to_role' => 'twg',
-                    'action' => 'OPPMO_APPROVED',
-                    'status' => 'TWG_REVIEW',
-                    'remarks' => 'Approved by OPPMO. Forwarded to BAC-TWG.',
-                    'submitted_at' => $now,
-                    'acted_at' => $now,
-                ]);
-
-                $idLabel = $this->getPpmpIdentifier($ppmp);
-                foreach ($twgUsers as $twg) {
-                    SystemNotification::notify(
-                        $twg->id,
-                        'PPMP Awaiting TWG Review',
-                        "PPMP {$idLabel} was approved by OPPMO and is now awaiting BAC-TWG review.",
-                        $ppmp->id,
-                        'info'
-                    );
-                }
-
-                AuditLog::log('PPMP_OPPMO_APPROVED', 'ppmps', $ppmp->id, null, ['status' => 'TWG_REVIEW'], $user->id);
-            }
-        });
-
-        $returnMessage = $isPostTwg
-            ? ($isTwgSkipped
-                ? 'Annual Procurement Plan (APP) generated and verified. Forwarded to Office Head for approval (BAC-TWG review bypassed).'
-                : 'Annual Procurement Plan (APP) verified and forwarded to Office Head for approval.')
-            : 'PPMP approved by OPPMO and forwarded to BAC-TWG.';
-
-        return response()->json([
-            'message' => $returnMessage,
-            'ppmp' => $ppmp->fresh(['office.head', 'creator', 'signatures.user', 'routes.fromUser', 'routes.toUser']),
-        ]);
-    }
-
-    /**
-     * 5b. OPPMO Returns
-     * OPPMO_REVIEW -> OPPMO_RETURNED
-     */
-    public function oppmoReturn(Request $request, string $uuid): JsonResponse
-    {
-        $user = $request->user();
-        $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
-
-        if (!$user->isOppmo() && !$user->isAdmin()) {
-            return response()->json(['message' => 'Only OPPMO or Admin can return this PPMP.'], 403);
+        if ($user->isOppmo() && $ppmp->oppmo_reviewer_id && $ppmp->oppmo_reviewer_id !== $user->id && !$user->isAdmin()) {
+            return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different OPPMO reviewer.'], 403);
         }
 
         if ($ppmp->status !== 'OPPMO_REVIEW') {
             return response()->json(['message' => "PPMP is not awaiting OPPMO review."], 422);
         }
 
-        $validated = $request->validate([
-            'remarks' => 'required|string|min:3',
-            'field_changes' => 'nullable|array',
-        ]);
+        // Must have generated or regenerated the Annual Procurement Plan (APP) before granting final approval
+        if (!$ppmp->hasAppGenerated()) {
+            return response()->json([
+                'message' => 'Please generate or regenerate the Annual Procurement Plan (APP) before granting final approval.'
+            ], 422);
+        }
 
-        DB::transaction(function () use ($ppmp, $user, $validated) {
+        DB::transaction(function () use ($ppmp, $user) {
             $now = now();
             $receivedAt = $ppmp->oppmo_received_at ?? $now;
 
-            $ppmp->update([
-                'status' => 'OPPMO_RETURNED',
-                'enduser_received_at' => null,
-            ]);
+            $appData = is_array($ppmp->app_data) ? $ppmp->app_data : [];
+            $appData['is_oppmo_approved'] = true;
+            $appData['oppmo_approved_at'] = $now->toIso8601String();
+            $appData['oppmo_approved_by_id'] = $user->id;
+            $appData['oppmo_approved_by_name'] = $user->name;
+
+            $updateData = [
+                'status' => 'READY_TO_PRINT',
+                'app_data' => $appData,
+                'oppmo_approved_at' => $now,
+                'oppmo_app_approved_at' => $now,
+                'oppmo_received_at' => $receivedAt,
+                'ready_to_print_at' => $now,
+                'enduser_received_at' => null, // Creator receives notification and document
+            ];
+
+            $ppmp->update($updateData);
 
             // Mark incoming route as received
             $this->markLatestPendingRouteReceived($ppmp->id, $receivedAt);
 
-            $this->applyFieldModifications($ppmp, $validated['field_changes'] ?? [], $user, 'oppmo');
+            PpmpSignature::updateOrCreate(
+                ['ppmp_id' => $ppmp->id, 'role' => 'oppmo'],
+                [
+                    'user_id' => $user->id,
+                    'signature_type' => 'initial_indicator',
+                    'signature_indicator' => 'INIT-OPPMO-' . strtoupper(substr(md5($user->id . $ppmp->id . $now), 0, 8)),
+                    'signer_name' => $user->name,
+                    'signer_designation' => $user->designation ?? 'OPPMO Officer',
+                    'signed_at' => $now,
+                ]
+            );
 
             PpmpReview::create([
                 'ppmp_id' => $ppmp->id,
                 'reviewer_id' => $user->id,
                 'reviewer_role' => 'oppmo',
-                'action' => 'return',
-                'remarks' => $validated['remarks'],
+                'action' => 'approve',
+                'remarks' => 'Annual Procurement Plan (APP) generated and verified. PPMP finalized and approved READY TO PRINT.',
                 'status_before' => 'OPPMO_REVIEW',
-                'status_after' => 'OPPMO_RETURNED',
-                'submitted_at' => $ppmp->budget_approved_at ?? $now,
+                'status_after' => 'READY_TO_PRINT',
+                'submitted_at' => $ppmp->budget_approved_at ?? ($ppmp->pacco_approved_at ?? $now),
                 'received_at' => $receivedAt,
                 'acted_at' => $now,
                 'ip_address' => request()->ip(),
@@ -1091,30 +1557,38 @@ class PpmpWorkflowController extends Controller
                 'to_user_id' => $ppmp->created_by,
                 'from_role' => 'oppmo',
                 'to_role' => 'end_user',
-                'action' => 'OPPMO_RETURNED',
-                'status' => 'OPPMO_RETURNED',
-                'remarks' => $validated['remarks'],
+                'action' => 'OPPMO_APPROVED_APP',
+                'status' => 'READY_TO_PRINT',
+                'remarks' => 'Annual Procurement Plan (APP) generated and verified. PPMP is officially approved and READY TO PRINT.',
                 'submitted_at' => $now,
                 'acted_at' => $now,
             ]);
 
             $idLabel = $this->getPpmpIdentifier($ppmp);
-
             SystemNotification::notify(
                 $ppmp->created_by,
-                'PPMP Returned by OPPMO',
-                "PPMP {$idLabel} returned: " . Str::limit($validated['remarks'], 100),
+                'PPMP Approved & Ready to Print',
+                "Congratulations! PPMP {$idLabel} ({$ppmp->title}) was approved by OPPMO with Annual Procurement Plan (APP) generated and is now READY TO PRINT.",
                 $ppmp->id,
-                'warning'
+                'success'
             );
 
-            AuditLog::log('PPMP_OPPMO_RETURNED', 'ppmps', $ppmp->id, null, ['remarks' => $validated['remarks']], $user->id);
+            AuditLog::log('PPMP_OPPMO_APP_APPROVED', 'ppmps', $ppmp->id, null, ['status' => 'READY_TO_PRINT'], $user->id);
         });
 
         return response()->json([
-            'message' => 'PPMP returned by OPPMO.',
+            'message' => 'Annual Procurement Plan (APP) generated and PPMP approved. Document is now READY TO PRINT.',
             'ppmp' => $ppmp->fresh(['office.head', 'creator', 'signatures.user', 'routes.fromUser', 'routes.toUser']),
         ]);
+    }
+
+    /**
+     * 5b. OPPMO Returns
+     * OPPMO_REVIEW -> OPPMO_RETURNED (or TWG_REVIEW / BUDGET_OFFICER_REVIEW if returned to reviewer)
+     */
+    public function oppmoReturn(Request $request, string $uuid): JsonResponse
+    {
+        return $this->returnReview($request, $uuid);
     }
 
     /**
@@ -1130,6 +1604,10 @@ class PpmpWorkflowController extends Controller
             return response()->json(['message' => 'Only BAC-TWG or Admin can approve this stage.'], 403);
         }
 
+        if ($user->isTwg() && $ppmp->twg_reviewer_id && $ppmp->twg_reviewer_id !== $user->id && !$user->isAdmin()) {
+            return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different BAC-TWG reviewer.'], 403);
+        }
+
         if ($ppmp->status !== 'TWG_REVIEW') {
             return response()->json(['message' => "PPMP is not awaiting TWG review."], 422);
         }
@@ -1142,7 +1620,9 @@ class PpmpWorkflowController extends Controller
             $now = now();
             $receivedAt = $ppmp->twg_received_at ?? $now;
             $isAttachOnly = $ppmp->amendment_scope === 'ATTACHMENT_LIST';
-            $nextStatus = $isAttachOnly ? 'READY_TO_PRINT' : 'OPPMO_REVIEW';
+            $isTrust = $ppmp->isTrustFund();
+            $nextStatus = $isAttachOnly ? 'READY_TO_PRINT' : ($isTrust ? 'PACCO_REVIEW' : 'BUDGET_OFFICER_REVIEW');
+            $nextRole = $isAttachOnly ? 'end_user' : ($isTrust ? 'pacco' : 'budget_officer');
 
             $updateData = [
                 'status' => $nextStatus,
@@ -1152,8 +1632,10 @@ class PpmpWorkflowController extends Controller
             if ($isAttachOnly) {
                 $updateData['ready_to_print_at'] = $now;
                 $updateData['enduser_received_at'] = null;
+            } elseif ($isTrust) {
+                $updateData['pacco_received_at'] = null;
             } else {
-                $updateData['oppmo_received_at'] = null;
+                $updateData['budget_received_at'] = null;
             }
             $ppmp->update($updateData);
 
@@ -1186,11 +1668,11 @@ class PpmpWorkflowController extends Controller
                 'reviewer_role' => 'twg',
                 'action' => 'approve',
                 'remarks' => $isAttachOnly
-                    ? 'PPMP List of Attachment specifications verified and approved by BAC-TWG.'
-                    : 'BAC-TWG technical review approved. Routed back to OPPMO for APP generation.',
+                    ? 'Detailed Specifications verified and approved by BAC-TWG.'
+                    : 'BAC-TWG technical review approved. Routed to ' . ($isTrust ? 'PACCO' : 'Provincial Budget Office') . ' for budget certification.',
                 'status_before' => 'TWG_REVIEW',
                 'status_after' => $nextStatus,
-                'submitted_at' => $ppmp->oppmo_approved_at ?? $now,
+                'submitted_at' => $ppmp->review_submitted_at ?? $now,
                 'received_at' => $receivedAt,
                 'acted_at' => $now,
                 'ip_address' => request()->ip(),
@@ -1208,7 +1690,7 @@ class PpmpWorkflowController extends Controller
                     'to_role' => 'end_user',
                     'action' => 'TWG_APPROVED_ATTACHMENT_LIST',
                     'status' => 'READY_TO_PRINT',
-                    'remarks' => 'Updated PPMP List of Attachment evaluated and approved by BAC-TWG. Document is now READY TO PRINT.',
+                    'remarks' => 'Updated Detailed Specifications evaluated and approved by BAC-TWG. Document is now READY TO PRINT.',
                     'submitted_at' => $now,
                     'acted_at' => $now,
                 ]);
@@ -1216,135 +1698,64 @@ class PpmpWorkflowController extends Controller
                 SystemNotification::notify(
                     $ppmp->created_by,
                     'PPMP Approved & Ready to Print',
-                    "Congratulations! The updated List of Attachment for PPMP {$idLabel} ({$ppmp->title}) was approved by BAC-TWG ({$user->name}) and is now READY TO PRINT.",
+                    "Congratulations! The updated Detailed Specifications for PPMP {$idLabel} ({$ppmp->title}) was approved by BAC-TWG ({$user->name}) and is now READY TO PRINT.",
                     $ppmp->id,
                     'success'
                 );
 
                 AuditLog::log('PPMP_TWG_APPROVED_ATTACHMENT_LIST', 'ppmps', $ppmp->id, null, ['target' => 'READY_TO_PRINT'], $user->id);
             } else {
-                $oppmoUsers = User::where('role', 'oppmo')->where('is_active', true)->get();
+                $targetReviewerId = null;
+                if ($ppmp->budget_reviewer_id && User::where('id', $ppmp->budget_reviewer_id)->where('is_active', true)->exists()) {
+                    $targetReviewerId = $ppmp->budget_reviewer_id;
+                    $targetReviewers = User::where('id', $targetReviewerId)->get();
+                } else {
+                    $targetReviewers = User::where('role', $nextRole)->where('is_active', true)->get();
+                    $targetReviewerId = $targetReviewers->first()?->id;
+                }
 
                 PpmpRoute::create([
                     'ppmp_id' => $ppmp->id,
                     'from_user_id' => $user->id,
-                    'to_user_id' => $oppmoUsers->first()?->id,
+                    'to_user_id' => $targetReviewerId,
                     'from_role' => 'twg',
-                    'to_role' => 'oppmo',
+                    'to_role' => $nextRole,
                     'action' => 'TWG_APPROVED',
-                    'status' => 'OPPMO_REVIEW',
-                    'remarks' => 'BAC-TWG technical review approved. Routed back to OPPMO to generate Annual Procurement Plan (APP).',
+                    'status' => $nextStatus,
+                    'remarks' => 'BAC-TWG technical review approved. Routed to ' . ($isTrust ? 'PACCO' : 'Provincial Budget Office') . ' for budget certification.',
                     'submitted_at' => $now,
                     'acted_at' => $now,
                 ]);
 
-                foreach ($oppmoUsers as $oppmo) {
+                foreach ($targetReviewers as $targetUser) {
                     SystemNotification::notify(
-                        $oppmo->id,
-                        'PPMP Awaiting APP Generation',
-                        "PPMP {$idLabel} ({$ppmp->title}) has completed BAC-TWG technical review and was routed back to OPPMO for Annual Procurement Plan (APP) generation.",
+                        $targetUser->id,
+                        'PPMP Awaiting Review',
+                        "PPMP {$idLabel} ({$ppmp->title}) was approved by BAC-TWG and is now awaiting your review.",
                         $ppmp->id,
                         'info'
                     );
                 }
 
-                AuditLog::log('PPMP_TWG_APPROVED', 'ppmps', $ppmp->id, null, ['status' => 'OPPMO_REVIEW'], $user->id);
+                AuditLog::log('PPMP_TWG_APPROVED', 'ppmps', $ppmp->id, null, ['status' => $nextStatus], $user->id);
             }
         });
 
         return response()->json([
             'message' => $ppmp->fresh()->status === 'READY_TO_PRINT'
-                ? 'PPMP List of Attachment approved by BAC-TWG. Document is now READY TO PRINT.'
-                : 'PPMP approved by BAC-TWG and routed back to OPPMO for APP generation.',
+                ? 'Detailed Specifications approved by BAC-TWG. Document is now READY TO PRINT.'
+                : ('PPMP approved by BAC-TWG and routed to ' . ($ppmp->isTrustFund() ? 'PACCO' : 'Provincial Budget Office') . ' for budget review.'),
             'ppmp' => $ppmp->fresh(['office.head', 'creator', 'signatures.user', 'routes.fromUser', 'routes.toUser']),
         ]);
     }
 
     /**
      * 6b. TWG Returns
-     * TWG_REVIEW -> TWG_RETURNED
+     * TWG_REVIEW -> TWG_RETURNED (or to reviewer if applicable)
      */
     public function twgReturn(Request $request, string $uuid): JsonResponse
     {
-        $user = $request->user();
-        $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
-
-        if (!$user->isTwg() && !$user->isAdmin()) {
-            return response()->json(['message' => 'Only BAC-TWG or Admin can return this PPMP.'], 403);
-        }
-
-        if ($ppmp->status !== 'TWG_REVIEW') {
-            return response()->json(['message' => "PPMP is not awaiting TWG review."], 422);
-        }
-
-        if ($ppmp->amendment_scope === 'PPMP_APP') {
-            return response()->json(['message' => 'BAC-TWG review is not applicable for this PPMP revision because the amendment scope is restricted to PPMP/APP only.'], 422);
-        }
-
-        $validated = $request->validate([
-            'remarks' => 'required|string|min:3',
-            'field_changes' => 'nullable|array',
-        ]);
-
-        DB::transaction(function () use ($ppmp, $user, $validated) {
-            $now = now();
-            $receivedAt = $ppmp->twg_received_at ?? $now;
-
-            $ppmp->update([
-                'status' => 'TWG_RETURNED',
-                'enduser_received_at' => null,
-            ]);
-
-            // Mark incoming route as received
-            $this->markLatestPendingRouteReceived($ppmp->id, $receivedAt);
-
-            $this->applyFieldModifications($ppmp, $validated['field_changes'] ?? [], $user, 'twg');
-
-            PpmpReview::create([
-                'ppmp_id' => $ppmp->id,
-                'reviewer_id' => $user->id,
-                'reviewer_role' => 'twg',
-                'action' => 'return',
-                'remarks' => $validated['remarks'],
-                'status_before' => 'TWG_REVIEW',
-                'status_after' => 'TWG_RETURNED',
-                'submitted_at' => $ppmp->oppmo_approved_at ?? $now,
-                'received_at' => $receivedAt,
-                'acted_at' => $now,
-                'ip_address' => request()->ip(),
-                'user_agent' => request()->userAgent(),
-            ]);
-
-            PpmpRoute::create([
-                'ppmp_id' => $ppmp->id,
-                'from_user_id' => $user->id,
-                'to_user_id' => $ppmp->created_by,
-                'from_role' => 'twg',
-                'to_role' => 'end_user',
-                'action' => 'TWG_RETURNED',
-                'status' => 'TWG_RETURNED',
-                'remarks' => $validated['remarks'],
-                'submitted_at' => $now,
-                'acted_at' => $now,
-            ]);
-
-            $idLabel = $this->getPpmpIdentifier($ppmp);
-
-            SystemNotification::notify(
-                $ppmp->created_by,
-                'PPMP Returned by BAC-TWG',
-                "PPMP {$idLabel} returned: " . Str::limit($validated['remarks'], 100),
-                $ppmp->id,
-                'warning'
-            );
-
-            AuditLog::log('PPMP_TWG_RETURNED', 'ppmps', $ppmp->id, null, ['remarks' => $validated['remarks']], $user->id);
-        });
-
-        return response()->json([
-            'message' => 'PPMP returned by BAC-TWG.',
-            'ppmp' => $ppmp->fresh(['office.head', 'creator', 'signatures.user', 'routes.fromUser', 'routes.toUser']),
-        ]);
+        return $this->returnReview($request, $uuid);
     }
 
     /**
@@ -1397,15 +1808,18 @@ class PpmpWorkflowController extends Controller
             ]);
             $updated = true;
         } elseif ($ppmp->status === 'BUDGET_OFFICER_REVIEW' && ($user->isBudgetOfficer() || $user->isAdmin())) {
+            if ($user->isBudgetOfficer() && $ppmp->budget_reviewer_id && $ppmp->budget_reviewer_id !== $user->id && !$user->isAdmin()) {
+                return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different Budget Officer.'], 403);
+            }
             $ppmp->update(['budget_received_at' => $now]);
             $this->markLatestPendingRouteReceived($ppmp->id, $now);
 
-            $oppmoUser = User::where('role', 'oppmo')->where('is_active', true)->first();
+            $targetOppmoId = $ppmp->oppmo_reviewer_id ?: User::where('role', 'oppmo')->where('is_active', true)->first()?->id;
 
             PpmpRoute::create([
                 'ppmp_id' => $ppmp->id,
                 'from_user_id' => $user->id,
-                'to_user_id' => $oppmoUser?->id,
+                'to_user_id' => $targetOppmoId,
                 'from_role' => 'budget_officer',
                 'to_role' => 'oppmo',
                 'action' => 'BUDGET_RECEIVED',
@@ -1417,15 +1831,18 @@ class PpmpWorkflowController extends Controller
             ]);
             $updated = true;
         } elseif ($ppmp->status === 'PACCO_REVIEW' && ($user->isPacco() || $user->isAdmin())) {
+            if ($user->isPacco() && $ppmp->budget_reviewer_id && $ppmp->budget_reviewer_id !== $user->id && !$user->isAdmin()) {
+                return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different PACCO reviewer.'], 403);
+            }
             $ppmp->update(['pacco_received_at' => $now]);
             $this->markLatestPendingRouteReceived($ppmp->id, $now);
 
-            $oppmoUser = User::where('role', 'oppmo')->where('is_active', true)->first();
+            $targetOppmoId = $ppmp->oppmo_reviewer_id ?: User::where('role', 'oppmo')->where('is_active', true)->first()?->id;
 
             PpmpRoute::create([
                 'ppmp_id' => $ppmp->id,
                 'from_user_id' => $user->id,
-                'to_user_id' => $oppmoUser?->id,
+                'to_user_id' => $targetOppmoId,
                 'from_role' => 'pacco',
                 'to_role' => 'oppmo',
                 'action' => 'PACCO_RECEIVED',
@@ -1437,42 +1854,42 @@ class PpmpWorkflowController extends Controller
             ]);
             $updated = true;
         } elseif ($ppmp->status === 'OPPMO_REVIEW' && ($user->isOppmo() || $user->isAdmin())) {
+            if ($user->isOppmo() && $ppmp->oppmo_reviewer_id && $ppmp->oppmo_reviewer_id !== $user->id && !$user->isAdmin()) {
+                return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different OPPMO reviewer.'], 403);
+            }
             $ppmp->update(['oppmo_received_at' => $now]);
             $this->markLatestPendingRouteReceived($ppmp->id, $now);
-
-            $isTwgSkipped = ($ppmp->amendment_scope === 'PPMP_APP');
-            $isPostTwg = $isTwgSkipped || $ppmp->twg_approved_at !== null || $ppmp->signatures()->where('role', 'twg')->exists();
-            $twgUser = User::where('role', 'twg')->where('is_active', true)->first();
-            $headUser = $this->getTargetHeadUsers($ppmp->office_id)->first();
 
             PpmpRoute::create([
                 'ppmp_id' => $ppmp->id,
                 'from_user_id' => $user->id,
-                'to_user_id' => $isPostTwg ? $headUser?->id : $twgUser?->id,
+                'to_user_id' => $ppmp->created_by,
                 'from_role' => 'oppmo',
-                'to_role' => $isPostTwg ? 'head' : 'twg',
+                'to_role' => 'end_user',
                 'action' => 'OPPMO_RECEIVED',
                 'status' => 'OPPMO_REVIEW',
-                'remarks' => $isPostTwg
-                    ? 'PPMP document received and under OPPMO review for Annual Procurement Plan (APP) generation.'
-                    : 'PPMP document received and under OPPMO review.',
+                'remarks' => 'PPMP document received and under OPPMO review for Annual Procurement Plan (APP) generation.',
                 'submitted_at' => $now,
                 'received_at' => $now,
                 'acted_at' => $now,
             ]);
             $updated = true;
         } elseif ($ppmp->status === 'TWG_REVIEW' && ($user->isTwg() || $user->isAdmin())) {
+            if ($user->isTwg() && $ppmp->twg_reviewer_id && $ppmp->twg_reviewer_id !== $user->id && !$user->isAdmin()) {
+                return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different BAC-TWG reviewer.'], 403);
+            }
             $ppmp->update(['twg_received_at' => $now]);
             $this->markLatestPendingRouteReceived($ppmp->id, $now);
 
-            $oppmoUser = User::where('role', 'oppmo')->where('is_active', true)->first();
+            $targetRole = $ppmp->isTrustFund() ? 'pacco' : 'budget_officer';
+            $targetUserId = $ppmp->budget_reviewer_id ?: User::where('role', $targetRole)->where('is_active', true)->first()?->id;
 
             PpmpRoute::create([
                 'ppmp_id' => $ppmp->id,
                 'from_user_id' => $user->id,
-                'to_user_id' => $oppmoUser?->id,
+                'to_user_id' => $targetUserId,
                 'from_role' => 'twg',
-                'to_role' => 'oppmo',
+                'to_role' => $targetRole,
                 'action' => 'TWG_RECEIVED',
                 'status' => 'TWG_REVIEW',
                 'remarks' => 'PPMP document received and under BAC-TWG technical review.',
@@ -1560,26 +1977,63 @@ class PpmpWorkflowController extends Controller
         $validated = $request->validate([
             'request_scope' => 'nullable|in:PPMP_APP,ATTACHMENT_LIST,ALL',
             'request_type' => 'nullable|in:SUPPLEMENTAL,AMENDMENT,ATTACHMENT_LIST',
+            'supplemental_purpose' => 'nullable|in:CONTINUATION,OTHER',
+            'supplemental_specify' => 'nullable|string|max:1000',
             'reason' => 'required|string|min:5|max:2000',
-            'letter_file' => 'required|file|mimes:pdf|max:20480',
+            'letter_file' => 'required|file|mimes:pdf|max:5120', // max 5MB only
         ]);
 
         $scope = $validated['request_scope'] ?? 'PPMP_APP';
         $type = $validated['request_type'] ?? ($scope === 'ATTACHMENT_LIST' ? 'ATTACHMENT_LIST' : 'SUPPLEMENTAL');
 
+        $suppPurpose = null;
+        $suppSpecify = null;
+        if ($type === 'SUPPLEMENTAL') {
+            $suppPurpose = $validated['supplemental_purpose'] ?? 'CONTINUATION';
+            if ($suppPurpose === 'OTHER') {
+                $suppSpecify = trim($validated['supplemental_specify'] ?? '');
+                if (empty($suppSpecify)) {
+                    return response()->json(['message' => 'Please specify the details/justification for Other supplemental request.'], 422);
+                }
+            }
+        }
+
         $uploadedFile = $request->file('letter_file');
-        
-        // Validate %PDF- magic bytes header to prevent malicious or disguised executable uploads
+
+        // Security Check 1: Strict extension check
+        $clientExt = strtolower($uploadedFile->getClientOriginalExtension());
+        if ($clientExt !== 'pdf') {
+            return response()->json(['message' => 'Security Error: Only official PDF files (.pdf) are accepted for the Letter of Request.'], 422);
+        }
+
+        // Security Check 2: Reject suspicious disguised multi-extensions (.exe.pdf, .php.pdf, .url.pdf, etc.)
+        $clientName = $uploadedFile->getClientOriginalName();
+        if (preg_match('/\.(php|exe|bat|cmd|sh|vbs|js|jar|py|pl|url|lnk)\.pdf$/i', $clientName)) {
+            return response()->json(['message' => 'Security Error: Suspicious disguised multi-extension filename detected.'], 422);
+        }
+
+        // Security Check 3: Validate %PDF- magic bytes header to prevent disguised executable uploads
         $handle = fopen($uploadedFile->getRealPath(), 'rb');
         $header = fread($handle, 5);
         fclose($handle);
         if ($header !== '%PDF-') {
-            return response()->json(['message' => 'Invalid file content. Must be a valid PDF document.'], 422);
+            return response()->json(['message' => 'Security Error: Invalid file content. The uploaded document does not have a genuine PDF header.'], 422);
+        }
+
+        // Security Check 4: Check for active executable scripts or launch actions inside the PDF
+        $sampleContent = file_get_contents($uploadedFile->getRealPath(), false, null, 0, 50000);
+        if (preg_match('/\/Launch|\/EmbeddedFiles|\/JavaScript|\/JS\s*\(/i', $sampleContent)) {
+            return response()->json(['message' => 'Security Error: PDF contains active executable scripts or launch actions, which are restricted for security.'], 422);
+        }
+
+        $safeOriginalName = preg_replace('/[^a-zA-Z0-9_\-\. ]/', '_', basename($uploadedFile->getClientOriginalName()));
+        if (!str_ends_with(strtolower($safeOriginalName), '.pdf')) {
+            $safeOriginalName .= '.pdf';
         }
 
         $now = now();
 
-        $ppmp = DB::transaction(function () use ($ppmp, $user, $validated, $uploadedFile, $scope, $type, $now) {
+        $ppmp = DB::transaction(function () use ($ppmp, $user, $validated, $uploadedFile, $safeOriginalName, $scope, $type, $suppPurpose, $suppSpecify, $now) {
             // Save request letter in private disk
             $internalFilename = (string) Str::uuid() . '.pdf';
             $directory = 'ppmp/' . $ppmp->id;
@@ -1589,7 +2043,7 @@ class PpmpWorkflowController extends Controller
                 'uuid' => (string) Str::uuid(),
                 'ppmp_id' => $ppmp->id,
                 'uploaded_by' => $user->id,
-                'original_filename' => basename($uploadedFile->getClientOriginalName()),
+                'original_filename' => $safeOriginalName,
                 'stored_filename' => $internalFilename,
                 'storage_path' => $path,
                 'mime_type' => 'application/pdf',
@@ -1605,19 +2059,23 @@ class PpmpWorkflowController extends Controller
                 'requested_amendment_type' => $type,
                 'requested_amendment_scope' => $scope,
                 'requested_amendment_reason' => $validated['reason'],
+                'requested_supplemental_purpose' => $suppPurpose,
+                'requested_supplemental_specify' => $suppSpecify,
+                'supplemental_purpose' => $suppPurpose,
+                'supplemental_purpose_specify' => $suppSpecify,
                 'amendment_requested_at' => $now,
                 'admin_received_at' => null, // Admin needs to receive request
             ]);
 
             $scopeLabel = match ($scope) {
                 'PPMP_APP' => 'PPMP / APP Only',
-                'ATTACHMENT_LIST' => 'PPMP List of Attachment Only',
-                default => 'PPMP / APP & List of Attachment',
+                'ATTACHMENT_LIST' => 'Detailed Specifications Only',
+                default => 'PPMP / APP & Detailed Specifications',
             };
             $typeLabel = match ($type) {
                 'SUPPLEMENTAL' => 'Supplemental',
                 'AMENDMENT' => 'Amendment',
-                default => 'List of Attachment Update',
+                default => 'Detailed Specifications Update',
             };
 
             PpmpRoute::create([
@@ -1681,6 +2139,14 @@ class PpmpWorkflowController extends Controller
         $type = $ppmp->requested_amendment_type ?: $ppmp->amendment_type ?: 'SUPPLEMENTAL';
         $scope = $ppmp->requested_amendment_scope ?: $ppmp->amendment_scope ?: 'ALL';
         $reason = $ppmp->requested_amendment_reason ?: $ppmp->amendment_reason;
+        $suppPurpose = $ppmp->requested_supplemental_purpose ?: $ppmp->supplemental_purpose ?: 'CONTINUATION';
+        $suppSpecify = $ppmp->requested_supplemental_specify ?: $ppmp->supplemental_purpose_specify;
+        $isContinuation = ($type === 'SUPPLEMENTAL' && $suppPurpose === 'CONTINUATION');
+
+        $rootAnnual = $ppmp->getRootAnnualPpmp();
+        $baselineAnnualBudget = (float) ($rootAnnual->total_budget ?: $rootAnnual->items()->sum('estimated_budget'));
+        $childFiscalYear = $isContinuation ? (string) date('Y') : $ppmp->fiscal_year;
+
         $now = now();
 
         // Scope: ATTACHMENT_LIST only
@@ -1725,7 +2191,7 @@ class PpmpWorkflowController extends Controller
                     'to_role' => 'end_user',
                     'action' => 'ADMIN_APPROVED_' . $type,
                     'status' => 'DRAFT',
-                    'remarks' => "{$type} (PPMP List of Attachment Only) approved by Administrator. Reopened in DRAFT for editing List of Attachment.",
+                    'remarks' => "{$type} (Detailed Specifications Only) approved by Administrator. Reopened in DRAFT for editing Detailed Specifications.",
                     'submitted_at' => $now,
                     'acted_at' => $now,
                 ]);
@@ -1735,7 +2201,7 @@ class PpmpWorkflowController extends Controller
                 SystemNotification::notify(
                     $ppmp->created_by,
                     "{$type} Request Approved",
-                    "Your {$type} request (PPMP List of Attachment Only) for PPMP {$idLabel} was approved! You can now update the List of Attachment and submit for BAC-TWG review.",
+                    "Your {$type} request (Detailed Specifications Only) for PPMP {$idLabel} was approved! You can now update the Detailed Specifications and submit for BAC-TWG review.",
                     $ppmp->id,
                     'success'
                 );
@@ -1750,12 +2216,12 @@ class PpmpWorkflowController extends Controller
             });
 
             return response()->json([
-                'message' => "{$type} request approved. PPMP List of Attachment reopened in DRAFT for editing.",
+                'message' => "{$type} request approved. Detailed Specifications reopened in DRAFT for editing.",
                 'ppmp' => $updatedPpmp->fresh(['office.head', 'creator', 'signatures.user', 'routes.fromUser', 'routes.toUser', 'parent']),
             ]);
         }
 
-        $newPpmp = DB::transaction(function () use ($ppmp, $admin, $type, $scope, $reason, $now) {
+        $newPpmp = DB::transaction(function () use ($ppmp, $admin, $type, $scope, $reason, $now, $childFiscalYear, $isContinuation, $baselineAnnualBudget, $suppPurpose, $suppSpecify) {
             // Update amendment status on the baseline PPMP (only the root PPMP with no parent_id is the Annual PPMP)
             $ppmp->update([
                 'amendment_status' => 'APPROVED',
@@ -1777,13 +2243,19 @@ class PpmpWorkflowController extends Controller
                 'office_id' => $ppmp->office_id,
                 'implementing_unit' => $ppmp->implementing_unit,
                 'program_name' => $ppmp->program_name,
+                'program_name_id' => $ppmp->program_name_id,
                 'created_by' => $ppmp->created_by,
                 'title' => $ppmp->title,
                 'account_code' => $ppmp->account_code,
-                'fiscal_year' => $ppmp->fiscal_year,
+                'account_code_id' => $ppmp->account_code_id,
+                'fiscal_year' => $childFiscalYear,
                 'plan_type' => $ppmp->plan_type,
+                'source_of_fund' => $ppmp->source_of_fund,
+                'fund_source_id' => $ppmp->fund_source_id,
                 'is_annual' => false,
-                'delivery_period' => $ppmp->delivery_period,
+                'is_continuation' => $isContinuation,
+                'baseline_annual_budget' => $isContinuation ? $baselineAnnualBudget : null,
+                'delivery_period' => $isContinuation ? null : $ppmp->delivery_period,
                 'place_of_delivery' => $ppmp->place_of_delivery,
                 'payment_method' => $ppmp->payment_method,
                 'warranty_and_other_terms' => $ppmp->warranty_and_other_terms,
@@ -1793,18 +2265,21 @@ class PpmpWorkflowController extends Controller
                     'is_generated' => false,
                     'old_app' => $ppmp->app_data,
                 ],
-                'total_budget' => $ppmp->total_budget,
+                'total_budget' => $isContinuation ? 0.00 : $ppmp->total_budget,
                 'status' => 'DRAFT',
                 'amendment_status' => null,
                 'amendment_type' => $type,
                 'amendment_scope' => $scope,
                 'amendment_reason' => $reason,
+                'supplemental_purpose' => $type === 'SUPPLEMENTAL' ? $suppPurpose : null,
+                'supplemental_purpose_specify' => ($type === 'SUPPLEMENTAL' && $suppPurpose === 'OTHER') ? $suppSpecify : null,
                 'prepared_at' => $now,
             ]);
 
             // Replicate line items
+            $createdChildItems = [];
             foreach ($ppmp->items as $item) {
-                PpmpItem::create([
+                $childItem = PpmpItem::create([
                     'ppmp_id' => $childPpmp->id,
                     'item_no' => $item->item_no,
                     'description' => $item->description,
@@ -1812,14 +2287,21 @@ class PpmpWorkflowController extends Controller
                     'quantity_size' => $item->quantity_size,
                     'procurement_mode' => $item->procurement_mode,
                     'pre_proc_conference' => $item->pre_proc_conference,
-                    'start_date' => $item->start_date,
-                    'end_date' => $item->end_date,
-                    'delivery_period' => $item->delivery_period,
+                    'start_date' => $isContinuation ? null : $item->start_date,
+                    'end_date' => $isContinuation ? null : $item->end_date,
+                    'delivery_period' => $isContinuation ? null : $item->delivery_period,
                     'source_of_fund' => $item->source_of_fund,
-                    'estimated_budget' => $item->estimated_budget,
+                    'fund_source_id' => $item->fund_source_id,
+                    'estimated_budget' => $isContinuation ? null : $item->estimated_budget,
                     'supporting_docs_text' => $item->supporting_docs_text,
                     'remarks' => $item->remarks,
                 ]);
+                $createdChildItems[$item->id] = $childItem->id;
+            }
+
+            // Sync normalized attachment lists for child PPMP
+            if (!empty($childPpmp->attachment_list_data) && is_array($childPpmp->attachment_list_data)) {
+                $childPpmp->syncAttachmentLists($childPpmp->attachment_list_data);
             }
 
             // Copy non-letter attachments or link them
@@ -1860,8 +2342,8 @@ class PpmpWorkflowController extends Controller
 
             $scopeLabel = match ($scope) {
                 'PPMP_APP' => 'PPMP/APP Only',
-                'ATTACHMENT_LIST' => 'List of Attachment Only',
-                default => 'PPMP/APP & List of Attachment',
+                'ATTACHMENT_LIST' => 'Detailed Specifications Only',
+                default => 'PPMP/APP & Detailed Specifications',
             };
 
             // Route log on parent
@@ -2041,6 +2523,67 @@ class PpmpWorkflowController extends Controller
                 ],
             ]);
         }
+    }
+
+    /**
+     * Validate supplemental continuation constraints before submission:
+     * 1. Cannot exceed the baseline annual PPMP budgetary allocation.
+     * 2. All line item cells (Start/End activity, Delivery period, Budget > 0) must be filled.
+     */
+    protected function validateContinuationRequirements(Ppmp $ppmp): ?JsonResponse
+    {
+        if (!$ppmp->is_continuation) {
+            return null;
+        }
+
+        $rootAnnual = $ppmp->getRootAnnualPpmp();
+        $annualCeiling = (float) ($ppmp->baseline_annual_budget ?? ($rootAnnual ? ($rootAnnual->total_budget ?: $rootAnnual->items()->sum('estimated_budget')) : 0));
+        $currentTotalBudget = (float) ($ppmp->total_budget ?: $ppmp->items()->sum('estimated_budget'));
+
+        if ($annualCeiling > 0 && $currentTotalBudget > ($annualCeiling + 0.01)) {
+            return response()->json([
+                'message' => "Cannot submit for review. The estimated budget of ₱" . number_format($currentTotalBudget, 2) . " exceeds the baseline annual PPMP budgetary allocation of ₱" . number_format($annualCeiling, 2) . ".",
+            ], 422);
+        }
+
+        $items = $ppmp->items;
+        if ($items->isEmpty()) {
+            return response()->json([
+                'message' => 'Cannot submit for review. Supplemental continuation PPMP must have at least one procurement item.',
+            ], 422);
+        }
+
+        $emptyCells = [];
+        foreach ($items as $idx => $it) {
+            $rowNo = $it->item_no ?: ($idx + 1);
+            if (empty(trim((string) $it->start_date))) {
+                $emptyCells[] = "Item #{$rowNo}: Start of Procurement Activity";
+            }
+            if (empty(trim((string) $it->end_date))) {
+                $emptyCells[] = "Item #{$rowNo}: End of Procurement Activity";
+            }
+            if (empty(trim((string) $it->delivery_period))) {
+                $emptyCells[] = "Item #{$rowNo}: Expected Delivery / Implementation Period";
+            }
+            if ($it->estimated_budget === null || (float) $it->estimated_budget <= 0) {
+                $emptyCells[] = "Item #{$rowNo}: Estimated Budget / Budgetary Allocation";
+            }
+            if (empty(trim((string) $it->description))) {
+                $emptyCells[] = "Item #{$rowNo}: Item Description";
+            }
+            if (empty(trim((string) $it->procurement_mode))) {
+                $emptyCells[] = "Item #{$rowNo}: Procurement Mode";
+            }
+        }
+
+        if (!empty($emptyCells)) {
+            return response()->json([
+                'message' => "Cannot submit for review. For supplemental continuation, all item cells must be completely filled out before submitting to reviewers: " . implode('; ', $emptyCells) . ".",
+                'unfilled_cells' => $emptyCells,
+            ], 422);
+        }
+
+        return null;
     }
 
     /**

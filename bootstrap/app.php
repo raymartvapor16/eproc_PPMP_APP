@@ -26,5 +26,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // No exemptions are granted for api/* to prevent CSRF / Session-Riding attacks.
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, \Illuminate\Http\Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json(['message' => 'Unauthenticated.'], 401);
+            }
+        });
     })->create();

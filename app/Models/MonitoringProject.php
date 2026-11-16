@@ -14,6 +14,7 @@ class MonitoringProject extends Model
     protected $fillable = [
         'uuid',
         'ppmp_id',
+        'purchase_request_id',
         'project_title',
         'category',
         'procurement_mode',
@@ -82,6 +83,11 @@ class MonitoringProject extends Model
     public function ppmp()
     {
         return $this->belongsTo(Ppmp::class, 'ppmp_id');
+    }
+
+    public function purchaseRequest()
+    {
+        return $this->belongsTo(PurchaseRequest::class, 'purchase_request_id');
     }
 
     public function office()

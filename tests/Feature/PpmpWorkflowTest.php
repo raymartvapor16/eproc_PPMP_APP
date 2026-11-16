@@ -149,12 +149,21 @@ class PpmpWorkflowTest extends TestCase
         ]);
         $attListSaveRes->assertStatus(200);
 
-        // 5. Submit for formal review: General Fund routes directly to Provincial Budget Officer
+        // 5. Submit for formal review: Routes directly to BAC-TWG (first to review is the TWG)
         $submitReviewRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmpUuid}/submit-for-review");
         $submitReviewRes->assertStatus(200);
-        $this->assertEquals('BUDGET_OFFICER_REVIEW', $submitReviewRes->json('ppmp.status'));
+        $this->assertEquals('TWG_REVIEW', $submitReviewRes->json('ppmp.status'));
 
-        // 6. Budget Officer receives before approving
+        // 6. TWG receives before approving
+        $this->actingAs($this->twgUser)->postJson("/api/ppmps/{$ppmpUuid}/receive")->assertStatus(200);
+
+        // TWG Approves -> routes to BUDGET_OFFICER_REVIEW (General Fund)
+        $twgApproveRes = $this->actingAs($this->twgUser)->postJson("/api/ppmps/{$ppmpUuid}/twg/approve");
+        $twgApproveRes->assertStatus(200);
+        $this->assertEquals('BUDGET_OFFICER_REVIEW', $twgApproveRes->json('ppmp.status'));
+        $this->assertTrue($ppmp->fresh()->signatures()->where('role', 'twg')->exists());
+
+        // 7. Budget Officer receives before approving
         $this->actingAs($this->budgetUser)->postJson("/api/ppmps/{$ppmpUuid}/receive")->assertStatus(200);
 
         // Budget Officer Approves -> routes to OPPMO_REVIEW
@@ -163,41 +172,13 @@ class PpmpWorkflowTest extends TestCase
         $this->assertEquals('OPPMO_REVIEW', $budgetApproveRes->json('ppmp.status'));
         $this->assertTrue($ppmp->fresh()->signatures()->where('role', 'budget_officer')->exists());
 
-        // 7. OPPMO receives before approving
-        $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$ppmpUuid}/receive")->assertStatus(200);
-
-        // OPPMO Approves -> routes to TWG_REVIEW
-        $oppmoApproveRes = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$ppmpUuid}/oppmo/approve");
-        $oppmoApproveRes->assertStatus(200);
-        $this->assertEquals('TWG_REVIEW', $oppmoApproveRes->json('ppmp.status'));
-        $this->assertTrue($ppmp->fresh()->signatures()->where('role', 'oppmo')->exists());
-
-        // 8. TWG receives before approving
-        $this->actingAs($this->twgUser)->postJson("/api/ppmps/{$ppmpUuid}/receive")->assertStatus(200);
-
-        // TWG Approves -> routes back to OPPMO for APP generation (OPPMO_REVIEW)
-        $twgApproveRes = $this->actingAs($this->twgUser)->postJson("/api/ppmps/{$ppmpUuid}/twg/approve");
-        $twgApproveRes->assertStatus(200);
-        $this->assertEquals('OPPMO_REVIEW', $twgApproveRes->json('ppmp.status'));
-        $this->assertTrue($ppmp->fresh()->signatures()->where('role', 'twg')->exists());
-
-        // TWG can view PPMP in show and index after approving (when status is OPPMO_REVIEW)
-        $twgShowRes = $this->actingAs($this->twgUser)->getJson("/api/ppmps/{$ppmpUuid}");
-        $twgShowRes->assertStatus(200);
-        $this->assertEquals('OPPMO_REVIEW', $twgShowRes->json('ppmp.status'));
-
-        $twgIndexRes = $this->actingAs($this->twgUser)->getJson("/api/ppmps");
-        $twgIndexRes->assertStatus(200);
-        $indexUuids = array_column($twgIndexRes->json('data'), 'uuid');
-        $this->assertContains($ppmpUuid, $indexUuids);
-
-        // 9. OPPMO receives document in post-TWG review
+        // 8. OPPMO receives before approving
         $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$ppmpUuid}/receive")->assertStatus(200);
 
         // Attempting to approve without generating APP must fail with 422
         $prematureOppmoRes = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$ppmpUuid}/oppmo/approve");
         $prematureOppmoRes->assertStatus(422)
-            ->assertJsonPath('message', 'Please generate the Annual Procurement Plan (APP) before forwarding to the Office Head.');
+            ->assertJsonPath('message', 'Please generate or regenerate the Annual Procurement Plan (APP) before granting final approval.');
 
         // OPPMO generates/saves APP Data
         $appSaveRes = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$ppmpUuid}/app-data", [
@@ -213,23 +194,17 @@ class PpmpWorkflowTest extends TestCase
         ]);
         $appSaveRes->assertStatus(200);
 
-        // OPPMO Approves -> routes to Office Head for approval (HEAD_PENDING)
+        // OPPMO Approves -> marks READY_TO_PRINT
         $oppmoFinalApproveRes = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$ppmpUuid}/oppmo/approve");
         $oppmoFinalApproveRes->assertStatus(200);
-        $this->assertEquals('HEAD_PENDING', $oppmoFinalApproveRes->json('ppmp.status'));
+        $this->assertEquals('READY_TO_PRINT', $oppmoFinalApproveRes->json('ppmp.status'));
+        $this->assertTrue($ppmp->fresh()->signatures()->where('role', 'oppmo')->exists());
 
-        // 10. Office Head receives before approving
-        $this->actingAs($this->headUser)->postJson("/api/ppmps/{$ppmpUuid}/receive")->assertStatus(200);
-
-        // Office Head Approves -> marks READY_TO_PRINT
-        $headApproveRes = $this->actingAs($this->headUser)->postJson("/api/ppmps/{$ppmpUuid}/head/approve");
-        $headApproveRes->assertStatus(200);
-        $this->assertEquals('READY_TO_PRINT', $headApproveRes->json('ppmp.status'));
-        $this->assertTrue($ppmp->fresh()->signatures()->where('role', 'head')->exists());
-
-        // Verify all 5 required approval signatures exist
+        // Verify required approval signatures and route to READY_TO_PRINT exist
         $freshPpmp = $ppmp->fresh(['signatures', 'routes']);
-        $this->assertEquals(5, $freshPpmp->signatures()->count()); // end_user + budget + oppmo + twg + head
+        $this->assertTrue($freshPpmp->signatures()->where('role', 'twg')->exists());
+        $this->assertTrue($freshPpmp->signatures()->where('role', 'budget_officer')->exists());
+        $this->assertTrue($freshPpmp->signatures()->where('role', 'oppmo')->exists());
         $this->assertTrue($freshPpmp->routes()->where('status', 'READY_TO_PRINT')->exists());
     }
 
@@ -358,22 +333,22 @@ class PpmpWorkflowTest extends TestCase
             'uploaded_by' => $this->endUser->id,
         ]);
 
-        // 1. End user submits for review (General Fund routes to Budget Officer)
+        // 1. End user submits for review (Routes directly to BAC-TWG)
         $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmp->uuid}/submit-for-review")->assertStatus(200);
-        $this->assertEquals('BUDGET_OFFICER_REVIEW', $ppmp->fresh()->status);
-        $this->assertNull($ppmp->fresh()->budget_received_at);
+        $this->assertEquals('TWG_REVIEW', $ppmp->fresh()->status);
+        $this->assertNull($ppmp->fresh()->twg_received_at);
 
-        // 2. Budget Officer receives document
-        $budgetReceiveRes = $this->actingAs($this->budgetUser)->postJson("/api/ppmps/{$ppmp->uuid}/receive");
-        $budgetReceiveRes->assertStatus(200);
-        $this->assertNotNull($ppmp->fresh()->budget_received_at);
+        // 2. TWG receives document
+        $twgReceiveRes = $this->actingAs($this->twgUser)->postJson("/api/ppmps/{$ppmp->uuid}/receive");
+        $twgReceiveRes->assertStatus(200);
+        $this->assertNotNull($ppmp->fresh()->twg_received_at);
 
-        // Budget Officer returns document with remarks
-        $this->actingAs($this->budgetUser)->postJson("/api/ppmps/{$ppmp->uuid}/budget/return", [
-            'remarks' => 'Please revise item quantity and fund source.',
+        // TWG returns document with remarks
+        $this->actingAs($this->twgUser)->postJson("/api/ppmps/{$ppmp->uuid}/twg/return", [
+            'remarks' => 'Please revise item quantity and technical specifications.',
         ])->assertStatus(200);
 
-        $this->assertEquals('BUDGET_OFFICER_RETURNED', $ppmp->fresh()->status);
+        $this->assertEquals('TWG_RETURNED', $ppmp->fresh()->status);
         $this->assertNull($ppmp->fresh()->enduser_received_at);
 
         // 3. End user receives returned document

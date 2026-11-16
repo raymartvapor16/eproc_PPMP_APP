@@ -19,6 +19,7 @@ import {
     ArrowRight
 } from 'lucide-react';
 import { monitoringService } from '../../services/api';
+import { showConfirm } from '../../utils/modalAlert';
 
 export const MonitoringStepItem = ({
     step,
@@ -76,7 +77,14 @@ export const MonitoringStepItem = ({
     };
 
     const handleDelete = async () => {
-        if (!confirm(`Are you sure you want to delete step: "${step.step_name}"?`)) return;
+        const confirmed = await showConfirm({
+            title: 'Delete Monitoring Step',
+            message: `Are you sure you want to delete step: "${step.step_name}"?`,
+            confirmText: 'Yes, Delete Step',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!confirmed) return;
         setLoading(true);
         try {
             const res = await monitoringService.deleteStep(step.id);

@@ -25,21 +25,27 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
     const isScopeAttachmentOnly = ppmp?.amendment_scope === 'ATTACHMENT_LIST';
 
     // Reviewer signatures require review approval before their initial/signature is valid
-    const hasHeadApproved = Boolean(
-        ppmp?.head_approved_at ||
-        ppmp?.status === 'READY_TO_PRINT'
-    );
+    // Reviewer signatures require review approval before their initial/signature is valid
+    // New routing order: TWG -> (Budget Officer or PACCO) -> OPPMO -> Ready to Print
     const hasTwgApproved = Boolean(
         ppmp?.twg_approved_at ||
-        ['HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
-    );
-    const hasOppmoApproved = Boolean(
-        ppmp?.oppmo_approved_at ||
-        ['TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+        ['BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
     );
     const hasBudgetApproved = Boolean(
         ppmp?.budget_approved_at ||
-        ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+        ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+    );
+    const hasPaccoApproved = Boolean(
+        ppmp?.pacco_approved_at ||
+        ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+    );
+    const hasOppmoApproved = Boolean(
+        ppmp?.oppmo_approved_at ||
+        ['HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+    );
+    const hasHeadApproved = Boolean(
+        ppmp?.head_approved_at ||
+        ppmp?.status === 'READY_TO_PRINT'
     );
 
     const preparedSig = signatures.find(s => s.role === 'end_user')
@@ -52,10 +58,6 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
     const isTrustFund = Boolean(
         (ppmp?.source_of_fund && ppmp.source_of_fund.toLowerCase().includes('trust')) ||
         ppmp?.items?.some(i => i.source_of_fund && i.source_of_fund.toLowerCase().includes('trust'))
-    );
-    const hasPaccoApproved = Boolean(
-        ppmp?.pacco_approved_at ||
-        ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
     );
     const paccoSig = isTrustFund
         ? (isScopeAttachmentOnly
@@ -182,7 +184,11 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                         Fiscal Year : <span className="font-normal">(CY {ppmp.fiscal_year})</span>
                     </div>
                     <div className="font-bold mt-0.5">
-                        End-User or Implementing Unit: <span className="font-normal uppercase">({ppmp.implementing_unit || ppmp.office?.name || ppmp.title})</span>
+                        End-User or Implementing Unit: <span className="font-normal uppercase">{(() => {
+                            const val = (ppmp.implementing_unit || ppmp.office?.name || ppmp.title || '').trim();
+                            if (!val) return '—';
+                            return val.startsWith('(') ? val : `(${val})`;
+                        })()}</span>
                     </div>
                 </div>
 
@@ -366,10 +372,10 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                         <div className="h-2" />
                                     )}
                                     <div className="font-bold text-xs uppercase underline">
-                                        {headSig?.signer_name || ppmp?.office?.head_name || ppmp?.office?.head?.name || 'NAME'}
+                                        {headSig?.signer_name || ppmp?.office_head_name || ppmp?.default_signatories?.submitted_by?.name || ppmp?.default_signatories?.head_of_office?.name || ppmp?.office?.head_name || ppmp?.office?.head?.name || 'NAME'}
                                     </div>
                                     <div className="text-[9px] uppercase font-bold">
-                                        {headSig?.signer_designation || ppmp?.office?.designation || ppmp?.office?.head?.designation || 'HEAD OF OFFICE'}
+                                        {headSig?.signer_designation || ppmp?.office_head_designation || ppmp?.default_signatories?.submitted_by?.position || ppmp?.default_signatories?.head_of_office?.position || ppmp?.office?.designation || ppmp?.office?.head?.designation || 'HEAD OF OFFICE'}
                                     </div>
                                     {isSignatureEnabled && headSig && (
                                         <div className="text-[8px] font-mono text-slate-600">

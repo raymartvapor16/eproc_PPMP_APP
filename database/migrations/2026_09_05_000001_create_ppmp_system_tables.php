@@ -107,7 +107,7 @@ return new class extends Migration
             $table->string('end_date')->nullable();
             $table->string('delivery_period')->nullable();
             $table->string('source_of_fund')->nullable(); // General Fund, 20% Dev Fund, SEF, etc.
-            $table->decimal('estimated_budget', 18, 2)->default(0.00);
+            $table->decimal('estimated_budget', 18, 2)->nullable()->default(null);
             $table->text('supporting_docs_text')->nullable();
             $table->text('remarks')->nullable();
             $table->timestamps();

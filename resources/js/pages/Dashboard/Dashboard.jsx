@@ -3,8 +3,9 @@ import * as XLSX from 'xlsx';
 import { StatusBadge, formatCurrency, formatDate } from '../../components/UI/StatusBadge';
 import { PaginationControl } from '../../components/UI/PaginationControl';
 import { signatoryService, userService, officeService, ppmpService } from '../../services/api';
-import { isAwaitingReceive } from '../../utils/workflowHelpers';
+import { isAwaitingReceive, getSupplementalKindInfo } from '../../utils/workflowHelpers';
 import { getStandardFiscalYears } from '../../utils/fiscalYears';
+import { showConfirm } from '../../utils/modalAlert';
 import { AdminSidebar } from '../../components/Dashboard/AdminSidebar';
 import { AdminVisualAnalytics } from '../../components/Dashboard/AdminVisualAnalytics';
 import { AdminReportsView } from '../../components/Dashboard/AdminReportsView';
@@ -15,6 +16,8 @@ import { ProcurementConditionsManagement } from '../../components/Dashboard/Proc
 import { OtherTermsManagement } from '../../components/Dashboard/OtherTermsManagement';
 import { SupportingDocumentsManagement } from '../../components/Dashboard/SupportingDocumentsManagement';
 import { SystemSettingsManagement } from '../../components/Dashboard/SystemSettingsManagement';
+import { AfkLogoutManagement } from '../../components/Dashboard/AfkLogoutManagement';
+import { DatabaseBackupManagement } from '../../components/Dashboard/DatabaseBackupManagement';
 import { SignatoriesManagement } from '../../components/Dashboard/SignatoriesManagement';
 import { PortalSystemsManagement } from '../../components/Dashboard/PortalSystemsManagement';
 import { OppmoTeamManagement } from '../../components/Dashboard/OppmoTeamManagement';
@@ -23,6 +26,9 @@ import { AdminDashboard } from './AdminDashboard';
 import { CreateUserModal } from '../../components/Dashboard/CreateUserModal';
 import { UserSignatureModal } from '../../components/Dashboard/UserSignatureModal';
 import { UserSystemAccessModal } from '../../components/Dashboard/UserSystemAccessModal';
+import { UserActionDropdown } from '../../components/Dashboard/UserActionDropdown';
+import { canUserAccessSystem } from '../../components/UI/UnauthorizedSystemAccessView';
+import { ExpandableText, ExpandableFundBadge } from '../../components/UI/ExpandableCell';
 import {
     PimsPublishReminderCard,
     getPpmpStartOfActivity,
@@ -37,6 +43,7 @@ import {
     ArrowRight,
     TrendingUp,
     AlertTriangle,
+    AlertCircle,
     Shield,
     Plus,
     Trash2,
@@ -65,6 +72,7 @@ import {
     PenTool,
     UserPlus,
     Layers,
+    Landmark,
 } from 'lucide-react';
 
 export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) => {
@@ -74,6 +82,9 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
 
     // Admin Sidebar active navigation tab ('overview', 'analytics', 'reports', 'offices', 'users', 'signatories', 'settings')
     const [adminSection, setAdminSection] = useState('overview');
+
+    // Reviewer active navigation tab for Budget Officer & PACCO Reviewer ('queue' | 'fund_sources')
+    const [reviewerView, setReviewerView] = useState('queue');
 
     // Live Developer Mode status
     const [devModeActive, setDevModeActive] = useState(() => isDeveloperModeActive());
@@ -183,11 +194,24 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
 
     // Search and filter state for PPMP table
     const [ppmpTab, setPpmpTab] = useState('all');
-    const [inReviewSubFilter, setInReviewSubFilter] = useState(''); // '', 'BUDGET_OFFICER_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW'
+    const [inReviewSubFilter, setInReviewSubFilter] = useState(''); // '', 'BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW'
+    const [returnedSubFilter, setReturnedSubFilter] = useState(''); // '', 'HEAD_RETURNED', 'TWG_RETURNED', 'BUDGET_OFFICER_RETURNED', 'PACCO_RETURNED', 'OPPMO_RETURNED'
     const [ppmpSearch, setPpmpSearch] = useState('');
     const [ppmpYearFilter, setPpmpYearFilter] = useState('');
     const [ppmpPage, setPpmpPage] = useState(1);
     const [ppmpPerPage, setPpmpPerPage] = useState(5); // 5 or 10 entries
+
+    const isSuspendedStatus = (status) => {
+        if (!status) return false;
+        const s = String(status).toUpperCase();
+        return ['HEAD_RETURNED', 'BUDGET_OFFICER_RETURNED', 'PACCO_RETURNED', 'OPPMO_RETURNED', 'TWG_RETURNED'].includes(s) || s.endsWith('_RETURNED');
+    };
+
+    const isInReviewStatus = (status) => {
+        if (!status) return false;
+        const s = String(status).toUpperCase();
+        return ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW'].includes(s);
+    };
 
     const ppmpYearOptions = useMemo(() => {
         return getStandardFiscalYears([ppmpYearFilter, ...recentPpmps.map(p => p.fiscal_year)]);
@@ -197,15 +221,19 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
     const statusCounts = useMemo(() => ({
         all: recentPpmps.length,
         HEAD_PENDING: recentPpmps.filter(p => p.status === 'HEAD_PENDING').length,
-        HEAD_APPROVED: recentPpmps.filter(p => p.status === 'HEAD_APPROVED').length,
+        HEAD_APPROVED: recentPpmps.filter(p => p.status === 'HEAD_APPROVED' || p.status === 'READY_FOR_REVIEW').length,
         BUDGET_OFFICER_REVIEW: recentPpmps.filter(p => p.status === 'BUDGET_OFFICER_REVIEW').length,
+        PACCO_REVIEW: recentPpmps.filter(p => p.status === 'PACCO_REVIEW').length,
         OPPMO_REVIEW: recentPpmps.filter(p => p.status === 'OPPMO_REVIEW').length,
         TWG_REVIEW: recentPpmps.filter(p => p.status === 'TWG_REVIEW').length,
+        IN_REVIEW: recentPpmps.filter(p => isInReviewStatus(p.status)).length,
         READY_TO_PRINT: recentPpmps.filter(p => p.status === 'READY_TO_PRINT').length,
-        RETURNED: recentPpmps.filter(p => ['HEAD_RETURNED', 'BUDGET_OFFICER_RETURNED', 'OPPMO_RETURNED', 'TWG_RETURNED'].includes(p.status)).length,
+        RETURNED: recentPpmps.filter(p => isSuspendedStatus(p.status)).length,
         DRAFT: recentPpmps.filter(p => p.status === 'DRAFT').length,
         PENDING_AMENDMENTS: recentPpmps.filter(p => p.amendment_status === 'PENDING_APPROVAL').length,
     }), [recentPpmps]);
+
+    const counts = statusCounts;
 
     // Memoize filtered PPMPs list for high-performance rendering
     const filteredRecentPpmps = useMemo(() => {
@@ -213,23 +241,26 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
             // 1. Status Tab filter
             if (ppmpTab !== 'all') {
                 if (ppmpTab === 'RETURNED') {
-                    if (!['HEAD_RETURNED', 'BUDGET_OFFICER_RETURNED', 'OPPMO_RETURNED', 'TWG_RETURNED'].includes(ppmp.status)) return false;
+                    if (!isSuspendedStatus(ppmp.status)) return false;
+                    if (returnedSubFilter && ppmp.status !== returnedSubFilter) return false;
                 } else if (ppmpTab === 'IN_REVIEW') {
                     if (inReviewSubFilter) {
                         if (ppmp.status !== inReviewSubFilter) return false;
                     } else {
-                        if (!['BUDGET_OFFICER_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW'].includes(ppmp.status)) return false;
+                        if (!isInReviewStatus(ppmp.status)) return false;
                     }
                 } else if (ppmpTab === 'PENDING_AMENDMENTS') {
                     if (ppmp.amendment_status !== 'PENDING_APPROVAL') return false;
                 } else if (ppmpTab === 'ENDORSED_APPROVED') {
-                    if (['DRAFT', 'HEAD_PENDING', 'HEAD_RETURNED'].includes(ppmp.status)) return false;
+                    if (['DRAFT', 'HEAD_PENDING'].includes(ppmp.status) || isSuspendedStatus(ppmp.status)) return false;
                 } else if (ppmpTab === 'BUDGET_APPROVED') {
                     if (!['OPPMO_REVIEW', 'OPPMO_RETURNED', 'TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp.status)) return false;
                 } else if (ppmpTab === 'OPPMO_APPROVED') {
                     if (!['TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp.status)) return false;
                 } else if (ppmpTab === 'TWG_APPROVED') {
-                    if (!['OPPMO_REVIEW', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp.status) || !ppmp.twg_approved_at) return false;
+                    const isTwgApproved = Boolean(ppmp.twg_approved_at || ppmp.signatures?.some(s => s.role === 'twg'));
+                    const isForwardedStatus = ['BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp.status);
+                    if (!isForwardedStatus || !isTwgApproved) return false;
                 } else if (ppmp.status !== ppmpTab) {
                     return false;
                 }
@@ -262,7 +293,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
 
             return true;
         });
-    }, [recentPpmps, ppmpTab, inReviewSubFilter, ppmpYearFilter, ppmpSearch]);
+    }, [recentPpmps, ppmpTab, inReviewSubFilter, returnedSubFilter, ppmpYearFilter, ppmpSearch]);
 
     const handleReceive = async (uuid) => {
         setReceivingUuids(prev => ({ ...prev, [uuid]: true }));
@@ -391,7 +422,13 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
 
     const handleToggleUserStatus = async (targetUser) => {
         const actionLabel = targetUser.is_active ? 'deactivate' : 'activate';
-        if (!confirm(`Are you sure you want to ${actionLabel} ${targetUser.name}?`)) return;
+        const confirmed = await showConfirm({
+            title: `${targetUser.is_active ? 'Deactivate' : 'Activate'} User`,
+            message: `Are you sure you want to ${actionLabel} ${targetUser.name}?`,
+            confirmText: `Yes, ${targetUser.is_active ? 'Deactivate' : 'Activate'}`,
+            type: targetUser.is_active ? 'warning' : 'success',
+        });
+        if (!confirmed) return;
 
         setProcessingUserId(targetUser.id);
         setUserActionFeedback({ type: '', text: '' });
@@ -407,7 +444,13 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
     };
 
     const handleDeleteUser = async (targetUser) => {
-        if (!confirm(`Are you sure you want to permanently delete user "${targetUser.name}" (${targetUser.email})? This action cannot be undone.`)) return;
+        const confirmed = await showConfirm({
+            title: 'Delete User Account',
+            message: `Are you sure you want to permanently delete user "${targetUser.name}" (${targetUser.email})? This action cannot be undone.`,
+            confirmText: 'Yes, Delete Account',
+            type: 'danger',
+        });
+        if (!confirmed) return;
 
         setProcessingUserId(targetUser.id);
         setUserActionFeedback({ type: '', text: '' });
@@ -473,7 +516,13 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
     };
 
     const handleDeleteSignatory = async (id) => {
-        if (!confirm('Are you sure you want to remove this signatory?')) return;
+        const confirmed = await showConfirm({
+            title: 'Remove Signatory',
+            message: 'Are you sure you want to remove this signatory?',
+            confirmText: 'Yes, Remove Signatory',
+            type: 'danger',
+        });
+        if (!confirmed) return;
         try {
             await signatoryService.delete(id);
             await refreshSignatories();
@@ -535,7 +584,13 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
     };
 
     const handleDeleteOffice = async (id) => {
-        if (!confirm('Are you sure you want to delete this office?')) return;
+        const confirmed = await showConfirm({
+            title: 'Delete Office',
+            message: 'Are you sure you want to delete this office record? Linked documents will require re-association.',
+            confirmText: 'Yes, Delete Office',
+            type: 'danger',
+        });
+        if (!confirmed) return;
         try {
             await officeService.delete(id);
             await refreshOffices();
@@ -694,7 +749,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 return <AdminActivityLog />;
             }
             if (adminSection === 'fund_sources') {
-                return <FundSourcesManagement />;
+                return <FundSourcesManagement user={user} />;
             }
             if (adminSection === 'procurement_modes') {
                 return <ProcurementModesManagement />;
@@ -714,8 +769,14 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
             if (adminSection === 'oppmo_team') {
                 return <OppmoTeamManagement />;
             }
-            if (adminSection === 'settings') {
+            if (adminSection === 'settings' || adminSection === 'security') {
                 return <SystemSettingsManagement />;
+            }
+            if (adminSection === 'afk' || adminSection === 'afk_management') {
+                return <AfkLogoutManagement />;
+            }
+            if (adminSection === 'database_backup') {
+                return <DatabaseBackupManagement />;
             }
             // For 'overview', 'offices', 'users' — we render the full scrollable content below
             return null;
@@ -773,7 +834,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                         <div className="space-y-6">
                             {/* Overview Section: KPI Metrics */}
                             {(adminSection === 'overview') && (
-                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
                                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3">
                                         <div className="p-3 bg-blue-100 text-blue-700 rounded-lg"><FileText className="w-5 h-5" /></div>
                                         <div>
@@ -821,6 +882,12 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
 
                             {/* System Security & Developer Mode Governance */}
                             {adminSection === 'overview' && <SystemSettingsManagement />}
+
+                            {/* AFK & Inactivity Auto-Logout Security Management */}
+                            {adminSection === 'overview' && <AfkLogoutManagement />}
+
+                            {/* Database Backup & Disaster Recovery */}
+                            {adminSection === 'overview' && <DatabaseBackupManagement />}
 
                             {/* Signatories — shown in overview too */}
                             {adminSection === 'overview' && SignatoriesPanel}
@@ -916,7 +983,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                     const totalPages = Math.ceil(filtered.length / userPerPage) || 1;
                                                     const safePage = Math.min(userPage, totalPages);
                                                     const paginated = filtered.slice((safePage - 1) * userPerPage, safePage * userPerPage);
-                                                    return paginated.map(u => {
+                                                    return paginated.map((u, index) => {
                                                         const isPending = !u.is_active && u.approval_status !== 'rejected';
                                                         const isRejected = u.approval_status === 'rejected';
                                                         return (
@@ -998,10 +1065,12 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                                                                 ? 'bg-blue-50 text-blue-700 border-blue-200'
                                                                                                 : url === '/monitoringsystem'
                                                                                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                                                : url === '/pims'
+                                                                                                ? 'bg-purple-50 text-purple-700 border-purple-200'
                                                                                                 : 'bg-amber-50 text-amber-700 border-amber-200'
                                                                                         }`}
                                                                                     >
-                                                                                        {url === '/eprocrementppmpapp' ? 'PPMP/APP' : url === '/monitoringsystem' ? 'Monitoring' : 'Portal'}
+                                                                                        {url === '/eprocrementppmpapp' ? 'PPMP/APP' : url === '/monitoringsystem' ? 'Monitoring' : url === '/pims' ? 'PIMS' : url === '/supplierevaluation' ? 'Supplier Eval' : 'Portal'}
                                                                                     </span>
                                                                                 ))
                                                                             ) : (
@@ -1035,90 +1104,20 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                                     )}
                                                                 </td>
                                                                 <td className="p-3 text-right">
-                                                                    <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                                                                        {/* If Pending: Strictly show Approve & Reject buttons only */}
-                                                                        {isPending ? (
-                                                                            <>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => handleApproveUser(u)}
-                                                                                    disabled={processingUserId === u.id}
-                                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold transition disabled:opacity-50 cursor-pointer shadow-2xs"
-                                                                                    title="Approve User Registration"
-                                                                                >
-                                                                                    <UserCheck className="w-3 h-3" /> Approve
-                                                                                </button>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => openRejectModal(u)}
-                                                                                    disabled={processingUserId === u.id}
-                                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold transition disabled:opacity-50 cursor-pointer shadow-2xs"
-                                                                                    title="Reject User Registration"
-                                                                                >
-                                                                                    <UserX className="w-3 h-3" /> Reject
-                                                                                </button>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => setSelectedUserForSystems(u)}
-                                                                                    className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded text-[11px] font-bold transition cursor-pointer"
-                                                                                    title="Configure Digital Systems Access"
-                                                                                >
-                                                                                    <Layers className="w-3 h-3" /> Systems
-                                                                                </button>
-                                                                            </>
-                                                                        ) : isRejected ? (
-                                                                            <>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => handleApproveUser(u)}
-                                                                                    disabled={processingUserId === u.id}
-                                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold transition disabled:opacity-50 cursor-pointer shadow-2xs"
-                                                                                    title="Re-approve & Activate"
-                                                                                >
-                                                                                    <UserCheck className="w-3 h-3" /> Approve
-                                                                                </button>
-                                                                                {u.id !== user?.id && (
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        onClick={() => handleDeleteUser(u)}
-                                                                                        disabled={processingUserId === u.id}
-                                                                                        className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 hover:bg-rose-100 text-slate-600 hover:text-rose-700 rounded text-[11px] font-semibold transition disabled:opacity-50 cursor-pointer"
-                                                                                        title="Delete Rejected Account"
-                                                                                    >
-                                                                                        <Trash2 className="w-3 h-3" />
-                                                                                    </button>
-                                                                                )}
-                                                                            </>
-                                                                        ) : (
-                                                                            <>
-                                                                                {u.id !== user?.id && (
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        onClick={() => handleToggleUserStatus(u)}
-                                                                                        disabled={processingUserId === u.id}
-                                                                                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold transition disabled:opacity-50 cursor-pointer ${u.is_active ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-slate-200 hover:bg-emerald-600 hover:text-white text-slate-700'}`}
-                                                                                    >
-                                                                                        {u.is_active ? <><ToggleLeft className="w-3 h-3" /> Deactivate</> : <><ToggleRight className="w-3 h-3" /> Activate</>}
-                                                                                    </button>
-                                                                                )}
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => openPasswordModal(u)}
-                                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold transition cursor-pointer"
-                                                                                >
-                                                                                    <Key className="w-3 h-3" /> Password
-                                                                                </button>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => setSelectedUserForSystems(u)}
-                                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-[11px] font-bold transition cursor-pointer shadow-2xs"
-                                                                                    title="Edit Permitted Digital Systems (Face-to-Face Request)"
-                                                                                >
-                                                                                    <Layers className="w-3 h-3" /> Systems
-                                                                                </button>
-                                                                            </>
-                                                                        )}
-                                                                    </div>
+                                                                    <UserActionDropdown
+                                                                        user={u}
+                                                                        currentUser={user}
+                                                                        isPending={isPending}
+                                                                        isRejected={isRejected}
+                                                                        onToggleStatus={() => handleToggleUserStatus(u)}
+                                                                        onResetPassword={() => openPasswordModal(u)}
+                                                                        onManageSystems={() => setSelectedUserForSystems(u)}
+                                                                        onApprove={() => handleApproveUser(u)}
+                                                                        onReject={() => openRejectModal(u)}
+                                                                        onDelete={() => handleDeleteUser(u)}
+                                                                        isProcessing={processingUserId === u.id}
+                                                                        openUpward={index >= paginated.length - 2 && paginated.length > 2}
+                                                                    />
                                                                 </td>
                                                             </tr>
                                                         );
@@ -1610,70 +1609,200 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                         + Prepare New PPMP
                     </button>
                 )}
+
+                {(user?.role === 'budget_officer' || user?.role === 'pacco') && (
+                    <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200 self-start sm:self-auto">
+                        <button
+                            type="button"
+                            onClick={() => setReviewerView('queue')}
+                            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                reviewerView === 'queue'
+                                    ? 'bg-blue-600 text-white shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                            }`}
+                        >
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>PPMP Review Queue</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setReviewerView('fund_sources')}
+                            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                reviewerView === 'fund_sources'
+                                    ? 'bg-blue-600 text-white shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                            }`}
+                        >
+                            <Landmark className="w-3.5 h-3.5" />
+                            <span>Sources of Fund</span>
+                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-black ${
+                                reviewerView === 'fund_sources'
+                                    ? 'bg-blue-800 text-blue-100'
+                                    : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            }`}>
+                                Manage
+                            </span>
+                        </button>
+                    </div>
+                )}
             </div>
 
+            {/* If Budget Officer or PACCO Reviewer is in 'fund_sources' view */}
+            {(user?.role === 'budget_officer' || user?.role === 'pacco') && reviewerView === 'fund_sources' ? (
+                <div className="space-y-6">
+                    <FundSourcesManagement user={user} />
+                </div>
+            ) : (
+                <>
+                    {/* Role-tailored banner card for quick access on review queue */}
+                    {(user?.role === 'budget_officer' || user?.role === 'pacco') && (
+                        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 rounded-2xl p-4 sm:p-5 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm border border-slate-800">
+                            <div className="flex items-start sm:items-center gap-3.5">
+                                <div className="p-3 bg-blue-500/20 text-blue-300 rounded-xl border border-blue-400/30 shrink-0">
+                                    <Landmark className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-extrabold text-xs tracking-tight text-white uppercase">
+                                            Sources of Fund Management &amp; Review Routing
+                                        </span>
+                                        <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-black rounded-full border border-emerald-500/30">
+                                            {user.role === 'pacco' ? 'PACCO Reviewer Catalog' : 'Budget Officer Catalog'}
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                                        Configure official fund classifications, account codes, and review routes (General Fund, 20% DF, Special Health/Education, or Trust Funds).
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setReviewerView('fund_sources')}
+                                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer shrink-0 self-start sm:self-auto"
+                            >
+                                <Landmark className="w-3.5 h-3.5" />
+                                <span>Manage Sources of Fund</span>
+                                <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+                    )}
+
             {/* Metrics Cards Grid tailored to role */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className={`grid gap-3 sm:gap-4 ${
+                user?.role === 'twg'
+                    ? 'grid-cols-2 md:grid-cols-4'
+                    : (['budget_officer', 'oppmo', 'pacco', 'head', 'authorized_staff'].includes(user?.role)
+                        ? 'grid-cols-1 sm:grid-cols-3'
+                        : 'grid-cols-2 sm:grid-cols-3 xl:grid-cols-6')
+            }`}>
                 {user?.role === 'end_user' && (
                     <>
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3">
+                        <div
+                            onClick={() => {
+                                setPpmpTab('DRAFT');
+                                setPpmpPage(1);
+                            }}
+                            className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3 cursor-pointer hover:border-slate-300 hover:bg-slate-50/50 transition"
+                            title="Click to view Draft PPMPs"
+                        >
                             <div className="p-3 bg-slate-100 text-slate-700 rounded-lg">
                                 <FileText className="w-5 h-5" />
                             </div>
                             <div>
-                                <div className="text-xl font-black text-slate-900">{metrics.draft || 0}</div>
+                                <div className="text-xl font-black text-slate-900">{counts.DRAFT ?? metrics.draft ?? 0}</div>
                                 <div className="text-xs font-medium text-slate-500">Draft PPMPs</div>
                             </div>
                         </div>
 
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3">
+                        <div
+                            onClick={() => {
+                                setPpmpTab('HEAD_PENDING');
+                                setPpmpPage(1);
+                            }}
+                            className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3 cursor-pointer hover:border-amber-300 hover:bg-amber-50/50 transition"
+                            title="Click to view Pending Head Approval"
+                        >
                             <div className="p-3 bg-amber-100 text-amber-700 rounded-lg">
                                 <Clock className="w-5 h-5" />
                             </div>
                             <div>
-                                <div className="text-xl font-black text-amber-900">{metrics.head_pending || 0}</div>
+                                <div className="text-xl font-black text-amber-900">{counts.HEAD_PENDING ?? metrics.head_pending ?? 0}</div>
                                 <div className="text-xs font-medium text-slate-500">Pending Head Approval</div>
                             </div>
                         </div>
 
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3">
+                        <div
+                            onClick={() => {
+                                setPpmpTab('HEAD_APPROVED');
+                                setPpmpPage(1);
+                            }}
+                            className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3 cursor-pointer hover:border-blue-300 hover:bg-blue-50/50 transition"
+                            title="Click to view Endorsed by Head"
+                        >
                             <div className="p-3 bg-blue-100 text-blue-700 rounded-lg">
                                 <CheckCircle2 className="w-5 h-5" />
                             </div>
                             <div>
-                                <div className="text-xl font-black text-blue-900">{metrics.ready_for_review || 0}</div>
+                                <div className="text-xl font-black text-blue-900">{counts.HEAD_APPROVED ?? metrics.ready_for_review ?? 0}</div>
                                 <div className="text-xs font-medium text-slate-500">Endorsed by Head</div>
                             </div>
                         </div>
 
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3">
+                        <div
+                            onClick={() => {
+                                setPpmpTab('IN_REVIEW');
+                                setInReviewSubFilter('');
+                                setPpmpPage(1);
+                            }}
+                            className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/50 transition"
+                            title="Click to view PPMPs In Formal Review"
+                        >
                             <div className="p-3 bg-indigo-100 text-indigo-700 rounded-lg">
                                 <TrendingUp className="w-5 h-5" />
                             </div>
                             <div>
-                                <div className="text-xl font-black text-indigo-900">{metrics.in_review || 0}</div>
+                                <div className="text-xl font-black text-indigo-900">{counts.IN_REVIEW ?? metrics.in_review ?? 0}</div>
                                 <div className="text-xs font-medium text-slate-500">In Formal Review</div>
                             </div>
                         </div>
 
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3">
-                            <div className="p-3 bg-rose-100 text-rose-700 rounded-lg">
+                        <div
+                            onClick={() => {
+                                setPpmpTab('RETURNED');
+                                setReturnedSubFilter('');
+                                setPpmpPage(1);
+                            }}
+                            className={`bg-white p-4 rounded-xl border shadow-xs flex items-center gap-3 cursor-pointer transition ${
+                                counts.RETURNED > 0
+                                    ? 'border-rose-300 bg-rose-50/30 hover:bg-rose-50 hover:border-rose-400'
+                                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
+                            }`}
+                            title="Click to view Suspended PPMPs Returned for Remarks"
+                        >
+                            <div className={`p-3 rounded-lg ${counts.RETURNED > 0 ? 'bg-rose-600 text-white' : 'bg-rose-100 text-rose-700'}`}>
                                 <RotateCcw className="w-5 h-5" />
                             </div>
                             <div>
                                 <div className="text-xl font-black text-rose-900">
-                                    {(metrics.head_returned || 0) + (metrics.returned_by_reviewer || 0)}
+                                    {counts.RETURNED}
                                 </div>
                                 <div className="text-xs font-medium text-slate-500">Returned for Remarks</div>
                             </div>
                         </div>
 
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3">
+                        <div
+                            onClick={() => {
+                                setPpmpTab('READY_TO_PRINT');
+                                setPpmpPage(1);
+                            }}
+                            className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3 cursor-pointer hover:border-emerald-300 hover:bg-emerald-50/50 transition"
+                            title="Click to view Ready to Print PPMPs"
+                        >
                             <div className="p-3 bg-emerald-100 text-emerald-700 rounded-lg">
                                 <Printer className="w-5 h-5" />
                             </div>
                             <div>
-                                <div className="text-xl font-black text-emerald-900">{metrics.ready_to_print || 0}</div>
+                                <div className="text-xl font-black text-emerald-900">{counts.READY_TO_PRINT ?? metrics.ready_to_print ?? 0}</div>
                                 <div className="text-xs font-medium text-slate-500">Ready to Print</div>
                             </div>
                         </div>
@@ -1842,7 +1971,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
             </div>
 
             {/* End-User PIMS Procurement Publishing Reminders */}
-            {user?.role === 'end_user' && (
+            {user?.role === 'end_user' && canUserAccessSystem(user, '/pims') && (
                 <PimsPublishReminderCard
                     ppmps={recentPpmps}
                     onOpenPpmp={(uuid) => handleOpenDetails(uuid)}
@@ -2187,7 +2316,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                     const startIndex = (safePage - 1) * userPerPage;
                                     const paginated = filteredUsers.slice(startIndex, startIndex + userPerPage);
 
-                                    return paginated.map((u) => {
+                                    return paginated.map((u, index) => {
                                         const isProcessing = processingUserId === u.id;
                                         const isPending = !u.is_active && u.approval_status !== 'rejected';
                                         const isRejected = u.approval_status === 'rejected';
@@ -2295,120 +2424,20 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                     )}
                                                 </td>
                                                 <td className="p-3 text-right">
-                                                    <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                                                        {/* If Pending: Strictly show Approve and Reject only */}
-                                                        {isPending ? (
-                                                            <>
-                                                                <button
-                                                                    type="button"
-                                                                    disabled={isProcessing}
-                                                                    onClick={() => handleApproveUser(u)}
-                                                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer disabled:opacity-50"
-                                                                    title="Approve & Activate Account"
-                                                                >
-                                                                    <UserCheck className="w-3.5 h-3.5" />
-                                                                    Approve
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    disabled={isProcessing}
-                                                                    onClick={() => openRejectModal(u)}
-                                                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer disabled:opacity-50"
-                                                                    title="Reject Registration"
-                                                                >
-                                                                    <UserX className="w-3.5 h-3.5" />
-                                                                    Reject
-                                                                </button>
-                                                            </>
-                                                        ) : isRejected ? (
-                                                            <>
-                                                                <button
-                                                                    type="button"
-                                                                    disabled={isProcessing}
-                                                                    onClick={() => handleApproveUser(u)}
-                                                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer disabled:opacity-50"
-                                                                    title="Re-approve & Activate Account"
-                                                                >
-                                                                    <UserCheck className="w-3.5 h-3.5" />
-                                                                    Approve
-                                                                </button>
-                                                                {u.id !== user?.id && (
-                                                                    <button
-                                                                        type="button"
-                                                                        disabled={isProcessing}
-                                                                        onClick={() => handleDeleteUser(u)}
-                                                                        className="inline-flex items-center justify-center p-1.5 bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-700 rounded-lg transition shadow-2xs cursor-pointer disabled:opacity-50"
-                                                                        title="Delete Rejected Account"
-                                                                    >
-                                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                                    </button>
-                                                                )}
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                {/* Toggle Active / Deactivate */}
-                                                                {u.id !== user?.id && (
-                                                                    <button
-                                                                        type="button"
-                                                                        disabled={isProcessing}
-                                                                        onClick={() => handleToggleUserStatus(u)}
-                                                                        className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition shadow-2xs cursor-pointer disabled:opacity-50 ${u.is_active
-                                                                            ? 'bg-slate-100 hover:bg-amber-100 text-slate-700 hover:text-amber-800'
-                                                                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
-                                                                            }`}
-                                                                        title={u.is_active ? 'Deactivate Account' : 'Activate Account'}
-                                                                    >
-                                                                        {u.is_active ? (
-                                                                            <>
-                                                                                <ToggleRight className="w-3.5 h-3.5 text-emerald-600" />
-                                                                                Deactivate
-                                                                            </>
-                                                                        ) : (
-                                                                            <>
-                                                                                <ToggleLeft className="w-3.5 h-3.5 text-slate-400" />
-                                                                                Activate
-                                                                            </>
-                                                                        )}
-                                                                    </button>
-                                                                )}
-
-                                                                {/* Change Password */}
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => openPasswordModal(u)}
-                                                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-700 rounded-lg text-xs font-semibold transition shadow-2xs cursor-pointer"
-                                                                    title="Change Password"
-                                                                >
-                                                                    <Key className="w-3.5 h-3.5" />
-                                                                    Password
-                                                                </button>
-
-                                                                {/* Manage Systems Access */}
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => setSelectedUserForSystems(u)}
-                                                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer"
-                                                                    title="Manage Digital Systems Access Permissions"
-                                                                >
-                                                                    <Layers className="w-3.5 h-3.5 text-purple-600" />
-                                                                    Systems
-                                                                </button>
-
-                                                                {/* Delete User */}
-                                                                {u.id !== user?.id && (
-                                                                    <button
-                                                                        type="button"
-                                                                        disabled={isProcessing}
-                                                                        onClick={() => handleDeleteUser(u)}
-                                                                        className="inline-flex items-center justify-center p-1.5 bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-700 rounded-lg transition shadow-2xs cursor-pointer disabled:opacity-50"
-                                                                        title="Delete User"
-                                                                    >
-                                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                                    </button>
-                                                                )}
-                                                            </>
-                                                        )}
-                                                    </div>
+                                                    <UserActionDropdown
+                                                        user={u}
+                                                        currentUser={user}
+                                                        isPending={isPending}
+                                                        isRejected={isRejected}
+                                                        onToggleStatus={() => handleToggleUserStatus(u)}
+                                                        onResetPassword={() => openPasswordModal(u)}
+                                                        onManageSystems={() => setSelectedUserForSystems(u)}
+                                                        onApprove={() => handleApproveUser(u)}
+                                                        onReject={() => openRejectModal(u)}
+                                                        onDelete={() => handleDeleteUser(u)}
+                                                        isProcessing={isProcessing}
+                                                        openUpward={index >= paginated.length - 2 && paginated.length > 2}
+                                                    />
                                                 </td>
                                             </tr>
                                         );
@@ -2653,6 +2682,42 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 </div>
             )}
 
+            {/* Action Required: Suspended PPMPs Banner for End User */}
+            {user?.role === 'end_user' && counts.RETURNED > 0 && (
+                <div className="bg-gradient-to-r from-rose-50 via-red-50 to-amber-50 border-2 border-rose-300 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm animate-in fade-in">
+                    <div className="flex items-start sm:items-center gap-3.5">
+                        <div className="p-3 bg-rose-600 text-white rounded-xl shadow-xs shrink-0">
+                            <AlertCircle className="w-5 h-5 animate-pulse" />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-extrabold text-sm text-rose-950 uppercase tracking-tight">
+                                    Action Required: {counts.RETURNED} Suspended PPMP{counts.RETURNED > 1 ? 's' : ''} Returned for Remarks
+                                </span>
+                                <span className="px-2 py-0.5 bg-rose-200 text-rose-900 text-[10px] font-black rounded-full border border-rose-300">
+                                    Needs Compliance
+                                </span>
+                            </div>
+                            <p className="text-xs text-rose-800 mt-1 leading-relaxed">
+                                Reviewer findings or suspension remarks have been issued. Please review cell comments, make required corrections, and resubmit for approval.
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setPpmpTab('RETURNED');
+                            setReturnedSubFilter('');
+                            setPpmpPage(1);
+                        }}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer shrink-0 self-start sm:self-auto"
+                    >
+                        <span>View Suspended PPMPs</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+            )}
+
             {/* Recent PPMPs Table */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                 <div className="p-5 border-b border-slate-100 flex items-center justify-between">
@@ -2725,7 +2790,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'IN_REVIEW',
                                 label: 'In Review',
-                                count: recentPpmps.filter(p => ['BUDGET_OFFICER_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW'].includes(p.status)).length,
+                                count: counts.IN_REVIEW,
                                 activeClass: 'bg-indigo-600 text-white border-indigo-600 shadow-sm',
                                 inactiveClass: 'bg-indigo-50/70 text-indigo-900 border-indigo-200 hover:bg-indigo-100',
                                 activeBadge: 'bg-indigo-800 text-indigo-100',
@@ -2866,8 +2931,8 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             },
                             {
                                 key: 'OPPMO_APPROVED',
-                                label: 'Cleared / Routed to TWG',
-                                count: recentPpmps.filter(p => ['TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(p.status)).length,
+                                label: 'Cleared / Ready to Print',
+                                count: recentPpmps.filter(p => p.status === 'READY_TO_PRINT').length,
                                 activeClass: 'bg-emerald-600 text-white border-emerald-600 shadow-sm',
                                 inactiveClass: 'bg-emerald-50/70 text-emerald-900 border-emerald-200 hover:bg-emerald-100',
                                 activeBadge: 'bg-emerald-800 text-emerald-100',
@@ -2910,8 +2975,8 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             },
                             {
                                 key: 'TWG_APPROVED',
-                                label: 'Approved & Routed to OPPMO',
-                                count: recentPpmps.filter(p => ['OPPMO_REVIEW', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(p.status) && (p.twg_approved_at || p.signatures?.some(s => s.role === 'twg'))).length,
+                                label: 'Approved & Forwarded',
+                                count: recentPpmps.filter(p => ['BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(p.status) && (p.twg_approved_at || p.signatures?.some(s => s.role === 'twg'))).length,
                                 activeClass: 'bg-amber-600 text-white border-amber-600 shadow-sm',
                                 inactiveClass: 'bg-amber-50/70 text-amber-900 border-amber-200 hover:bg-amber-100',
                                 activeBadge: 'bg-amber-800 text-amber-100',
@@ -2955,7 +3020,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'IN_REVIEW',
                                 label: 'Under Review',
-                                count: recentPpmps.filter(p => ['BUDGET_OFFICER_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW', 'HEAD_APPROVED'].includes(p.status)).length,
+                                count: counts.IN_REVIEW,
                                 activeClass: 'bg-emerald-600 text-white border-emerald-600 shadow-sm',
                                 inactiveClass: 'bg-emerald-50/70 text-emerald-900 border-emerald-200 hover:bg-emerald-100',
                                 activeBadge: 'bg-emerald-800 text-emerald-100',
@@ -3035,6 +3100,16 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 activeBadge: 'bg-indigo-800 text-indigo-100',
                                 inactiveBadge: 'bg-indigo-100 text-indigo-800 border border-indigo-300',
                                 dot: 'bg-indigo-500',
+                            },
+                            {
+                                key: 'PACCO_REVIEW',
+                                label: 'PACCO Review',
+                                count: counts.PACCO_REVIEW,
+                                activeClass: 'bg-teal-600 text-white border-teal-600 shadow-sm',
+                                inactiveClass: 'bg-teal-50/70 text-teal-900 border-teal-200 hover:bg-teal-100',
+                                activeBadge: 'bg-teal-800 text-teal-100',
+                                inactiveBadge: 'bg-teal-100 text-teal-800 border border-teal-300',
+                                dot: 'bg-teal-500',
                             },
                             {
                                 key: 'OPPMO_REVIEW',
@@ -3161,13 +3236,14 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                         </select>
 
                         {/* Reset Filters button when active */}
-                        {(ppmpSearch || ppmpYearFilter || inReviewSubFilter || ppmpTab !== 'all') && (
+                        {(ppmpSearch || ppmpYearFilter || inReviewSubFilter || returnedSubFilter || ppmpTab !== 'all') && (
                             <button
                                 type="button"
                                 onClick={() => {
                                     setPpmpSearch('');
                                     setPpmpYearFilter('');
                                     setInReviewSubFilter('');
+                                    setReturnedSubFilter('');
                                     setPpmpTab('all');
                                     setPpmpPage(1);
                                 }}
@@ -3192,9 +3268,17 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: '',
                                 label: 'All Review Stages',
-                                count: recentPpmps.filter(p => ['BUDGET_OFFICER_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW'].includes(p.status)).length,
+                                count: statusCounts.IN_REVIEW,
                                 activeClass: 'bg-indigo-600 text-white shadow-xs',
                                 inactiveClass: 'bg-white text-indigo-900 border border-indigo-200 hover:bg-indigo-100/60',
+                            },
+                            {
+                                key: 'TWG_REVIEW',
+                                label: 'BAC-TWG Review',
+                                count: recentPpmps.filter(p => p.status === 'TWG_REVIEW').length,
+                                activeClass: 'bg-cyan-600 text-white shadow-xs',
+                                inactiveClass: 'bg-white text-cyan-900 border border-cyan-200 hover:bg-cyan-100/60',
+                                dot: 'bg-cyan-500',
                             },
                             {
                                 key: 'BUDGET_OFFICER_REVIEW',
@@ -3205,6 +3289,14 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 dot: 'bg-indigo-500',
                             },
                             {
+                                key: 'PACCO_REVIEW',
+                                label: 'PACCO Review',
+                                count: recentPpmps.filter(p => p.status === 'PACCO_REVIEW').length,
+                                activeClass: 'bg-teal-600 text-white shadow-xs',
+                                inactiveClass: 'bg-white text-teal-900 border border-teal-200 hover:bg-teal-100/60',
+                                dot: 'bg-teal-500',
+                            },
+                            {
                                 key: 'OPPMO_REVIEW',
                                 label: 'OPPMO Review',
                                 count: recentPpmps.filter(p => p.status === 'OPPMO_REVIEW').length,
@@ -3212,21 +3304,98 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 inactiveClass: 'bg-white text-purple-900 border border-purple-200 hover:bg-purple-100/60',
                                 dot: 'bg-purple-500',
                             },
-                            {
-                                key: 'TWG_REVIEW',
-                                label: 'BAC-TWG Review',
-                                count: recentPpmps.filter(p => p.status === 'TWG_REVIEW').length,
-                                activeClass: 'bg-cyan-600 text-white shadow-xs',
-                                inactiveClass: 'bg-white text-cyan-900 border border-cyan-200 hover:bg-cyan-100/60',
-                                dot: 'bg-cyan-500',
-                            },
                         ].map((sub) => {
                             const isSubActive = inReviewSubFilter === sub.key;
                             return (
                                 <button
                                     key={sub.key}
                                     type="button"
-                                    onClick={() => setInReviewSubFilter(sub.key)}
+                                    onClick={() => {
+                                        setInReviewSubFilter(sub.key);
+                                        setPpmpPage(1);
+                                    }}
+                                    className={`px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${isSubActive ? sub.activeClass : sub.inactiveClass
+                                        }`}
+                                >
+                                    {sub.dot && (
+                                        <span className={`w-1.5 h-1.5 rounded-full ${isSubActive ? 'bg-white' : sub.dot}`} />
+                                    )}
+                                    <span>{sub.label}</span>
+                                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isSubActive ? 'bg-black/20 text-white' : 'bg-slate-100 text-slate-700'
+                                        }`}>
+                                        {sub.count}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* Sub-stage filter bar when viewing "Returned for Remarks" tab */}
+                {ppmpTab === 'RETURNED' && (
+                    <div className="px-5 py-2.5 bg-rose-50/50 border-b border-rose-100 flex flex-wrap items-center gap-2">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-rose-900 mr-1 flex items-center gap-1">
+                            Returned By:
+                        </span>
+
+                        {[
+                            {
+                                key: '',
+                                label: 'All Suspended / Returned',
+                                count: statusCounts.RETURNED,
+                                activeClass: 'bg-rose-600 text-white shadow-xs',
+                                inactiveClass: 'bg-white text-rose-900 border border-rose-200 hover:bg-rose-100/60',
+                            },
+                            {
+                                key: 'HEAD_RETURNED',
+                                label: 'Office Head',
+                                count: recentPpmps.filter(p => p.status === 'HEAD_RETURNED').length,
+                                activeClass: 'bg-amber-600 text-white shadow-xs',
+                                inactiveClass: 'bg-white text-amber-900 border border-amber-200 hover:bg-amber-100/60',
+                                dot: 'bg-amber-500',
+                            },
+                            {
+                                key: 'TWG_RETURNED',
+                                label: 'BAC-TWG',
+                                count: recentPpmps.filter(p => p.status === 'TWG_RETURNED').length,
+                                activeClass: 'bg-cyan-600 text-white shadow-xs',
+                                inactiveClass: 'bg-white text-cyan-900 border border-cyan-200 hover:bg-cyan-100/60',
+                                dot: 'bg-cyan-500',
+                            },
+                            {
+                                key: 'BUDGET_OFFICER_RETURNED',
+                                label: 'Budget Officer',
+                                count: recentPpmps.filter(p => p.status === 'BUDGET_OFFICER_RETURNED').length,
+                                activeClass: 'bg-indigo-600 text-white shadow-xs',
+                                inactiveClass: 'bg-white text-indigo-900 border border-indigo-200 hover:bg-indigo-100/60',
+                                dot: 'bg-indigo-500',
+                            },
+                            {
+                                key: 'PACCO_RETURNED',
+                                label: 'PACCO Reviewer',
+                                count: recentPpmps.filter(p => p.status === 'PACCO_RETURNED').length,
+                                activeClass: 'bg-teal-600 text-white shadow-xs',
+                                inactiveClass: 'bg-white text-teal-900 border border-teal-200 hover:bg-teal-100/60',
+                                dot: 'bg-teal-500',
+                            },
+                            {
+                                key: 'OPPMO_RETURNED',
+                                label: 'OPPMO Reviewer',
+                                count: recentPpmps.filter(p => p.status === 'OPPMO_RETURNED').length,
+                                activeClass: 'bg-purple-600 text-white shadow-xs',
+                                inactiveClass: 'bg-white text-purple-900 border border-purple-200 hover:bg-purple-100/60',
+                                dot: 'bg-purple-500',
+                            },
+                        ].map((sub) => {
+                            const isSubActive = returnedSubFilter === sub.key;
+                            return (
+                                <button
+                                    key={sub.key}
+                                    type="button"
+                                    onClick={() => {
+                                        setReturnedSubFilter(sub.key);
+                                        setPpmpPage(1);
+                                    }}
                                     className={`px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${isSubActive ? sub.activeClass : sub.inactiveClass
                                         }`}
                                 >
@@ -3251,6 +3420,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 <th className="p-3">Tracker No.</th>
                                 <th className="p-3">Project Title</th>
                                 <th className="p-3">Fiscal Year</th>
+                                <th className="p-3">Source of Funds</th>
                                 <th className="p-3">Total Budget</th>
                                 <th className="p-3">Workflow Status</th>
                                 <th className="p-3">Last Updated</th>
@@ -3264,7 +3434,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 if (filtered.length === 0) {
                                     return (
                                         <tr>
-                                            <td colSpan={7} className="p-8 text-center text-slate-400 italic">
+                                            <td colSpan={8} className="p-8 text-center text-slate-400 italic">
                                                 {ppmpSearch || ppmpYearFilter
                                                     ? 'No PPMP records match your search and filter criteria.'
                                                     : 'No PPMP records found for this status tab.'}
@@ -3278,7 +3448,9 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 const startIndex = (safePage - 1) * ppmpPerPage;
                                 const paginated = filtered.slice(startIndex, startIndex + ppmpPerPage);
 
-                                return paginated.map((ppmp) => (
+                                return paginated.map((ppmp) => {
+                                    const suppInfo = getSupplementalKindInfo(ppmp);
+                                    return (
                                     <tr key={ppmp.id} className="hover:bg-slate-50 transition">
                                         <td className="p-3">
                                             <div className="font-mono font-bold text-blue-900">
@@ -3298,15 +3470,17 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                             ppmp.amendment_type === 'AMENDMENT'
                                                                 ? 'bg-purple-100 text-purple-800 border-purple-300'
                                                                 : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                                        }`}>
-                                                            {ppmp.amendment_type === 'AMENDMENT' ? 'Amended' : 'Supplemental'}
+                                                        }`} title={suppInfo.specify ? `Purpose: ${suppInfo.specify}` : ''}>
+                                                            {ppmp.amendment_type === 'AMENDMENT'
+                                                                ? 'Amended'
+                                                                : `Supplemental (${suppInfo.label || 'Continuation'})`}
                                                         </span>
                                                     )}
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="p-3 font-medium text-slate-800 max-w-xs" title={ppmp.title}>
-                                            <div className="truncate font-semibold">{ppmp.title}</div>
+                                        <td className="p-3 font-medium text-slate-800 max-w-sm">
+                                            <ExpandableText text={ppmp.title} maxLength={50} textClassName="font-semibold text-slate-900" />
                                             {(() => {
                                                 const schedule = getPpmpStartOfActivity(ppmp);
                                                 if (!schedule) return null;
@@ -3329,8 +3503,11 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                 );
                                             })()}
                                         </td>
-                                        <td className="p-3 text-slate-600">
+                                        <td className="p-3 text-slate-600 whitespace-nowrap">
                                             CY {ppmp.fiscal_year} ({ppmp.plan_type})
+                                        </td>
+                                        <td className="p-3 text-slate-700">
+                                            <ExpandableFundBadge fund={ppmp.source_of_fund || ppmp.items?.find(i => i.source_of_fund)?.source_of_fund || 'General Fund'} />
                                         </td>
                                         <td className="p-3 font-mono font-bold text-slate-900">
                                             {formatCurrency(ppmp.total_budget)}
@@ -3339,8 +3516,10 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                             <div className="flex flex-col items-start gap-1">
                                                 <StatusBadge status={ppmp.status} />
                                                 {ppmp.amendment_status === 'PENDING_APPROVAL' && (
-                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
-                                                        Req. {(ppmp.requested_amendment_type || ppmp.amendment_type) === 'SUPPLEMENTAL' ? 'Supplemental' : 'Amendment'}
+                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse" title={suppInfo.specify ? `Specify: ${suppInfo.specify}` : ''}>
+                                                        Req. {(ppmp.requested_amendment_type || ppmp.amendment_type) === 'SUPPLEMENTAL'
+                                                            ? `Supplemental (${suppInfo.purpose === 'OTHER' ? (suppInfo.specify ? `Other: ${suppInfo.specify}` : 'Other') : 'Continuation'})`
+                                                            : 'Amendment'}
                                                     </span>
                                                 )}
                                             </div>
@@ -3391,7 +3570,8 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                             </div>
                                         </td>
                                     </tr>
-                                ));
+                                    );
+                                });
                             })()}
                         </tbody>
                     </table>
@@ -3427,6 +3607,8 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     );
                 })()}
             </div>
+                </>
+            )}
 
             {/* Modal for Add / Edit Signatory */}
             {isSignatoryModalOpen && (

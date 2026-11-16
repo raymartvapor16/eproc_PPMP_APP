@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { portalSystemService, oppmoTeamService } from '../../services/api';
-import { canUserAccessSystem } from '../../components/UI/UnauthorizedSystemAccessView';
+import { canUserAccessSystem, findPortalSystemByPathOrView } from '../../components/UI/UnauthorizedSystemAccessView';
 import {
     Shield,
     Lock,
@@ -26,6 +26,8 @@ import {
     Loader2,
     Eye,
     ShieldAlert,
+    AlertTriangle,
+    Wrench,
     X,
     Scale,
     Briefcase,
@@ -36,13 +38,69 @@ import {
 import { isExternalLink, normalizeDestinationUrl } from '../../components/Dashboard/PortalSystemsManagement';
 import { SpiderParticlesCanvas } from '../../components/UI/SpiderParticlesCanvas';
 
+const DEFAULT_PORTAL_SYSTEMS = [
+    {
+        id: 1,
+        name: 'E-Procurement PPMP & APP System',
+        description: 'Automated preparation, review lifecycle, e-signature validation, and consolidation of Project Procurement Management Plans (PPMP) and Annual Procurement Plans (APP).',
+        link_url: '/eprocrementppmpapp',
+        badge: 'Primary System',
+        icon: 'FileSpreadsheet',
+        color: 'blue',
+        status: 'active',
+        sort_order: 1,
+        is_external: false,
+    },
+    {
+        id: 2,
+        name: 'OPPMO Real-Time Monitoring System',
+        description: 'Procurement implementation monitoring, milestone stage tracking, PIMS automatic publishing, and purchase request timelines across provincial offices.',
+        link_url: '/monitoringsystem',
+        badge: 'Live Monitoring',
+        icon: 'Activity',
+        color: 'emerald',
+        status: 'active',
+        sort_order: 2,
+        is_external: false,
+    },
+    {
+        id: 4,
+        name: 'Supplier Evaluation System',
+        description: 'Official Supplier Performance Assessment & Rating System across Price, Quality, Customer Care, and Delivery Fulfillment with digital authorization.',
+        link_url: '/supplierevaluation',
+        badge: 'Supplier Rating',
+        icon: 'Shield',
+        color: 'amber',
+        status: 'active',
+        sort_order: 3,
+        is_external: false,
+    },
+    {
+        id: 5,
+        name: 'Procurement Information Management System (PIMS)',
+        description: 'Comprehensive procurement surveillance, Purchase Request (PR) generation, and multi-stage evaluation across provincial offices.',
+        link_url: '/pims',
+        badge: 'PIMS Portal',
+        icon: 'Layers',
+        color: 'purple',
+        status: 'active',
+        sort_order: 4,
+        is_external: false,
+    },
+];
+
 export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitoring, onOpenLogin, onOpenPrivacy, onLaunchSystem, user }) => {
-    const [systems, setSystems] = useState([]);
+    const [systems, setSystems] = useState(() =>
+        Array.isArray(window.App?.portal_systems) && window.App.portal_systems.length > 0
+            ? window.App.portal_systems
+            : DEFAULT_PORTAL_SYSTEMS
+    );
     const [teamMembers, setTeamMembers] = useState([]);
-    const [loadingSystems, setLoadingSystems] = useState(true);
+    const [loadingSystems, setLoadingSystems] = useState(false);
     const [loadingTeam, setLoadingTeam] = useState(true);
     const [scrolled, setScrolled] = useState(false);
     const [restrictedModalSys, setRestrictedModalSys] = useState(null);
+    const [maintenanceModalSys, setMaintenanceModalSys] = useState(null);
     const [activeSection, setActiveSection] = useState('home');
 
     // Separate department head and staff members
@@ -189,10 +247,26 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
         };
 
         fetchPublicData();
+
+        const handleSystemsUpdated = async () => {
+            try {
+                const sysRes = await portalSystemService.getPublic();
+                if (sysRes.data && sysRes.data.length > 0) {
+                    setSystems(sysRes.data);
+                }
+            } catch (_) {}
+        };
+        window.addEventListener('portal-systems:updated', handleSystemsUpdated);
+        return () => window.removeEventListener('portal-systems:updated', handleSystemsUpdated);
     }, []);
 
 
     const handleSystemClick = (sys) => {
+        if (sys?.status === 'inactive') {
+            setMaintenanceModalSys(sys);
+            return;
+        }
+
         const rawUrl = (sys?.link_url || '').trim();
         const isExternal = isExternalLink(rawUrl, sys?.is_external);
 
@@ -227,6 +301,15 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
         onLaunchEproc();
     };
 
+    const handleSafeLaunchEproc = () => {
+        const eprocSys = findPortalSystemByPathOrView(systems, '/eprocrementppmpapp');
+        if (eprocSys && eprocSys.status === 'inactive') {
+            setMaintenanceModalSys(eprocSys);
+            return;
+        }
+        onLaunchEproc();
+    };
+
     const getSystemIcon = (iconName, color = 'blue') => {
         const props = { className: 'w-6 h-6 stroke-[1.8]' };
         switch (iconName) {
@@ -254,45 +337,45 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                 <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 flex items-center justify-between">
                     {/* Brand */}
                     <div 
-                        className="flex items-center gap-3 cursor-pointer group transition-all duration-300 hover:opacity-95" 
+                        className="flex items-center gap-2 sm:gap-3 cursor-pointer group transition-all duration-300 hover:opacity-95 shrink-0" 
                         onClick={() => scrollTo('home')}
                     >
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                             <img
                                 src="/images/logo.png"
                                 alt="Davao del Sur Seal"
-                                className="w-10 h-10 object-contain drop-shadow transition-transform duration-300 group-hover:scale-105"
+                                className="w-8 h-8 sm:w-10 sm:h-10 object-contain drop-shadow transition-transform duration-300 group-hover:scale-105"
                                 onError={(e) => { e.target.style.display = 'none'; }}
                             />
                             <img
                                 src="/images/pmo.jpeg"
                                 alt="OPPMO Seal"
-                                className="w-10 h-10 object-cover rounded-full border border-amber-400/40 shadow-xs transition-transform duration-300 group-hover:scale-105"
+                                className="w-8 h-8 sm:w-10 sm:h-10 object-cover rounded-full border border-amber-400/40 shadow-xs transition-transform duration-300 group-hover:scale-105"
                                 onError={(e) => { e.target.style.display = 'none'; }}
                             />
                         </div>
                         <div className="leading-tight">
-                            <div className="text-sm font-black tracking-wide uppercase text-white flex items-center gap-1.5 transition-colors duration-300 group-hover:text-amber-300">
+                            <div className="text-xs sm:text-sm font-black tracking-wide uppercase text-white flex items-center gap-1.5 transition-colors duration-300 group-hover:text-amber-300">
                                 <span>OPPMO</span>
-                                <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.2 rounded font-bold border border-amber-500/30">
+                                <span className="text-[9px] sm:text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.2 rounded font-bold border border-amber-500/30">
                                     PORTAL
                                 </span>
                             </div>
-                            <div className="text-[10px] text-slate-400 font-medium tracking-wider uppercase transition-colors duration-300 group-hover:text-slate-300">
+                            <div className="text-[9px] sm:text-[10px] text-slate-400 font-medium tracking-wider uppercase transition-colors duration-300 group-hover:text-slate-300 whitespace-nowrap">
                                 Province of Davao del Sur
                             </div>
                         </div>
                     </div>
 
-                    {/* Desktop Presentation Navigation Tabs */}
-                    <nav className="hidden md:flex items-center gap-1.5 p-1 rounded-2xl bg-slate-900/85 border border-slate-800/90 backdrop-blur-xl shadow-inner">
+                    {/* Desktop Presentation Navigation Tabs (Visible on lg and above screens to avoid tablet collision) */}
+                    <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5 p-1 rounded-2xl bg-slate-900/85 border border-slate-800/90 backdrop-blur-xl shadow-inner">
                         {navTabs.map((tab) => {
                             const isActive = activeSection === tab.id;
                             return (
                                 <button
                                     key={tab.id}
                                     onClick={() => scrollTo(tab.id)}
-                                    className={`relative px-4 py-1.5 rounded-xl text-xs font-bold transition-all duration-300 flex items-center gap-2 group cursor-pointer ${
+                                    className={`relative px-2.5 xl:px-4 py-1.5 rounded-xl text-[11px] xl:text-xs font-bold transition-all duration-300 flex items-center gap-1.5 xl:gap-2 group cursor-pointer ${
                                         isActive
                                             ? 'bg-gradient-to-r from-amber-500/25 via-blue-500/15 to-amber-500/25 text-amber-300 border border-amber-400/40 shadow-md shadow-amber-500/15'
                                             : 'text-slate-300 hover:text-white hover:bg-slate-800/60 border border-transparent'
@@ -310,36 +393,36 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                     </nav>
 
                     {/* Action Button */}
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                         {user ? (
                             <button
                                 onClick={onLaunchDashboard || onLaunchEproc}
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-blue-500/25 border border-blue-400/30 transition-all duration-300 hover:scale-105 active:scale-95"
+                                className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-[11px] sm:text-xs uppercase tracking-wider shadow-lg shadow-blue-500/25 border border-blue-400/30 transition-all duration-300 hover:scale-105 active:scale-95"
                             >
-                                <span>Go to Dashboard</span>
+                                <span>Dashboard</span>
                                 <ArrowRight className="w-3.5 h-3.5" />
                             </button>
                         ) : (
                             <button
                                 onClick={() => scrollTo('systems')}
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 border border-amber-300/40 transition-all duration-300 hover:scale-105 active:scale-95"
+                                className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-[11px] sm:text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 border border-amber-300/40 transition-all duration-300 hover:scale-105 active:scale-95"
                             >
                                 <Lock className="w-3.5 h-3.5" />
-                                <span>Sign In / Portal Access</span>
+                                <span><span className="hidden sm:inline">Sign In / </span>Portal Access</span>
                             </button>
                         )}
                     </div>
                 </div>
 
-                {/* Mobile / Compact Slide Switcher Bar */}
-                <div className="md:hidden flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1.5 px-4 bg-slate-950/95 border-t border-slate-900">
+                {/* Mobile / Tablet Slide Switcher Bar (Visible on screens below lg: 1024px including iPad Mini 768px) */}
+                <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto no-scrollbar py-2 px-4 bg-slate-950/95 border-t border-slate-900">
                     {navTabs.map((tab) => {
                         const isActive = activeSection === tab.id;
                         return (
                             <button
                                 key={tab.id}
                                 onClick={() => scrollTo(tab.id)}
-                                className={`shrink-0 px-3 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                                     isActive
                                         ? 'bg-amber-400 text-slate-950 shadow-xs'
                                         : 'bg-slate-900 text-slate-400 border border-slate-800'
@@ -379,8 +462,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                     {/* Presentation Badge */}
                     <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-slate-900/90 border border-amber-500/40 text-amber-300 text-xs font-bold uppercase tracking-wider shadow-lg shadow-amber-500/10 mb-6 backdrop-blur-md transition-all duration-300 hover:scale-105 hover:border-amber-400 hover:bg-slate-900 cursor-default">
                         <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                        <span className="font-mono text-[11px] text-amber-400 font-extrabold tracking-widest">EXECUTIVE PRESENTATION</span>
-                        <span className="text-slate-600">•</span>
                         <span className="text-slate-200">Republic of the Philippines • Province of Davao del Sur</span>
                     </div>
 
@@ -400,7 +481,7 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                     {/* CTA Buttons */}
                     <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
                         <button
-                            onClick={onLaunchEproc}
+                            onClick={handleSafeLaunchEproc}
                             className="group inline-flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm tracking-wide uppercase shadow-xl shadow-blue-600/30 border border-blue-400/30 transition-all duration-300 hover:scale-105 hover:shadow-blue-500/40 hover:brightness-105 active:scale-95"
                         >
                             <FileSpreadsheet className="w-4 h-4 transition-transform duration-300 group-hover:scale-110" />
@@ -613,8 +694,9 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                             <p className="text-sm font-semibold">Loading digital systems...</p>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className={`grid grid-cols-1 md:grid-cols-2 ${systems.length >= 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-6`}>
                             {systems.map((sys, idx) => {
+                                const isInactive = sys.status === 'inactive';
                                 const isEmerald = sys.color === 'emerald';
                                 const isAmber = sys.color === 'amber';
                                 const isPurple = sys.color === 'purple';
@@ -625,40 +707,48 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                     <div key={sys.id} className={`${staggerClass} h-full`}>
                                         <div className={`${floatClass} h-full`}>
                                             <div
-                                                className={`group relative bg-slate-900/80 hover:bg-slate-900/95 rounded-2xl p-6 border transition-all duration-500 ease-out flex flex-col justify-between hover:shadow-2xl hover:-translate-y-2 hover:scale-[1.02] overflow-hidden h-full ${
-                                                    isEmerald
-                                                        ? 'border-emerald-500/30 hover:border-emerald-400 hover:shadow-emerald-500/15'
+                                                className={`group relative bg-slate-900/80 hover:bg-slate-900/95 rounded-2xl p-6 border transition-all duration-500 ease-out flex flex-col justify-between overflow-hidden h-full ${
+                                                    isInactive
+                                                        ? 'border-slate-700/80 hover:border-amber-500/40 opacity-90'
+                                                        : isEmerald
+                                                        ? 'border-emerald-500/30 hover:border-emerald-400 hover:shadow-2xl hover:shadow-emerald-500/15 hover:-translate-y-2 hover:scale-[1.02]'
                                                         : isAmber
-                                                        ? 'border-amber-500/30 hover:border-amber-400 hover:shadow-amber-500/15'
+                                                        ? 'border-amber-500/30 hover:border-amber-400 hover:shadow-2xl hover:shadow-amber-500/15 hover:-translate-y-2 hover:scale-[1.02]'
                                                         : isPurple
-                                                        ? 'border-purple-500/30 hover:border-purple-400 hover:shadow-purple-500/15'
-                                                        : 'border-blue-500/30 hover:border-blue-400 hover:shadow-blue-500/15'
+                                                        ? 'border-purple-500/30 hover:border-purple-400 hover:shadow-2xl hover:shadow-purple-500/15 hover:-translate-y-2 hover:scale-[1.02]'
+                                                        : 'border-blue-500/30 hover:border-blue-400 hover:shadow-2xl hover:shadow-blue-500/15 hover:-translate-y-2 hover:scale-[1.02]'
                                                 }`}
                                             >
                                                 {/* Subtle Shimmer Sweep */}
-                                                <div className="shimmer-shine opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+                                                {!isInactive && (
+                                                    <div className="shimmer-shine opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+                                                )}
 
                                                 <div>
                                                     {/* Top Tag & Icon */}
                                                     <div className="flex items-start justify-between gap-3 mb-5">
                                                         <div
-                                                            className={`p-3 rounded-xl border transition-all duration-300 group-hover:scale-110 group-hover:rotate-3 shadow-inner ${
-                                                                isEmerald
-                                                                    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 group-hover:bg-emerald-500/25'
+                                                            className={`p-3 rounded-xl border transition-all duration-300 shadow-inner ${
+                                                                isInactive
+                                                                    ? 'bg-slate-800/80 border-slate-700 text-slate-400'
+                                                                    : isEmerald
+                                                                    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 group-hover:scale-110 group-hover:rotate-3 group-hover:bg-emerald-500/25'
                                                                     : isAmber
-                                                                    ? 'bg-amber-500/15 border-amber-500/30 text-amber-400 group-hover:bg-amber-500/25'
+                                                                    ? 'bg-amber-500/15 border-amber-500/30 text-amber-400 group-hover:scale-110 group-hover:rotate-3 group-hover:bg-amber-500/25'
                                                                     : isPurple
-                                                                    ? 'bg-purple-500/15 border-purple-500/30 text-purple-400 group-hover:bg-purple-500/25'
-                                                                    : 'bg-blue-500/15 border-blue-500/30 text-blue-400 group-hover:bg-blue-500/25'
+                                                                    ? 'bg-purple-500/15 border-purple-500/30 text-purple-400 group-hover:scale-110 group-hover:rotate-3 group-hover:bg-purple-500/25'
+                                                                    : 'bg-blue-500/15 border-blue-500/30 text-blue-400 group-hover:scale-110 group-hover:rotate-3 group-hover:bg-blue-500/25'
                                                             }`}
                                                         >
                                                             {getSystemIcon(sys.icon, sys.color)}
                                                         </div>
 
-                                                        <div className="flex flex-col items-end gap-1 font-mono">
+                                                        <div className="flex flex-col items-end gap-1.5 font-mono">
                                                             <span
                                                                 className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider border transition-all duration-300 shadow-xs ${
-                                                                    isEmerald
+                                                                    isInactive
+                                                                        ? 'bg-slate-800 text-slate-400 border-slate-700'
+                                                                        : isEmerald
                                                                         ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30 group-hover:border-emerald-400/60'
                                                                         : isAmber
                                                                         ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 group-hover:border-amber-400/60'
@@ -669,11 +759,17 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                                             >
                                                                 {sys.badge || 'Portal System'}
                                                             </span>
+                                                            {isInactive && (
+                                                                <span className="inline-flex items-center gap-1 text-[9.5px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/40 shadow-2xs">
+                                                                    <Wrench className="w-2.5 h-2.5 text-amber-400" />
+                                                                    <span>Inactive • Maintenance</span>
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </div>
 
                                                     {/* System Title */}
-                                                    <h3 className="text-lg font-bold text-white group-hover:text-amber-400 transition-colors duration-300">
+                                                    <h3 className={`text-lg font-bold transition-colors duration-300 ${isInactive ? 'text-slate-300' : 'text-white group-hover:text-amber-400'}`}>
                                                         {sys.name}
                                                     </h3>
 
@@ -685,25 +781,37 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
 
                                                 {/* Launch CTA */}
                                                 <div className="mt-6 pt-4 border-t border-slate-800">
-                                                    <button
-                                                        onClick={() => handleSystemClick(sys)}
-                                                        className={`w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all duration-300 shadow-md hover:scale-[1.02] hover:brightness-110 active:scale-95 ${
-                                                            isEmerald
-                                                                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20 hover:shadow-emerald-500/30'
-                                                                : isAmber
-                                                                ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/20 hover:shadow-amber-500/30'
-                                                                : isPurple
-                                                                ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/20 hover:shadow-purple-500/30'
-                                                                : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/20 hover:shadow-blue-500/30'
-                                                        }`}
-                                                    >
-                                                        <span>Launch System</span>
-                                                        {isExternalLink(sys.link_url, sys.is_external) ? (
-                                                            <ExternalLink className="w-3.5 h-3.5 transition-transform duration-300 group-hover:scale-110" />
-                                                        ) : (
-                                                            <ArrowRight className="w-3.5 h-3.5 transition-transform duration-300 group-hover:translate-x-1.5" />
-                                                        )}
-                                                    </button>
+                                                    {isInactive ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleSystemClick(sys)}
+                                                            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all duration-300 bg-slate-800/90 hover:bg-slate-800 text-amber-300 border border-amber-500/30 cursor-not-allowed"
+                                                            title="This system is currently inactive / under maintenance"
+                                                        >
+                                                            <Wrench className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                                            <span>Inactive / Under Maintenance</span>
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => handleSystemClick(sys)}
+                                                            className={`w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all duration-300 shadow-md hover:scale-[1.02] hover:brightness-110 active:scale-95 ${
+                                                                isEmerald
+                                                                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20 hover:shadow-emerald-500/30'
+                                                                    : isAmber
+                                                                    ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-amber-500/20 hover:shadow-amber-500/30'
+                                                                    : isPurple
+                                                                    ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/20 hover:shadow-purple-500/30'
+                                                                    : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/20 hover:shadow-blue-500/30'
+                                                            }`}
+                                                        >
+                                                            <span>Launch System</span>
+                                                            {isExternalLink(sys.link_url, sys.is_external) ? (
+                                                                <ExternalLink className="w-3.5 h-3.5 transition-transform duration-300 group-hover:scale-110" />
+                                                            ) : (
+                                                                <ArrowRight className="w-3.5 h-3.5 transition-transform duration-300 group-hover:translate-x-1.5" />
+                                                            )}
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -1190,7 +1298,7 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                             Data Privacy Policy
                         </button>
                         <span>•</span>
-                        <button onClick={onLaunchEproc} className="hover:text-amber-400 hover:scale-105 active:scale-95 transition-all duration-300">
+                        <button onClick={handleSafeLaunchEproc} className="hover:text-amber-400 hover:scale-105 active:scale-95 transition-all duration-300">
                             E-Procurement
                         </button>
                         <span>•</span>
@@ -1200,6 +1308,52 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                     </div>
                 </div>
             </footer>
+
+            {/* System Inactive / Under Maintenance Modal */}
+            {maintenanceModalSys && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-slate-900 border border-amber-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl relative overflow-hidden">
+                        <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500" />
+                        <button
+                            onClick={() => setMaintenanceModalSys(null)}
+                            className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+
+                        <div className="w-12 h-12 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center mb-4">
+                            <Wrench className="w-6 h-6" />
+                        </div>
+
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 text-[10px] font-bold uppercase tracking-wider border border-amber-500/30 mb-2">
+                            <AlertTriangle className="w-3 h-3 text-amber-400" />
+                            <span>System Inactive • Under Maintenance</span>
+                        </div>
+
+                        <h3 className="text-lg font-bold text-white">
+                            {maintenanceModalSys.name}
+                        </h3>
+
+                        <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+                            This provincial digital system is currently set to <span className="text-amber-300 font-bold">Inactive / Under Maintenance</span> and is temporarily unavailable for access.
+                        </p>
+
+                        <div className="mt-4 p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 text-[11px] text-slate-400 leading-relaxed space-y-1">
+                            <span className="font-semibold text-amber-400 block">OPPMO System Maintenance Notice:</span>
+                            Please wait until the System Administrator reactivates this module in the Portal Systems Catalog before attempting to sign in or access its features.
+                        </div>
+
+                        <div className="mt-5 flex justify-end">
+                            <button
+                                onClick={() => setMaintenanceModalSys(null)}
+                                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black uppercase tracking-wider transition cursor-pointer"
+                            >
+                                Understood
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Restricted System Access Modal */}
             {restrictedModalSys && (

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { oppmoTeamService } from '../../services/api';
+import { showConfirm } from '../../utils/modalAlert';
 import {
     Users,
     Plus,
@@ -139,7 +140,14 @@ export const OppmoTeamManagement = () => {
     };
 
     const handleDelete = async (id, name) => {
-        if (!confirm(`Are you sure you want to remove "${name}" from the OPPMO team roster?`)) return;
+        const confirmed = await showConfirm({
+            title: 'Remove Team Member',
+            message: `Are you sure you want to remove "${name}" from the OPPMO team roster?`,
+            confirmText: 'Yes, Remove Member',
+            cancelText: 'Cancel',
+            type: 'danger',
+        });
+        if (!confirmed) return;
         setDeletingId(id);
         try {
             await oppmoTeamService.delete(id);

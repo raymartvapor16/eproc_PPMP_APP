@@ -2,12 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ppmpService } from '../../services/api';
 import { StatusBadge, formatCurrency, formatDate } from '../../components/UI/StatusBadge';
 import { PaginationControl } from '../../components/UI/PaginationControl';
-import { isAwaitingReceive } from '../../utils/workflowHelpers';
+import { isAwaitingReceive, getSupplementalKindInfo } from '../../utils/workflowHelpers';
 import { getStandardFiscalYears } from '../../utils/fiscalYears';
 import {
     getPpmpStartOfActivity,
     getPimsReminderInfo
 } from '../../components/Dashboard/PimsPublishReminderCard';
+import { ExpandableText, ExpandableFundBadge } from '../../components/UI/ExpandableCell';
 import { Search, Filter, Plus, FileSpreadsheet, Eye, Inbox, Loader2, ChevronLeft, ChevronRight, Clock, AlertTriangle } from 'lucide-react';
 
 export const PPMPListPage = ({ user, onSelectPpmp, onNavigate }) => {
@@ -152,11 +153,13 @@ export const PPMPListPage = ({ user, onSelectPpmp, onNavigate }) => {
                     <option value="HEAD_PENDING">Pending Head Approval</option>
                     <option value="HEAD_APPROVED">Head Endorsed</option>
                     <option value="BUDGET_OFFICER_REVIEW">Budget Officer Review</option>
+                    <option value="PACCO_REVIEW">PACCO Review</option>
                     <option value="OPPMO_REVIEW">OPPMO Review</option>
                     <option value="TWG_REVIEW">TWG Review</option>
                     <option value="READY_TO_PRINT">Ready to Print</option>
                     <option value="HEAD_RETURNED">Returned by Head</option>
                     <option value="BUDGET_OFFICER_RETURNED">Returned by Budget</option>
+                    <option value="PACCO_RETURNED">Returned by PACCO</option>
                     <option value="OPPMO_RETURNED">Returned by OPPMO</option>
                     <option value="TWG_RETURNED">Returned by TWG</option>
                 </select>
@@ -187,6 +190,7 @@ export const PPMPListPage = ({ user, onSelectPpmp, onNavigate }) => {
                                 <th className="p-3.5">Title / General Description</th>
                                 <th className="p-3.5">Office / Unit</th>
                                 <th className="p-3.5">Fiscal Year</th>
+                                <th className="p-3.5">Source of Funds</th>
                                 <th className="p-3.5">Total Allocation</th>
                                 <th className="p-3.5">Status</th>
                                 <th className="p-3.5 text-right">Action</th>
@@ -195,18 +199,20 @@ export const PPMPListPage = ({ user, onSelectPpmp, onNavigate }) => {
                         <tbody className="divide-y divide-slate-100">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={7} className="p-8 text-center text-slate-400">
+                                    <td colSpan={8} className="p-8 text-center text-slate-400">
                                         Loading PPMP documents...
                                     </td>
                                 </tr>
                             ) : ppmps.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="p-8 text-center text-slate-400 italic">
+                                    <td colSpan={8} className="p-8 text-center text-slate-400 italic">
                                         No PPMP records match your criteria.
                                     </td>
                                 </tr>
                             ) : (
-                                ppmps.map((ppmp) => (
+                                ppmps.map((ppmp) => {
+                                    const suppInfo = getSupplementalKindInfo(ppmp);
+                                    return (
                                     <tr key={ppmp.id} className="hover:bg-slate-50 transition">
                                         <td className="p-3.5">
                                             <div className="font-mono font-bold text-blue-900">
@@ -226,15 +232,17 @@ export const PPMPListPage = ({ user, onSelectPpmp, onNavigate }) => {
                                                             ppmp.amendment_type === 'AMENDMENT'
                                                                 ? 'bg-purple-100 text-purple-800 border-purple-300'
                                                                 : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                                        }`}>
-                                                            {ppmp.amendment_type === 'AMENDMENT' ? 'Amended' : 'Supplemental'}
+                                                        }`} title={suppInfo.specify ? `Purpose: ${suppInfo.specify}` : ''}>
+                                                            {ppmp.amendment_type === 'AMENDMENT'
+                                                                ? 'Amended'
+                                                                : `Supplemental (${suppInfo.label || 'Continuation'})`}
                                                         </span>
                                                     )}
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="p-3.5 font-medium text-slate-800 max-w-sm" title={ppmp.title}>
-                                            <div className="font-semibold text-slate-900 truncate">{ppmp.title}</div>
+                                        <td className="p-3.5 font-medium text-slate-800 max-w-sm">
+                                            <ExpandableText text={ppmp.title} maxLength={50} textClassName="font-semibold text-slate-900" />
                                             {(() => {
                                                 const schedule = getPpmpStartOfActivity(ppmp);
                                                 if (!schedule) return null;
@@ -257,11 +265,14 @@ export const PPMPListPage = ({ user, onSelectPpmp, onNavigate }) => {
                                                 );
                                             })()}
                                         </td>
-                                        <td className="p-3.5 text-slate-600 max-w-xs truncate">
-                                            {ppmp.office?.name || 'Provincial Office'}
+                                        <td className="p-3.5 text-slate-600 max-w-xs">
+                                            <ExpandableText text={ppmp.office?.name || 'Provincial Office'} maxLength={35} textClassName="text-slate-600 font-normal" />
                                         </td>
-                                        <td className="p-3.5 text-slate-600">
+                                        <td className="p-3.5 text-slate-600 whitespace-nowrap">
                                             CY {ppmp.fiscal_year} ({ppmp.plan_type})
+                                        </td>
+                                        <td className="p-3.5 text-slate-700">
+                                            <ExpandableFundBadge fund={ppmp.source_of_fund || ppmp.items?.find(i => i.source_of_fund)?.source_of_fund || 'General Fund'} />
                                         </td>
                                         <td className="p-3.5 font-mono font-bold text-slate-900">
                                             {formatCurrency(ppmp.total_budget)}
@@ -270,8 +281,10 @@ export const PPMPListPage = ({ user, onSelectPpmp, onNavigate }) => {
                                             <div className="flex flex-col items-start gap-1">
                                                 <StatusBadge status={ppmp.status} />
                                                 {ppmp.amendment_status === 'PENDING_APPROVAL' && (
-                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
-                                                        Pending {(ppmp.requested_amendment_type || ppmp.amendment_type) === 'SUPPLEMENTAL' ? 'Supplemental' : 'Amendment'}
+                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse" title={suppInfo.specify ? `Specify: ${suppInfo.specify}` : ''}>
+                                                        Pending {(ppmp.requested_amendment_type || ppmp.amendment_type) === 'SUPPLEMENTAL'
+                                                            ? `Supplemental (${suppInfo.purpose === 'OTHER' ? (suppInfo.specify ? `Other: ${suppInfo.specify}` : 'Other') : 'Continuation'})`
+                                                            : 'Amendment'}
                                                     </span>
                                                 )}
                                             </div>
@@ -319,7 +332,8 @@ export const PPMPListPage = ({ user, onSelectPpmp, onNavigate }) => {
                                             </div>
                                         </td>
                                     </tr>
-                                ))
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>

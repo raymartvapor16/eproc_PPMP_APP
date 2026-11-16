@@ -21,6 +21,7 @@ class User extends Authenticatable
         'office_id',
         'designation',
         'signature_path',
+        'profile_photo_path',
         'authorization_letter_path',
         'is_active',
         'approval_status',
@@ -32,6 +33,18 @@ class User extends Authenticatable
         'password',
         'remember_token',
     ];
+
+    protected $appends = [
+        'profile_photo_url',
+    ];
+
+    public function getProfilePhotoUrlAttribute(): ?string
+    {
+        if ($this->profile_photo_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($this->profile_photo_path)) {
+            return "/api/users/{$this->id}/avatar";
+        }
+        return null;
+    }
 
     protected function casts(): array
     {
@@ -56,6 +69,11 @@ class User extends Authenticatable
     public function notifications()
     {
         return $this->hasMany(SystemNotification::class, 'user_id');
+    }
+
+    public function accountCodes()
+    {
+        return $this->belongsToMany(AccountCode::class, 'account_code_user')->withTimestamps();
     }
 
     public function isEndUser(): bool
@@ -136,7 +154,7 @@ class User extends Authenticatable
     public function getAccessibleSystemsList(): array
     {
         if ($this->isAdmin()) {
-            return ['/eprocrementppmpapp', '/monitoringsystem', '/supplierevaluation', '*'];
+            return ['/eprocrementppmpapp', '/monitoringsystem', '/supplierevaluation', '/pims', '/pimssystem', '*'];
         }
         if (!empty($this->accessible_systems) && is_array($this->accessible_systems)) {
             return $this->accessible_systems;
@@ -155,11 +173,23 @@ class User extends Authenticatable
         if ($this->isAdmin()) {
             return true;
         }
+        $clean = '/' . ltrim(trim($systemPath), '/');
         $allowed = $this->getAccessibleSystemsList();
         if (in_array('*', $allowed, true)) {
             return true;
         }
-        $clean = '/' . ltrim(trim($systemPath), '/');
-        return in_array($clean, $allowed, true);
+        if (in_array($clean, $allowed, true)) {
+            return true;
+        }
+        if (in_array($clean, ['/pims', '/pimssystem'], true)) {
+            return in_array('/pims', $allowed, true) || in_array('/pimssystem', $allowed, true);
+        }
+        if (in_array($clean, ['/supplierevaluation', '/supplier-evaluation'], true)) {
+            return in_array('/supplierevaluation', $allowed, true) || in_array('/supplier-evaluation', $allowed, true);
+        }
+        if (in_array($clean, ['/eprocrementppmpapp', '/eprocurementppmpapp'], true)) {
+            return in_array('/eprocrementppmpapp', $allowed, true) || in_array('/eprocurementppmpapp', $allowed, true);
+        }
+        return false;
     }
 }

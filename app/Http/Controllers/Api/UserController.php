@@ -9,6 +9,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rules\Password;
 
 class UserController extends Controller
@@ -23,7 +24,7 @@ class UserController extends Controller
             return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
         }
 
-        $users = User::with('office')->orderBy('name')->get();
+        $users = User::with(['office', 'accountCodes'])->latest('id')->get();
 
         return response()->json($users);
     }
@@ -58,6 +59,8 @@ class UserController extends Controller
             'address' => ['nullable', 'string', 'max:255'],
             'signature' => ['nullable', 'string'],
             'signature_file' => ['nullable', 'file', 'mimes:png,jpg,jpeg', 'max:5120'],
+            'account_code_ids' => ['nullable', 'array'],
+            'account_code_ids.*' => ['integer', 'exists:account_codes,id'],
         ]);
 
         $signaturePath = null;
@@ -123,6 +126,10 @@ class UserController extends Controller
             'accessible_systems' => $accessibleSystems,
         ]);
 
+        if ($user->role === 'twg' && !empty($validated['account_code_ids'])) {
+            $user->accountCodes()->sync($validated['account_code_ids']);
+        }
+
         AuditLog::log(
             'USER_CREATED_BY_ADMIN',
             'users',
@@ -134,7 +141,7 @@ class UserController extends Controller
 
         return response()->json([
             'message' => "User account for {$user->name} created and activated successfully.",
-            'user' => $user->load('office'),
+            'user' => $user->load(['office', 'accountCodes']),
         ], 201);
     }
 
@@ -465,7 +472,60 @@ class UserController extends Controller
 
         return response()->json([
             'message' => "Role for {$targetUser->name} has been updated to {$validated['role']}.",
-            'user' => $targetUser->load('office'),
+            'user' => $targetUser->load(['office', 'accountCodes']),
+        ]);
+    }
+
+    /**
+     * Update assigned account codes for a user (TWG Reviewer) (Admin only).
+     */
+    public function updateAccountCodes(Request $request, int $id): JsonResponse
+    {
+        $admin = $request->user();
+        if (!$admin->isAdmin()) {
+            return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
+        }
+
+        $targetUser = User::findOrFail($id);
+
+        $validated = $request->validate([
+            'account_code_ids' => ['nullable', 'array'],
+            'account_code_ids.*' => ['integer', 'exists:account_codes,id'],
+        ]);
+
+        $accountCodeIds = $validated['account_code_ids'] ?? [];
+        $targetUser->accountCodes()->sync($accountCodeIds);
+
+        AuditLog::log(
+            'USER_ACCOUNT_CODES_UPDATED',
+            'users',
+            $targetUser->id,
+            null,
+            ['user_id' => $targetUser->id, 'assigned_account_code_ids' => $accountCodeIds],
+            $admin->id
+        );
+
+        return response()->json([
+            'message' => "Assigned account codes for {$targetUser->name} have been updated successfully.",
+            'user' => $targetUser->load(['office', 'accountCodes']),
+        ]);
+    }
+
+    /**
+     * Get assigned account codes for a specific user (Admin only).
+     */
+    public function getAccountCodes(Request $request, int $id): JsonResponse
+    {
+        $currentUser = $request->user();
+        if (!$currentUser->isAdmin() && $currentUser->id !== $id) {
+            return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
+        }
+
+        $targetUser = User::with('accountCodes')->findOrFail($id);
+
+        return response()->json([
+            'user_id' => $targetUser->id,
+            'account_codes' => $targetUser->accountCodes,
         ]);
     }
 
@@ -596,6 +656,28 @@ class UserController extends Controller
         return response()->json([
             'message' => "System access permissions for {$targetUser->name} have been updated successfully.",
             'user' => $targetUser->fresh(['office']),
+        ]);
+    }
+
+    /**
+     * Serve a user's avatar image securely for authenticated users.
+     */
+    public function getAvatar(Request $request, int $id): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
+    {
+        $targetUser = User::findOrFail($id);
+
+        if (!$targetUser->profile_photo_path || !Storage::disk('local')->exists($targetUser->profile_photo_path)) {
+            return response()->json(['message' => 'No avatar found.'], 404);
+        }
+
+        $fullPath = Storage::disk('local')->path($targetUser->profile_photo_path);
+        $ext = strtolower(pathinfo($fullPath, PATHINFO_EXTENSION));
+        $mime = $ext === 'png' ? 'image/png' : 'image/jpeg';
+
+        return response()->file($fullPath, [
+            'Content-Type' => $mime,
+            'Cache-Control' => 'private, max-age=86400',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 }

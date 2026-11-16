@@ -116,6 +116,11 @@ export const authService = {
     getCsrfToken: () => api.get('/csrf-token'),
     getProfile: () => api.get('/me'),
     updateProfile: (data) => api.put('/profile', data),
+    uploadProfilePhoto: (formData) => api.post('/profile/photo', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+    removeProfilePhoto: () => api.delete('/profile/photo'),
+    getProfilePhotoUrl: () => '/api/profile/photo',
     getSignatureUrl: () => '/api/profile/signature',
 };
 
@@ -130,7 +135,9 @@ export const ppmpService = {
     headApprove: (uuid) => api.post(`/ppmps/${uuid}/head/approve`),
     headReturn: (uuid, data) => api.post(`/ppmps/${uuid}/head/return`, data),
 
-    submitForReview: (uuid) => api.post(`/ppmps/${uuid}/submit-for-review`),
+    getAvailableReviewers: (uuid) => api.get(`/ppmps/${uuid}/available-reviewers`),
+    reassignReviewers: (uuid, data) => api.put(`/ppmps/${uuid}/reassign-reviewers`, data),
+    submitForReview: (uuid, data = {}) => api.post(`/ppmps/${uuid}/submit-for-review`, data),
 
     budgetApprove: (uuid) => api.post(`/ppmps/${uuid}/budget/approve`),
     budgetReturn: (uuid, data) => api.post(`/ppmps/${uuid}/budget/return`, data),
@@ -144,12 +151,23 @@ export const ppmpService = {
     twgApprove: (uuid) => api.post(`/ppmps/${uuid}/twg/approve`),
     twgReturn: (uuid, data) => api.post(`/ppmps/${uuid}/twg/return`, data),
 
+    returnReview: (uuid, data) => api.post(`/ppmps/${uuid}/return`, data),
+
     receive: (uuid) => api.post(`/ppmps/${uuid}/receive`),
+
+    // Cell Comments & Review Suspension Compliance Tracking
+    getCellComments: (uuid) => api.get(`/ppmps/${uuid}/cell-comments`),
+    addCellComment: (uuid, data) => api.post(`/ppmps/${uuid}/cell-comments`, data),
+    deleteCellComment: (uuid, commentId) => api.delete(`/ppmps/${uuid}/cell-comments/${commentId}`),
+    complyCellComment: (uuid, commentId, data) => api.patch(`/ppmps/${uuid}/cell-comments/${commentId}/comply`, data),
+    uncomplyCellComment: (uuid, commentId) => api.patch(`/ppmps/${uuid}/cell-comments/${commentId}/uncomply`),
+    updateCell: (uuid, data) => api.post(`/ppmps/${uuid}/update-cell`, data),
 
     // Attachments
     uploadAttachment: (uuid, formData) => api.post(`/ppmps/${uuid}/attachments`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
     }),
+    attachLink: (uuid, data) => api.post(`/ppmps/${uuid}/attachments/link`, data),
     updateAttachmentType: (uuid, attachment, type) => {
         const attKey = (typeof attachment === 'object' && attachment !== null)
             ? (attachment.encrypted_uuid || attachment.uuid)
@@ -209,12 +227,15 @@ export const userService = {
     updateSignature: (id, data) => api.post(`/users/${id}/signature`, data),
     changePassword: (id, password) => api.post(`/users/${id}/change-password`, { password }),
     updateRole: (id, role) => api.put(`/users/${id}/role`, { role }),
+    getAccountCodes: (id) => api.get(`/users/${id}/account-codes`),
+    updateAccountCodes: (id, accountCodeIds) => api.put(`/users/${id}/account-codes`, { account_code_ids: accountCodeIds }),
     updateSystemAccess: (id, systems) => api.put(`/users/${id}/system-access`, { accessible_systems: systems }),
     approve: (id) => api.post(`/users/${id}/approve`),
     reject: (id, reason = '') => api.post(`/users/${id}/reject`, { reason }),
     toggleStatus: (id) => api.post(`/users/${id}/toggle-status`),
     delete: (id) => api.delete(`/users/${id}`),
     getUserSignatureUrl: (id) => `/api/users/${id}/signature`,
+    getUserAvatarUrl: (id) => `/api/users/${id}/avatar`,
     getUserAuthorizationLetterUrl: (id) => `/api/users/${id}/authorization-letter`,
 };
 
@@ -231,6 +252,7 @@ export const fundSourceService = {
     create: (data) => api.post('/fund-sources', data),
     update: (id, data) => api.put(`/fund-sources/${id}`, data),
     delete: (id) => api.delete(`/fund-sources/${id}`),
+    export: (params) => api.get('/fund-sources/export', { params, responseType: 'blob' }),
 };
 
 export const procurementConditionService = {
@@ -301,6 +323,116 @@ export const otherTermService = {
     delete: (id) => api.delete(`/other-terms/${id}`),
 };
 
+let cachedAccountCodes = null;
+let cachedAccountCodesPromise = null;
+
+export const accountCodeService = {
+    getAll: async (params = {}) => {
+        // If it's a paginated or filtered query from admin management, bypass dropdown cache
+        if (params?.page || params?.search || params?.class || params?.status) {
+            return api.get('/account-codes', { params });
+        }
+        if (cachedAccountCodes) {
+            return { data: cachedAccountCodes };
+        }
+        if (cachedAccountCodesPromise) {
+            return cachedAccountCodesPromise;
+        }
+        cachedAccountCodesPromise = api.get('/account-codes', { params: { all: 1, ...params } })
+            .then(res => {
+                cachedAccountCodes = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+                return { data: cachedAccountCodes };
+            })
+            .catch(err => {
+                cachedAccountCodesPromise = null;
+                throw err;
+            });
+        return cachedAccountCodesPromise;
+    },
+    getStats: () => api.get('/account-codes/stats'),
+    getPublic: () => api.get('/public-account-codes'),
+    get: (id) => api.get(`/account-codes/${id}`),
+    create: async (data) => {
+        const res = await api.post('/account-codes', data);
+        accountCodeService.invalidateCache();
+        return res;
+    },
+    update: async (id, data) => {
+        const res = await api.put(`/account-codes/${id}`, data);
+        accountCodeService.invalidateCache();
+        return res;
+    },
+    toggleStatus: async (id) => {
+        const res = await api.patch(`/account-codes/${id}/toggle-status`);
+        accountCodeService.invalidateCache();
+        return res;
+    },
+    delete: async (id) => {
+        const res = await api.delete(`/account-codes/${id}`);
+        accountCodeService.invalidateCache();
+        return res;
+    },
+    invalidateCache: () => {
+        cachedAccountCodes = null;
+        cachedAccountCodesPromise = null;
+        window.dispatchEvent(new CustomEvent('account-codes:changed'));
+    },
+};
+
+let cachedProgramNames = null;
+let cachedProgramNamesPromise = null;
+
+export const programNameService = {
+    getAll: async (params = {}) => {
+        if (params?.page || params?.search || params?.sector || params?.status) {
+            return api.get('/program-names', { params });
+        }
+        if (cachedProgramNames) {
+            return { data: cachedProgramNames };
+        }
+        if (cachedProgramNamesPromise) {
+            return cachedProgramNamesPromise;
+        }
+        cachedProgramNamesPromise = api.get('/program-names', { params: { dropdown: 1, ...params } })
+            .then(res => {
+                cachedProgramNames = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+                return { data: cachedProgramNames };
+            })
+            .catch(err => {
+                cachedProgramNamesPromise = null;
+                throw err;
+            });
+        return cachedProgramNamesPromise;
+    },
+    getStats: () => api.get('/program-names/stats'),
+    get: (id) => api.get(`/program-names/${id}`),
+    create: async (data) => {
+        const res = await api.post('/program-names', data);
+        programNameService.invalidateCache();
+        return res;
+    },
+    update: async (id, data) => {
+        const res = await api.put(`/program-names/${id}`, data);
+        programNameService.invalidateCache();
+        return res;
+    },
+    toggleStatus: async (id) => {
+        const res = await api.patch(`/program-names/${id}/toggle-status`);
+        programNameService.invalidateCache();
+        return res;
+    },
+    delete: async (id) => {
+        const res = await api.delete(`/program-names/${id}`);
+        programNameService.invalidateCache();
+        return res;
+    },
+    invalidateCache: () => {
+        cachedProgramNames = null;
+        cachedProgramNamesPromise = null;
+        window.dispatchEvent(new CustomEvent('program-names:changed'));
+    },
+};
+
 let cachedSupportingDocs = null;
 let cachedSupportingDocsPromise = null;
 
@@ -358,6 +490,26 @@ export const systemSettingService = {
     updateDeveloperMode: (developer_mode) => api.put('/system-settings/developer-mode', { developer_mode }),
     getSignatureSettings: () => api.get('/system-settings/signatures'),
     updateSignatureSettings: (data) => api.put('/system-settings/signatures', data),
+    getAfkSettings: () => api.get('/system-settings/afk-logout'),
+    updateAfkSettings: (data) => api.put('/system-settings/afk-logout', data),
+    getTurnstileSettings: () => api.get('/system-settings/turnstile'),
+    updateTurnstileSettings: (enabled) => api.put('/system-settings/turnstile', { enabled }),
+};
+
+export const databaseBackupService = {
+    getStatus: () => api.get('/database-backup/status'),
+    setPassword: (data) => api.post('/database-backup/set-password', data),
+    requestToken: (data) => api.post('/database-backup/request-token', data),
+    downloadWithToken: (token) => api.get(`/database-backup/download?token=${encodeURIComponent(token)}`, {
+        responseType: 'blob',
+    }),
+    downloadDirect: (data) => api.post('/database-backup/download', data, {
+        responseType: 'blob',
+    }),
+    decryptBackup: (formData) => api.post('/database-backup/decrypt', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        responseType: 'blob',
+    }),
 };
 
 export const monitoringService = {
@@ -376,8 +528,20 @@ export const monitoringService = {
     unpublishPims: (data) => api.post('/monitoring/pims-unpublish', data),
 };
 
+export const pimsService = {
+    getDashboard: (params) => api.get('/pims/dashboard', { params }),
+    getPurchaseRequests: (params) => api.get('/pims/purchase-requests', { params }),
+    getPpmpData: (ppmpUuid) => api.get(`/pims/purchase-requests/ppmp-data/${ppmpUuid}`),
+    generatePurchaseRequest: (data) =>
+        api.post('/pims/purchase-requests', data, data instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined),
+    getPurchaseRequest: (idOrUuid) => api.get(`/pims/purchase-requests/${idOrUuid}`),
+    updatePurchaseRequest: (idOrUuid, data) => api.put(`/pims/purchase-requests/${idOrUuid}`, data),
+    reviewPurchaseRequest: (idOrUuid, data) => api.post(`/pims/purchase-requests/${idOrUuid}/review`, data),
+};
+
 export const portalSystemService = {
     getPublic: () => api.get('/public-portal-systems'),
+    getPimsStatus: () => api.get('/portal-systems/pims-status'),
     getAll: () => api.get('/portal-systems'),
     create: (data) => api.post('/portal-systems', data),
     update: (id, data) => api.put(`/portal-systems/${id}`, data),

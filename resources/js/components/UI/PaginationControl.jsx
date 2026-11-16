@@ -34,12 +34,13 @@ export const PaginationControl = ({
     startIndex = 0,
     endIndex = 0,
     theme = 'orange',
-    perPageOptions = [10, 25, 50],
+    perPageOptions = [10, 25, 50, 100],
 }) => {
     if (totalEntries === 0) return null;
 
     const pages = getPaginationPages(currentPage, totalPages);
     const isOrange = theme === 'orange';
+    const isTeal = theme === 'teal';
 
     return (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 font-medium">
@@ -50,7 +51,7 @@ export const PaginationControl = ({
                     <span className="font-bold text-slate-800">{totalEntries}</span> entries
                 </span>
 
-                {onPerPageChange && totalEntries > 10 && (
+                {onPerPageChange && (
                     <div className="flex items-center gap-1.5 ml-2">
                         <span>Show:</span>
                         <select
@@ -60,12 +61,16 @@ export const PaginationControl = ({
                                 onPageChange(1);
                             }}
                             className={`py-1 px-2.5 border border-slate-300 rounded-lg bg-white text-slate-800 font-bold focus:outline-none focus:ring-1 cursor-pointer text-xs ${
-                                isOrange ? 'focus:ring-orange-500 focus:border-orange-500' : 'focus:ring-blue-500 focus:border-blue-500'
+                                isOrange
+                                    ? 'focus:ring-orange-500 focus:border-orange-500'
+                                    : isTeal
+                                    ? 'focus:ring-teal-500 focus:border-teal-500'
+                                    : 'focus:ring-blue-500 focus:border-blue-500'
                             }`}
                         >
                             {perPageOptions.map((opt) => (
                                 <option key={opt} value={opt}>
-                                    {opt} rows
+                                    {opt} entries
                                 </option>
                             ))}
                         </select>
@@ -82,6 +87,8 @@ export const PaginationControl = ({
                         className={`p-1.5 rounded-lg border transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                             isOrange
                                 ? 'border-slate-300 bg-white hover:bg-orange-50 hover:text-orange-700 text-slate-700'
+                                : isTeal
+                                ? 'border-slate-300 bg-white hover:bg-teal-50 hover:text-teal-800 text-slate-700'
                                 : 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700'
                         }`}
                         title="Previous Page"
@@ -112,9 +119,13 @@ export const PaginationControl = ({
                                         isActive
                                             ? isOrange
                                                 ? 'bg-gradient-to-r from-orange-500 to-amber-600 text-white shadow-sm shadow-orange-500/25 border border-orange-500'
+                                                : isTeal
+                                                ? 'bg-teal-600 text-white shadow-xs border border-teal-600'
                                                 : 'bg-blue-600 text-white shadow-xs'
                                             : isOrange
                                             ? 'bg-white border border-slate-200 text-slate-700 hover:bg-orange-50 hover:text-orange-700 hover:border-orange-200'
+                                            : isTeal
+                                            ? 'bg-white border border-slate-200 text-slate-700 hover:bg-teal-50 hover:text-teal-800 hover:border-teal-200'
                                             : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
                                     }`}
                                 >
@@ -131,6 +142,8 @@ export const PaginationControl = ({
                         className={`p-1.5 rounded-lg border transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                             isOrange
                                 ? 'border-slate-300 bg-white hover:bg-orange-50 hover:text-orange-700 text-slate-700'
+                                : isTeal
+                                ? 'border-slate-300 bg-white hover:bg-teal-50 hover:text-teal-800 text-slate-700'
                                 : 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700'
                         }`}
                         title="Next Page"

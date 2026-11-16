@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { formatCurrency, formatDate } from '../UI/StatusBadge';
-import { Printer, ArrowLeft, Plus, Trash2, Edit3, Loader2, Sparkles, ShieldCheck, Truck, Lock, Leaf, CheckCircle2, ChevronRight, ChevronLeft, Eye, Layers, Copy, Check, Save, AlertTriangle } from 'lucide-react';
+import { Printer, ArrowLeft, Plus, Trash2, Edit3, Loader2, Sparkles, ShieldCheck, Truck, Lock, Leaf, CheckCircle2, ChevronRight, ChevronLeft, Eye, Layers, Copy, Check, Save, AlertTriangle, MessageSquare, CheckCheck, Maximize2 } from 'lucide-react';
 import { ppmpService, procurementConditionService, otherTermService } from '../../services/api';
 import { GreenSpecDropdown } from './GreenSpecDropdown';
 import { useSignatureSettings } from '../../utils/signatureController';
+import { CommentableCell } from './CommentableCell';
+import { AttachmentUnitCombobox } from './AttachmentUnitCombobox';
 import {
     BASE_DELIVERY_PERIODS,
     BASE_PLACES_OF_DELIVERY,
@@ -114,9 +116,157 @@ export const getInitialAttachmentLists = (ppmp, procurementItems, savedData) => 
  * Create & View flow for "PROJECT PROCUREMENT MANAGEMENT PLAN (PPMP) LIST".
  * Supports single-item and multiple-item PPMPs (generating 1 Attachment List per procurement row).
  */
-export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItemId = null, onBack, onGenerated }) => {
+export const PPMPAttachmentListView = ({
+    ppmp,
+    user,
+    canEdit = true,
+    initialItemId = null,
+    onBack,
+    onGenerated,
+    cellComments = [],
+    canComment = false,
+    canComply = false,
+    currentUser = null,
+    onAddCellComment,
+    onDeleteCellComment,
+    onComplyCellComment,
+    onUncomplyCellComment,
+    onUpdateCellValue = null,
+}) => {
     const savedData = ppmp?.attachment_list_data || null;
     const ppmpProgram = (ppmp?.program_name || ppmp?.program || '').trim();
+
+    const [activeCellKey, setActiveCellKey] = useState(null);
+
+    const pendingCellComments = useMemo(() => {
+        return (cellComments || []).filter(c => c.status === 'pending');
+    }, [cellComments]);
+
+    const compliedCellComments = useMemo(() => {
+        return (cellComments || []).filter(c => c.status === 'complied');
+    }, [cellComments]);
+
+    const getValidItemId = (id) => {
+        if (typeof id === 'number' && Number.isInteger(id) && id > 0) return id;
+        if (typeof id === 'string' && /^\d+$/.test(id)) {
+            const num = parseInt(id, 10);
+            return num > 0 ? num : null;
+        }
+        return null;
+    };
+
+    const getCommentProps = (itemId, itemNo, fieldKey, fieldLabel, cellValue, contextData = null) => {
+        let updateHandler = null;
+        if (fieldKey && fieldKey.startsWith('att_r')) {
+            const m = fieldKey.match(/^att_r(\d+)_(.+)$/);
+            if (m) {
+                const rowNum = parseInt(m[1], 10);
+                const subField = m[2];
+                const targetKey = subField === 'unit_cost' ? 'unitCost' : (subField === 'item_no' ? 'itemNo' : subField);
+                updateHandler = async (newVal) => {
+                    const activeRows = attachmentLists[activeItemIndex]?.rows || [];
+                    const rowIdx = activeRows.findIndex(r => (r.itemNo || r.id) == rowNum);
+                    if (rowIdx >= 0) {
+                        handleUpdateRow(rowIdx, targetKey, newVal);
+                    }
+                    if (onUpdateCellValue) {
+                        await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
+                    }
+                };
+            }
+        } else if (fieldKey === 'att_charges') {
+            updateHandler = async (newVal) => {
+                updateActiveField('charges', newVal);
+                if (onUpdateCellValue) await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
+            };
+        } else if (fieldKey === 'att_office_name') {
+            updateHandler = async (newVal) => {
+                updateActiveField('officeName', newVal);
+                if (onUpdateCellValue) await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
+            };
+        } else if (fieldKey === 'att_project_title') {
+            updateHandler = async (newVal) => {
+                updateActiveField('projectTitle', newVal);
+                if (onUpdateCellValue) await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
+            };
+        } else if (fieldKey === 'att_delivery_period') {
+            updateHandler = async (newVal) => {
+                updateActiveField('deliveryPeriod', newVal);
+                if (onUpdateCellValue) await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
+            };
+        } else if (fieldKey === 'att_place_of_delivery') {
+            updateHandler = async (newVal) => {
+                updateActiveField('placeOfDelivery', newVal);
+                if (onUpdateCellValue) await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
+            };
+        } else if (fieldKey === 'att_payment_method') {
+            updateHandler = async (newVal) => {
+                updateActiveField('paymentMethod', newVal);
+                if (onUpdateCellValue) await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
+            };
+        } else if (fieldKey === 'att_other_terms') {
+            updateHandler = async (newVal) => {
+                let ot = newVal;
+                let pod = null;
+                let pm = null;
+                let dp = null;
+                try {
+                    const parsed = typeof newVal === 'object' ? newVal : JSON.parse(newVal);
+                    if (parsed && typeof parsed === 'object') {
+                        ot = parsed.other_terms ?? parsed.otherTerms ?? ot;
+                        pod = parsed.place_of_delivery ?? parsed.placeOfDelivery;
+                        pm = parsed.payment_method ?? parsed.paymentMethod;
+                        dp = parsed.delivery_period ?? parsed.deliveryPeriod;
+                    }
+                } catch (e) {
+                    // plain string
+                }
+                updateActiveField('otherTerms', ot);
+                if (pod !== null && pod !== undefined) updateActiveField('placeOfDelivery', pod);
+                if (pm !== null && pm !== undefined) updateActiveField('paymentMethod', pm);
+                if (dp !== null && dp !== undefined) updateActiveField('deliveryPeriod', dp);
+
+                setAttachmentLists(prev => prev.map(l => {
+                    const matches = (l.itemId && itemId && String(l.itemId) === String(itemId)) ||
+                                    (l.itemNo && itemNo && Number(l.itemNo) === Number(itemNo)) ||
+                                    prev.length === 1;
+                    if (matches) {
+                        return {
+                            ...l,
+                            otherTerms: ot,
+                            ...(pod !== null && pod !== undefined ? { placeOfDelivery: pod } : {}),
+                            ...(pm !== null && pm !== undefined ? { paymentMethod: pm } : {}),
+                            ...(dp !== null && dp !== undefined ? { deliveryPeriod: dp } : {}),
+                        };
+                    }
+                    return l;
+                }));
+
+                if (onUpdateCellValue) await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
+            };
+        }
+
+        return {
+            itemId: getValidItemId(itemId),
+            itemNo: typeof itemNo === 'number' ? itemNo : null,
+            fieldKey,
+            fieldLabel,
+            cellValue: cellValue !== null && cellValue !== undefined ? String(cellValue) : '',
+            contextData,
+            comments: cellComments,
+            changeLogs: ppmp?.change_logs || ppmp?.changeLogs || [],
+            canComment,
+            canComply,
+            currentUser: currentUser || user,
+            activeCellKey,
+            setActiveCellKey,
+            onAddCellComment,
+            onDeleteCellComment,
+            onComplyCellComment,
+            onUncomplyCellComment,
+            onUpdateCellValue: updateHandler,
+        };
+    };
 
     // Filter actual procurement items (excluding account code header rows)
     const procurementItems = useMemo(() => {
@@ -208,6 +358,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
 
     // Active list being edited
     const activeList = attachmentLists[activeItemIndex] || attachmentLists[0];
+    const activeListItemNo = typeof activeList?.itemNo === 'number' ? activeList.itemNo : (activeItemIndex + 1);
 
     // Presets from server
     const [conditions, setConditions] = useState([]);
@@ -312,8 +463,8 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
         ? (hasTwgApprovedChild ? ppmp?.signatures?.find(s => s.role === 'twg') : null)
         : (ppmp?.signatures?.find(s => s.role === 'twg') || (isScopePpmpAppOnly ? ppmp?.parent?.signatures?.find(s => s.role === 'twg') : null));
 
-    const resolvedOfficeHeadName = ppmp?.office?.head_name || ppmp?.office?.head?.name || '';
-    const resolvedOfficeHeadPosition = ppmp?.office?.designation || ppmp?.office?.head?.designation || 'Head of Office';
+    const resolvedOfficeHeadName = ppmp?.office_head_name || ppmp?.default_signatories?.submitted_by?.name || ppmp?.default_signatories?.head_of_office?.name || ppmp?.office?.head_name || ppmp?.office?.head?.name || '';
+    const resolvedOfficeHeadPosition = ppmp?.office_head_designation || ppmp?.default_signatories?.submitted_by?.position || ppmp?.default_signatories?.head_of_office?.position || ppmp?.office?.designation || ppmp?.office?.head?.designation || 'Head of Office';
 
     const [endUserName, setEndUserName] = useState(
         (savedData?.prepared_by_name && savedData.prepared_by_name !== 'NAME OF END USER')
@@ -543,17 +694,17 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
         // Validate active attachment list has at least some item description or quantity
         const activeHasContent = activeList.rows && activeList.rows.some(r => (r.description && r.description.trim() !== '') || (r.qty && r.qty !== ''));
         if (!activeHasContent) {
-            alert('Please add at least one item description or specification to this attachment list before saving.');
+            alert('Please add at least one item description or specification to this detailed specification before saving.');
             return;
         }
 
-        // Validate that no attachment list exceeds the PPMP allocated budget
+        // Validate that no detailed specification exceeds the PPMP allocated budget
         for (const list of attachmentLists) {
             const listTotal = (list.rows || []).reduce((sum, r) => sum + (parseFloat(r.totalCost) || 0), 0);
             const listBudget = parseFloat(list.ppmpAllocatedBudget !== undefined ? list.ppmpAllocatedBudget : list.totalBudget) || (parseFloat(ppmp?.total_budget) || 0);
 
             if (listBudget > 0 && listTotal > (listBudget + 0.01)) {
-                alert(`Cannot save: The Total Cost (${formatCurrency(listTotal)}) of "${list.projectTitle || `Item #${list.itemNo}`}" exceeds the Allocated Budget (${formatCurrency(listBudget)}) from the PPMP data by ${formatCurrency(listTotal - listBudget)}.\n\nThe Total Cost of the PPMP List of Attachment must coincide with or be lower than the Allocated Budget.`);
+                alert(`Cannot save: The Total Cost (${formatCurrency(listTotal)}) of "${list.projectTitle || `Item #${list.itemNo}`}" exceeds the Allocated Budget (${formatCurrency(listBudget)}) from the PPMP data by ${formatCurrency(listTotal - listBudget)}.\n\nThe Total Cost of the Detailed Specifications must coincide with or be lower than the Allocated Budget.`);
                 return;
             }
         }
@@ -612,8 +763,8 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                 setIsEditing(false);
             }
         } catch (error) {
-            console.error('Failed to save PPMP List of Attachment', error);
-            alert(error.response?.data?.message || 'Failed to save PPMP Attachment List to server. Please try again.');
+            console.error('Failed to save Detailed Specifications', error);
+            alert(error.response?.data?.message || 'Failed to save Detailed Specifications to server. Please try again.');
         } finally {
             setSaving(false);
         }
@@ -659,6 +810,10 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
         const itemDisplayTotalBudget = itemCalculatedTotal > 0 ? itemCalculatedTotal : (parseFloat(list.totalBudget) || 0);
         const viewRows = list.rows.filter(r => (r.unit || r.description || r.qty || r.unitCost || r.totalCost));
         const listIsPol = list.additionalCondition === 'POL Condition';
+        const listItemNo = typeof list.itemNo === 'number' ? list.itemNo : (listIdx + 1);
+        const displayProjectTitle = (list.projectTitle && String(list.projectTitle).trim() !== String(list.sourceDescription || '').trim())
+            ? list.projectTitle
+            : (ppmpProgram || list.projectTitle || '—');
 
         return (
             <div
@@ -672,7 +827,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                 {attachmentLists.length > 1 && (
                     <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mb-2 pb-1 border-b border-slate-200 print:border-black/20">
                         <span className="font-bold uppercase text-slate-700 print:text-black">
-                            Attachment List {listIdx + 1} of {attachmentLists.length}
+                            Detailed Specifications {listIdx + 1} of {attachmentLists.length}
                         </span>
                         <span className="text-slate-500">
                             Procurement Row #{list.itemNo}: {list.sourceDescription.slice(0, 45)}...
@@ -690,7 +845,14 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                     />
                     <div>
                         <div className="text-sm sm:text-base font-bold uppercase tracking-tight">
-                            PROJECT PROCUREMENT MANAGEMENT PLAN (PPMP ) CY {ppmp?.fiscal_year || new Date().getFullYear()}
+                            PROJECT PROCUREMENT MANAGEMENT PLAN (PPMP ) {' '}
+                            <CommentableCell
+                                as="span"
+                                {...getCommentProps(list.itemId, listItemNo, 'att_fiscal_year', `Detailed Specifications #${listItemNo} • Fiscal Year`, `CY ${ppmp?.fiscal_year || new Date().getFullYear()}`)}
+                                className="inline-block px-1 rounded"
+                            >
+                                CY {ppmp?.fiscal_year || new Date().getFullYear()}
+                            </CommentableCell>
                         </div>
                         <div className="text-xs sm:text-sm font-semibold tracking-tight mt-0.5">
                             Provincial Government of Davao del Sur
@@ -703,17 +865,27 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
 
                 {/* Metadata details */}
                 <div className="text-xs font-bold space-y-1 mb-3 pt-2">
-                    <div>
+                    <CommentableCell
+                        as="div"
+                        {...getCommentProps(list.itemId, listItemNo, 'att_office_name', `Detailed Specifications #${listItemNo} • End-User / Implementing Unit`, list.officeName)}
+                        className="p-0.5 rounded"
+                    >
                         End User/ Implementing Unit: <span className="font-semibold uppercase">{list.officeName}</span>
-                    </div>
-                    <div>
-                        Program/Project Title: <span className="font-semibold uppercase">{
-                            (list.projectTitle && String(list.projectTitle).trim() !== String(list.sourceDescription || '').trim())
-                                ? list.projectTitle
-                                : (ppmpProgram || list.projectTitle || '—')
-                        }</span>
-                    </div>
-                    <div>Charges: {list.charges || '—'}</div>
+                    </CommentableCell>
+                    <CommentableCell
+                        as="div"
+                        {...getCommentProps(list.itemId, listItemNo, 'att_project_title', `Detailed Specifications #${listItemNo} • Program / Project Title`, displayProjectTitle)}
+                        className="p-0.5 rounded"
+                    >
+                        Program/Project Title: <span className="font-semibold uppercase">{displayProjectTitle}</span>
+                    </CommentableCell>
+                    <CommentableCell
+                        as="div"
+                        {...getCommentProps(list.itemId, listItemNo, 'att_charges', `Detailed Specifications #${listItemNo} • Charges`, list.charges || '—')}
+                        className="p-0.5 rounded"
+                    >
+                        Charges: {list.charges || '—'}
+                    </CommentableCell>
                 </div>
 
                 {/* Main Table */}
@@ -729,33 +901,76 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                         </tr>
                     </thead>
                     <tbody>
-                        {viewRows.map((row, idx) => (
-                            <tr key={idx} className="h-7 border border-black">
-                                <td className="border border-black text-center px-1 py-1 font-mono">
-                                    {row.itemNo}
-                                </td>
-                                <td className="border border-black text-center px-1 py-1 text-slate-700">
-                                    {row.unit}
-                                </td>
-                                <td className="border border-black px-2 py-1 font-medium">
-                                    {row.description}
-                                </td>
-                                <td className="border border-black text-center px-1 py-1 font-mono">
-                                    {row.qty}
-                                </td>
-                                <td className="border border-black text-right px-2 py-1 font-mono">
-                                    {row.unitCost ? formatCurrency(row.unitCost) : ''}
-                                </td>
-                                <td className="border border-black text-right px-2 py-1 font-mono">
-                                    {row.totalCost !== null && row.totalCost !== undefined && row.totalCost !== '' ? formatCurrency(row.totalCost) : ''}
-                                </td>
-                            </tr>
-                        ))}
+                        {viewRows.map((row, idx) => {
+                            const rowNum = row.itemNo || idx + 1;
+                            return (
+                                <tr key={idx} className="h-7 border border-black">
+                                    <CommentableCell
+                                        as="td"
+                                        {...getCommentProps(list.itemId, listItemNo, `att_r${rowNum}_item_no`, `Detailed Specifications #${listItemNo} • Row #${rowNum} Item No.`, row.itemNo)}
+                                        className="border border-black text-center px-1 py-1 font-mono"
+                                    >
+                                        {row.itemNo}
+                                    </CommentableCell>
+                                    <CommentableCell
+                                        as="td"
+                                        {...getCommentProps(list.itemId, listItemNo, `att_r${rowNum}_unit`, `Detailed Specifications #${listItemNo} • Row #${rowNum} Unit`, row.unit)}
+                                        className="border border-black text-center px-1 py-1 text-slate-700"
+                                    >
+                                        {row.unit}
+                                    </CommentableCell>
+                                    <CommentableCell
+                                        as="td"
+                                        {...getCommentProps(list.itemId, listItemNo, `att_r${rowNum}_description`, `Detailed Specifications #${listItemNo} • Row #${rowNum} Description`, row.description)}
+                                        className="border border-black px-2 py-1 font-medium"
+                                    >
+                                        {row.description}
+                                    </CommentableCell>
+                                    <CommentableCell
+                                        as="td"
+                                        {...getCommentProps(list.itemId, listItemNo, `att_r${rowNum}_qty`, `Detailed Specifications #${listItemNo} • Row #${rowNum} Quantity`, row.qty)}
+                                        className="border border-black text-center px-1 py-1 font-mono"
+                                    >
+                                        {row.qty}
+                                    </CommentableCell>
+                                    <CommentableCell
+                                        as="td"
+                                        {...getCommentProps(list.itemId, listItemNo, `att_r${rowNum}_unit_cost`, `Detailed Specifications #${listItemNo} • Row #${rowNum} Unit Cost`, row.unitCost ? formatCurrency(row.unitCost) : '')}
+                                        className="border border-black text-right px-2 py-1 font-mono"
+                                    >
+                                        {row.unitCost ? formatCurrency(row.unitCost) : ''}
+                                    </CommentableCell>
+                                    <CommentableCell
+                                        as="td"
+                                        {...getCommentProps(list.itemId, listItemNo, `att_r${rowNum}_total_cost`, `Detailed Specifications #${listItemNo} • Row #${rowNum} Total Cost`, row.totalCost !== null && row.totalCost !== undefined && row.totalCost !== '' ? formatCurrency(row.totalCost) : '')}
+                                        className="border border-black text-right px-2 py-1 font-mono"
+                                    >
+                                        {row.totalCost !== null && row.totalCost !== undefined && row.totalCost !== '' ? formatCurrency(row.totalCost) : ''}
+                                    </CommentableCell>
+                                </tr>
+                            );
+                        })}
 
                         {/* Charges & Delivery Info Row */}
                         <tr className="border border-black">
                             <td colSpan={2} className="border border-black"></td>
-                            <td className="border border-black p-2 font-bold space-y-1.5 text-[11px] align-top">
+                            <CommentableCell
+                                as="td"
+                                {...getCommentProps(
+                                    list.itemId,
+                                    listItemNo,
+                                    'att_other_terms',
+                                    `Detailed Specifications #${listItemNo} • Other Terms & Delivery Info`,
+                                    list.otherTerms || list.placeOfDelivery || list.deliveryPeriod || 'Other Terms',
+                                    {
+                                        otherTerms: list.otherTerms || '',
+                                        placeOfDelivery: list.placeOfDelivery || 'PGSO Warehouse/On-site',
+                                        paymentMethod: list.paymentMethod || 'Staggered Delivery/Credit-basis',
+                                        deliveryPeriod: list.deliveryPeriod || 'As Per Demand by the End-User',
+                                    }
+                                )}
+                                className="border border-black p-2 font-bold space-y-1.5 text-[11px] align-top"
+                            >
                                 {list.otherTerms ? (
                                     <div className="mb-1.5 pb-1 border-b border-dashed border-black/30 font-normal whitespace-pre-wrap">
                                         {list.otherTerms}
@@ -777,13 +992,17 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                         Delivery Period: <span className="font-normal">{list.deliveryPeriod}</span>
                                     </div>
                                 ) : null}
-                            </td>
+                            </CommentableCell>
                             <td colSpan={2} className="border border-black p-2 text-right font-extrabold uppercase align-top">
                                 TOTAL
                             </td>
-                            <td className="border border-black p-2 text-right font-mono font-bold align-top">
+                            <CommentableCell
+                                as="td"
+                                {...getCommentProps(list.itemId, listItemNo, 'att_total_budget', `Detailed Specifications #${listItemNo} • Total Estimated Budget`, formatCurrency(itemCalculatedTotal > 0 ? itemCalculatedTotal : itemDisplayTotalBudget))}
+                                className="border border-black p-2 text-right font-mono font-bold align-top"
+                            >
                                 {formatCurrency(itemCalculatedTotal > 0 ? itemCalculatedTotal : itemDisplayTotalBudget)}
-                            </td>
+                            </CommentableCell>
                         </tr>
                     </tbody>
                 </table>
@@ -934,6 +1153,24 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                     .no-print * {
                         display: none !important;
                     }
+                    /* Remove all comment outline rings, box shadows, and background colors during printing */
+                    .attachment-sheet,
+                    .attachment-sheet * {
+                        box-shadow: none !important;
+                        -webkit-box-shadow: none !important;
+                        outline: none !important;
+                    }
+                    .attachment-sheet [class*="ring-"] {
+                        box-shadow: none !important;
+                        -webkit-box-shadow: none !important;
+                        outline: none !important;
+                    }
+                    .attachment-sheet [class*="bg-emerald-"],
+                    .attachment-sheet [class*="bg-red-"],
+                    .attachment-sheet [class*="bg-amber-"] {
+                        background-color: transparent !important;
+                        background: transparent !important;
+                    }
                     .attachment-sheet {
                         page-break-after: always !important;
                         break-after: page !important;
@@ -967,17 +1204,17 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                     </button>
                     <div>
                         <div className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2">
-                            PROJECT PROCUREMENT MANAGEMENT PLAN (PPMP) LIST
+                            DETAILED SPECIFICATIONS (PPMP)
                             {attachmentLists.length > 1 && (
                                 <span className="text-[10px] bg-blue-600 text-white font-mono px-2 py-0.5 rounded-full">
-                                    {attachmentLists.length} Lists
+                                    {attachmentLists.length} Specifications
                                 </span>
                             )}
                         </div>
                         <div className="text-[11px] text-emerald-400 font-mono">
                             {isEditing
-                                ? `Data Entry — Editing Attachment ${activeItemIndex + 1} of ${attachmentLists.length}`
-                                : (viewAllMode ? `Official Attachment View — Viewing All ${attachmentLists.length} Lists` : `Official Attachment View — Attachment ${activeItemIndex + 1} of ${attachmentLists.length}`)
+                                ? `Data Entry — Editing Detailed Specifications ${activeItemIndex + 1} of ${attachmentLists.length}`
+                                : (viewAllMode ? `Official Detailed Specifications View — Viewing All ${attachmentLists.length} Sheets` : `Official Detailed Specifications View — Sheet ${activeItemIndex + 1} of ${attachmentLists.length}`)
                             }
                         </div>
                     </div>
@@ -1025,10 +1262,10 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                         ? 'bg-rose-500/80 cursor-not-allowed'
                                         : 'bg-blue-600 hover:bg-blue-700 cursor-pointer disabled:opacity-50'
                                 }`}
-                                title={isActiveOverBudget ? `Total cost exceeds Allocated Budget (${formatCurrency(activePpmpBudget)})` : 'Save PPMP List of Attachment'}
+                                title={isActiveOverBudget ? `Total cost exceeds Allocated Budget (${formatCurrency(activePpmpBudget)})` : 'Save Detailed Specifications'}
                             >
                                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                {saving ? 'Saving...' : isActiveOverBudget ? 'Over Budget' : (attachmentLists.length > 1 ? `Save Attachment (Item ${activeList.itemNo || activeItemIndex + 1})` : 'Save Attachment')}
+                                {saving ? 'Saving...' : isActiveOverBudget ? 'Over Budget' : (attachmentLists.length > 1 ? `Save Specifications (Item ${activeList.itemNo || activeItemIndex + 1})` : 'Save Detailed Specifications')}
                             </button>
                         </div>
                     ) : (
@@ -1046,7 +1283,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                     Edit Fields
                                 </button>
                             ) : (
-                                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/80 border border-slate-700 text-slate-400 text-xs font-medium rounded-lg" title={isScopeLocked ? "PPMP List of Attachment is locked. Approved revision scope is restricted to PPMP/APP procurement items only." : "Document is under formal review and locked from end-user edits."}>
+                                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/80 border border-slate-700 text-slate-400 text-xs font-medium rounded-lg" title={isScopeLocked ? "Detailed Specifications are locked. Approved revision scope is restricted to PPMP/APP procurement items only." : "Document is under formal review and locked from end-user edits."}>
                                     <span>{isScopeLocked ? "Locked (PPMP/APP Scope Only)" : "Locked for Review"}</span>
                                 </div>
                             )}
@@ -1059,7 +1296,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                                 type="button"
                                                 onClick={handlePrintCurrent}
                                                 className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-semibold rounded-lg border border-slate-700 transition cursor-pointer"
-                                                title={`Print only the active sheet (Attachment List #${activeItemIndex + 1})`}
+                                                title={`Print only the active sheet (Detailed Specifications #${activeItemIndex + 1})`}
                                             >
                                                 <Printer className="w-4 h-4 text-slate-300" />
                                                 <span>Print Current (#{activeItemIndex + 1})</span>
@@ -1068,10 +1305,10 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                                 type="button"
                                                 onClick={handlePrintAll}
                                                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow transition cursor-pointer"
-                                                title={`Print all ${attachmentLists.length} attachment lists together in one print job`}
+                                                title={`Print all ${attachmentLists.length} detailed specifications together in one print job`}
                                             >
                                                 <Printer className="w-4 h-4" />
-                                                <span>Print All Attachments ({attachmentLists.length})</span>
+                                                <span>Print All Specifications ({attachmentLists.length})</span>
                                             </button>
                                         </>
                                     ) : (
@@ -1081,7 +1318,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                             className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow transition cursor-pointer"
                                         >
                                             <Printer className="w-4 h-4" />
-                                            <span>Print PPMP List of Attachment</span>
+                                            <span>Print Detailed Specifications</span>
                                         </button>
                                     )}
                                 </div>
@@ -1108,13 +1345,13 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                 </div>
                                 <div>
                                     <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
-                                        Select Procurement Row Attachment
+                                        Select Procurement Row Specifications
                                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-mono font-semibold border border-blue-200">
                                             {attachmentLists.length} items to procure
                                         </span>
                                     </h3>
                                     <p className="text-[11px] text-slate-500">
-                                        Each procurement row has its own Project Procurement Management Plan Attachment List breakdown.
+                                        Each procurement row has its own detailed procurement specifications breakdown.
                                     </p>
                                 </div>
                             </div>
@@ -1133,7 +1370,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                         }`}
                                     >
                                         <Eye className="w-3.5 h-3.5" />
-                                        {viewAllMode ? 'Viewing All Together' : 'View All Attachment Lists'}
+                                        {viewAllMode ? 'Viewing All Together' : 'View All Detailed Specifications'}
                                     </button>
                                 </div>
                             )}
@@ -1147,6 +1384,13 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                 const itemCalculated = (item.rows || []).reduce((sum, r) => sum + (parseFloat(r.totalCost) || 0), 0);
                                 const itemOverBudget = itemBudget > 0 && itemCalculated > (itemBudget + 0.01);
                                 const hasRows = item.rows && item.rows.some(r => r.description || r.qty);
+                                const tabItemNo = item.itemNo || idx + 1;
+                                const tabComments = (cellComments || []).filter(c =>
+                                    (item.itemId && c.item_id && String(c.item_id) === String(item.itemId)) ||
+                                    (c.item_no !== undefined && c.item_no !== null && Number(c.item_no) === Number(tabItemNo))
+                                );
+                                const tabPendingCount = tabComments.filter(c => c.status === 'pending').length;
+                                const tabCompliedCount = tabComments.filter(c => c.status === 'complied').length;
 
                                 return (
                                     <button
@@ -1175,8 +1419,17 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                             {idx + 1}
                                         </span>
                                         <div className="min-w-0 flex-1">
-                                            <div className="text-xs font-bold text-slate-900 truncate" title={item.sourceDescription || item.projectTitle}>
-                                                {item.sourceDescription || item.projectTitle || `Item #${idx + 1}`}
+                                            <div className="text-xs font-bold text-slate-900 truncate flex items-center justify-between gap-1" title={item.sourceDescription || item.projectTitle}>
+                                                <span className="truncate">{item.sourceDescription || item.projectTitle || `Item #${idx + 1}`}</span>
+                                                {tabPendingCount > 0 ? (
+                                                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-red-600 text-white shadow-2xs shrink-0 no-print" title={`${tabPendingCount} pending finding(s)`}>
+                                                        💬 {tabPendingCount}
+                                                    </span>
+                                                ) : tabCompliedCount > 0 ? (
+                                                    <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-emerald-600 text-white shadow-2xs shrink-0 no-print" title="Complied">
+                                                        ✓
+                                                    </span>
+                                                ) : null}
                                             </div>
                                             <div className="text-[11px] text-slate-500 font-mono mt-0.5 flex items-center justify-between">
                                                 <span>Budget: {formatCurrency(itemBudget)}</span>
@@ -1198,6 +1451,157 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                     </div>
                 )}
 
+                {/* Reviewer Cell Comments & Compliance Tracker Banner */}
+                {cellComments && cellComments.length > 0 && (
+                    <div className="max-w-5xl mx-auto mb-6 no-print">
+                        <div className={`p-4 rounded-xl border text-xs space-y-2.5 transition shadow-2xs ${
+                            pendingCellComments.length > 0
+                                ? 'bg-red-50/95 border-red-300'
+                                : 'bg-emerald-50/95 border-emerald-300'
+                        }`}>
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-2">
+                                    <span className={`p-1.5 rounded-lg ${
+                                        pendingCellComments.length > 0
+                                            ? 'bg-red-100 text-red-800'
+                                            : 'bg-emerald-100 text-emerald-800'
+                                    }`}>
+                                        <MessageSquare className="w-4 h-4" />
+                                    </span>
+                                    <span className="font-bold uppercase tracking-wide text-xs text-slate-900">
+                                        Reviewer Cell Comments &amp; Compliance Tracker
+                                    </span>
+                                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                                        pendingCellComments.length > 0
+                                            ? 'bg-red-200 text-red-900 border border-red-400'
+                                            : 'bg-emerald-200 text-emerald-900 border border-emerald-400'
+                                    }`}>
+                                        {pendingCellComments.length > 0
+                                            ? `${pendingCellComments.length} PENDING COMPLIANCE`
+                                            : 'ALL COMPLIED (100%)'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-4 text-[11px] font-medium text-slate-700">
+                                <span>Total Cell Findings: <strong>{cellComments.length}</strong></span>
+                                <span className="text-red-800 font-semibold">• Pending Action: <strong>{pendingCellComments.length}</strong></span>
+                                <span className="text-emerald-800 font-semibold">• Complied: <strong>{compliedCellComments.length}</strong></span>
+                            </div>
+
+                            {/* Progress bar */}
+                            <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                                <div
+                                    className={`h-2 transition-all duration-300 ${pendingCellComments.length === 0 ? 'bg-emerald-600' : 'bg-red-500'}`}
+                                    style={{ width: `${cellComments.length > 0 ? (compliedCellComments.length / cellComments.length) * 100 : 0}%` }}
+                                />
+                            </div>
+
+                            {pendingCellComments.length > 0 ? (
+                                <div className="space-y-1.5 pt-1">
+                                    <span className="text-[11px] font-bold text-red-900 uppercase tracking-wide">
+                                        Required Actions Before Resubmission:
+                                    </span>
+                                    <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
+                                        {pendingCellComments.map((c) => {
+                                            const targetListIdx = attachmentLists.findIndex(
+                                                l => (c.item_id && String(l.itemId) === String(c.item_id)) ||
+                                                     (c.item_no !== undefined && c.item_no !== null && Number(l.itemNo) === Number(c.item_no))
+                                            );
+                                            return (
+                                                <div
+                                                    key={c.id}
+                                                    className="p-2.5 bg-white border border-red-200 rounded-lg flex items-start justify-between gap-3 text-[11px] shadow-2xs hover:border-red-300 transition"
+                                                >
+                                                    <div className="space-y-0.5 min-w-0">
+                                                        <div className="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    if (targetListIdx >= 0) {
+                                                                        setActiveItemIndex(targetListIdx);
+                                                                        setViewAllMode(false);
+                                                                    }
+                                                                }}
+                                                                className="px-1.5 py-0.5 bg-red-100 hover:bg-red-200 text-red-900 rounded font-mono text-[10px] cursor-pointer"
+                                                                title="Switch to this detailed specification"
+                                                            >
+                                                                {c.item_no ? `Detailed Specifications #${c.item_no}` : 'Header'}
+                                                            </button>
+                                                            <span>{c.field_label || c.field_key}</span>
+                                                        </div>
+                                                        <div className="text-slate-800 font-medium whitespace-pre-wrap">"{c.comment}"</div>
+                                                        <div className="text-[10px] text-slate-500">
+                                                            Comment by: {c.reviewer_name || 'Reviewer'} ({c.reviewer_role?.toUpperCase()})
+                                                        </div>
+                                                    </div>
+                                                    {canComply && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const note = window.prompt(`Enter compliance note for [${c.field_label || c.field_key}] (optional):`);
+                                                                if (note !== null && onComplyCellComment) {
+                                                                    onComplyCellComment(c.id, note);
+                                                                }
+                                                            }}
+                                                            className="shrink-0 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold uppercase tracking-wider transition shadow-2xs cursor-pointer"
+                                                        >
+                                                            Mark Complied
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    <div className="p-2.5 bg-emerald-100/70 border border-emerald-300 rounded-lg text-[11px] text-emerald-900 font-medium flex items-center justify-between gap-1.5">
+                                        <div className="flex items-center gap-1.5">
+                                            <CheckCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                                            <span>All reviewer cell comments have been complied with.</span>
+                                        </div>
+                                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-200/70 px-2 py-0.5 rounded border border-emerald-400 shrink-0">
+                                            {compliedCellComments.length} Complied
+                                        </span>
+                                    </div>
+                                    {compliedCellComments.length > 0 && (
+                                        <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                                            <div className="text-[10px] font-bold text-emerald-900 uppercase tracking-wide">
+                                                Complied Reviewer Findings ({compliedCellComments.length}):
+                                            </div>
+                                            {compliedCellComments.map((c) => (
+                                                <div
+                                                    key={c.id}
+                                                    className="p-2 bg-white/95 border border-emerald-200 rounded-lg flex items-start justify-between gap-3 text-[11px] shadow-2xs"
+                                                >
+                                                    <div className="space-y-0.5">
+                                                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                                            <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-mono text-[10px]">
+                                                                {c.item_no ? `Detailed Specifications #${c.item_no}` : 'Header'}
+                                                            </span>
+                                                            <span>{c.field_label || c.field_key}</span>
+                                                        </div>
+                                                        <div className="text-slate-700">"{c.comment}"</div>
+                                                        {c.compliance_note && (
+                                                            <div className="text-[10px] text-emerald-800 font-medium">
+                                                                ✓ Compliance Note: {c.compliance_note}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <span className="shrink-0 text-emerald-700 font-bold text-[10px] flex items-center gap-1">
+                                                        <CheckCheck className="w-3.5 h-3.5" /> Complied
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 {isEditing ? (
                     /* CREATE / EDIT FORM VIEW */
                     <div className="max-w-5xl mx-auto space-y-6">
@@ -1208,7 +1612,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                             </div>
                             <div className="text-xs text-blue-900">
                                 <span className="font-bold">
-                                    Editing Attachment List #{activeItemIndex + 1} of {attachmentLists.length}:
+                                    Editing Detailed Specifications #{activeItemIndex + 1} of {attachmentLists.length}:
                                 </span>{' '}
                                 <span className="font-semibold text-blue-950">{activeList.projectTitle}</span>.
                                 Initial allocations and charges have been pre-filled from this procurement row. Customize the item breakdowns, units, prices, and specifications below.
@@ -1225,7 +1629,11 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                             </h3>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                                <div>
+                                <CommentableCell
+                                    as="div"
+                                    {...getCommentProps(activeList.itemId, activeListItemNo, 'att_office_name', `Detailed Specifications #${activeListItemNo} • End-User / Implementing Unit`, activeList.officeName)}
+                                    className="p-1 rounded-lg"
+                                >
                                     <label className="block font-bold text-slate-700 mb-1">
                                         End User / Implementing Unit:
                                     </label>
@@ -1236,9 +1644,13 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
                                         placeholder="Office Name"
                                     />
-                                </div>
+                                </CommentableCell>
 
-                                <div>
+                                <CommentableCell
+                                    as="div"
+                                    {...getCommentProps(activeList.itemId, activeListItemNo, 'att_total_budget', `Detailed Specifications #${activeListItemNo} • Total Estimated Budget (ABC)`, activeList.totalBudget)}
+                                    className="p-1 rounded-lg"
+                                >
                                     <div className="flex items-center justify-between mb-1">
                                         <label className="block font-bold text-slate-700">
                                             Estimated Budget / Authorized Budgetary Allocation (ABC):
@@ -1309,9 +1721,13 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                             </div>
                                         ) : null}
                                     </div>
-                                </div>
+                                </CommentableCell>
 
-                                <div className="md:col-span-2">
+                                <CommentableCell
+                                    as="div"
+                                    {...getCommentProps(activeList.itemId, activeListItemNo, 'att_project_title', `Detailed Specifications #${activeListItemNo} • Program / Project Title`, activeList.projectTitle)}
+                                    className="md:col-span-2 p-1 rounded-lg"
+                                >
                                     <label className="block font-bold text-slate-700 mb-1">
                                         Program / Project Title:
                                     </label>
@@ -1322,7 +1738,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
                                         placeholder="Program / Project Title"
                                     />
-                                </div>
+                                </CommentableCell>
                             </div>
                         </div>
 
@@ -1331,7 +1747,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                                 <div>
                                     <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                                        PPMP List of Attachment Items (Breakdown for {activeList.sourceDescription || activeList.projectTitle})
+                                        Detailed Specifications Items (Breakdown for {activeList.sourceDescription || activeList.projectTitle})
                                     </h3>
                                     <p className="text-[11px] text-slate-500 mt-0.5">
                                         Enter items, units, quantities, and unit costs. The Total Cost must coincide with or be lower than the Allocated Budget (<strong className="font-mono">{formatCurrency(activePpmpBudget)}</strong>).
@@ -1355,7 +1771,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                             Budget Limit Exceeded
                                         </div>
                                         <p className="text-rose-800 mt-0.5 font-medium">
-                                            The Total Cost of this attachment list (<strong className="font-mono font-extrabold">{formatCurrency(activeCalculatedTotal)}</strong>) is higher than the Allocated Budget from the PPMP data (<strong className="font-mono font-extrabold">{formatCurrency(activePpmpBudget)}</strong>) by <strong className="font-mono font-black text-rose-900">+{formatCurrency(activeBudgetExcess)}</strong>.
+                                            The Total Cost of this detailed specification (<strong className="font-mono font-extrabold">{formatCurrency(activeCalculatedTotal)}</strong>) is higher than the Allocated Budget from the PPMP data (<strong className="font-mono font-extrabold">{formatCurrency(activePpmpBudget)}</strong>) by <strong className="font-mono font-black text-rose-900">+{formatCurrency(activeBudgetExcess)}</strong>.
                                         </p>
                                         <p className="text-rose-700 text-[11px] mt-1 font-semibold">
                                             Please adjust quantities or unit costs so the total cost coincides with or is lower than the Allocated Budget. Saving is disabled until within budget.
@@ -1369,7 +1785,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                     <thead>
                                         <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300 text-center text-[11px]">
                                             <th className="p-2 w-12">No.</th>
-                                            <th className="p-2 w-28">Unit</th>
+                                            <th className="p-2 w-36">Unit</th>
                                             <th className="p-2 text-left">Item and Description</th>
                                             <th className="p-2 w-20">Qty</th>
                                             <th className="p-2 w-28">Unit Cost</th>
@@ -1378,72 +1794,97 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-200">
-                                        {activeList.rows.map((row, index) => (
-                                            <tr key={row.id || index} className="hover:bg-slate-50">
-                                                <td className="p-2 text-center font-mono font-bold text-slate-600">
-                                                    {index + 1}
-                                                </td>
-                                                <td className="p-2">
-                                                    <input
-                                                        type="text"
-                                                        value={row.unit || ''}
-                                                        onChange={(e) => handleUpdateRow(index, 'unit', e.target.value)}
-                                                        placeholder="e.g. roll, pcs, box"
-                                                        className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
-                                                    />
-                                                </td>
-                                                <td className="p-2">
-                                                    <textarea
-                                                        rows={2}
-                                                        value={row.description || ''}
-                                                        onChange={(e) => handleUpdateRow(index, 'description', e.target.value)}
-                                                        placeholder="Item specifications and description..."
-                                                        className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs leading-snug resize-y"
-                                                    />
-                                                </td>
-                                                <td className="p-2">
-                                                    <input
-                                                        type="number"
-                                                        step="any"
-                                                        min="0"
-                                                        value={row.qty ?? ''}
-                                                        onChange={(e) => handleUpdateRow(index, 'qty', e.target.value)}
-                                                        className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs text-center font-mono"
-                                                        placeholder="0"
-                                                    />
-                                                </td>
-                                                <td className="p-2">
-                                                    <input
-                                                        type="number"
-                                                        step="any"
-                                                        min="0"
-                                                        value={row.unitCost ?? ''}
-                                                        onChange={(e) => handleUpdateRow(index, 'unitCost', e.target.value)}
-                                                        className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs text-right font-mono"
-                                                        placeholder="0.00"
-                                                    />
-                                                </td>
-                                                <td className="p-2">
-                                                    <input
-                                                        type="text"
-                                                        readOnly
-                                                        value={row.totalCost !== '' && row.totalCost !== null && row.totalCost !== undefined ? formatCurrency(row.totalCost) : ''}
-                                                        className="w-full px-2 py-1.5 bg-slate-100 border border-slate-200 rounded text-xs text-right font-mono font-bold text-slate-700"
-                                                        placeholder="₱0.00"
-                                                    />
-                                                </td>
-                                                <td className="p-2 text-center">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleRemoveRow(index)}
-                                                        className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded transition cursor-pointer"
-                                                        title="Delete Row"
+                                        {activeList.rows.map((row, index) => {
+                                            const rowNum = row.itemNo || index + 1;
+                                            return (
+                                                <tr key={row.id || index} className="hover:bg-slate-50">
+                                                    <CommentableCell
+                                                        as="td"
+                                                        {...getCommentProps(activeList.itemId, activeListItemNo, `att_r${rowNum}_item_no`, `Detailed Specifications #${activeListItemNo} • Row #${rowNum} Item No.`, row.itemNo)}
+                                                        className="p-2 text-center font-mono font-bold text-slate-600 align-top pt-3"
                                                     >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                                        {index + 1}
+                                                    </CommentableCell>
+                                                    <CommentableCell
+                                                        as="td"
+                                                        {...getCommentProps(activeList.itemId, activeListItemNo, `att_r${rowNum}_unit`, `Detailed Specifications #${activeListItemNo} • Row #${rowNum} Unit`, row.unit)}
+                                                        className="p-2 align-top"
+                                                    >
+                                                        <AttachmentUnitCombobox
+                                                            value={row.unit || ''}
+                                                            onChange={(newUnit) => handleUpdateRow(index, 'unit', newUnit)}
+                                                            placeholder="e.g. roll, pcs"
+                                                        />
+                                                    </CommentableCell>
+                                                    <CommentableCell
+                                                        as="td"
+                                                        {...getCommentProps(activeList.itemId, activeListItemNo, `att_r${rowNum}_description`, `Detailed Specifications #${activeListItemNo} • Row #${rowNum} Description`, row.description)}
+                                                        className="p-2"
+                                                    >
+                                                        <textarea
+                                                            rows={2}
+                                                            value={row.description || ''}
+                                                            onChange={(e) => handleUpdateRow(index, 'description', e.target.value)}
+                                                            placeholder="Item specifications and description..."
+                                                            className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs leading-snug resize-y"
+                                                        />
+                                                    </CommentableCell>
+                                                    <CommentableCell
+                                                        as="td"
+                                                        {...getCommentProps(activeList.itemId, activeListItemNo, `att_r${rowNum}_qty`, `Detailed Specifications #${activeListItemNo} • Row #${rowNum} Quantity`, row.qty)}
+                                                        className="p-2"
+                                                    >
+                                                        <input
+                                                            type="number"
+                                                            step="any"
+                                                            min="0"
+                                                            value={row.qty ?? ''}
+                                                            onChange={(e) => handleUpdateRow(index, 'qty', e.target.value)}
+                                                            className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs text-center font-mono"
+                                                            placeholder="0"
+                                                        />
+                                                    </CommentableCell>
+                                                    <CommentableCell
+                                                        as="td"
+                                                        {...getCommentProps(activeList.itemId, activeListItemNo, `att_r${rowNum}_unit_cost`, `Detailed Specifications #${activeListItemNo} • Row #${rowNum} Unit Cost`, row.unitCost)}
+                                                        className="p-2"
+                                                    >
+                                                        <input
+                                                            type="number"
+                                                            step="any"
+                                                            min="0"
+                                                            value={row.unitCost ?? ''}
+                                                            onChange={(e) => handleUpdateRow(index, 'unitCost', e.target.value)}
+                                                            className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs text-right font-mono"
+                                                            placeholder="0.00"
+                                                        />
+                                                    </CommentableCell>
+                                                    <CommentableCell
+                                                        as="td"
+                                                        {...getCommentProps(activeList.itemId, activeListItemNo, `att_r${rowNum}_total_cost`, `Detailed Specifications #${activeListItemNo} • Row #${rowNum} Total Cost`, row.totalCost)}
+                                                        className="p-2"
+                                                    >
+                                                        <input
+                                                            type="text"
+                                                            readOnly
+                                                            value={row.totalCost !== '' && row.totalCost !== null && row.totalCost !== undefined ? formatCurrency(row.totalCost) : ''}
+                                                            className="w-full px-2 py-1.5 bg-slate-100 border border-slate-200 rounded text-xs text-right font-mono font-bold text-slate-700"
+                                                            placeholder="₱0.00"
+                                                        />
+                                                    </CommentableCell>
+                                                    <td className="p-2 text-center">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveRow(index)}
+                                                            className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded transition cursor-pointer"
+                                                            title="Delete Row"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
@@ -1505,7 +1946,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                         type="button"
                                         onClick={handleCopySettingsToAll}
                                         className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold rounded-lg border border-slate-300 transition cursor-pointer"
-                                        title="Copy Office, Charges, Delivery, and Conditions from this item to all attachment lists"
+                                        title="Copy Office, Charges, Delivery, and Conditions from this item to all detailed specifications"
                                     >
                                         {copiedAllFeedback ? (
                                             <>
@@ -1557,7 +1998,11 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                                 {/* Other Terms (Full width across 2 columns) */}
-                                <div className="md:col-span-2 space-y-1.5">
+                                <CommentableCell
+                                    as="div"
+                                    {...getCommentProps(activeList.itemId, activeListItemNo, 'att_other_terms', `Detailed Specifications #${activeListItemNo} • Other Terms`, activeList.otherTerms)}
+                                    className="md:col-span-2 space-y-1.5 p-1 rounded-lg"
+                                >
                                     <div className="flex items-center justify-between">
                                         <label className="block font-bold text-slate-700">
                                             Other Terms: <span className="text-slate-400 font-normal text-[11px]">(Optional)</span>
@@ -1607,10 +2052,14 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                                 : 'border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none'
                                             }`}
                                     />
-                                </div>
+                                </CommentableCell>
 
                                 {/* Charges */}
-                                <div>
+                                <CommentableCell
+                                    as="div"
+                                    {...getCommentProps(activeList.itemId, activeListItemNo, 'att_charges', `Detailed Specifications #${activeListItemNo} • Charges`, activeList.charges)}
+                                    className="p-1 rounded-lg"
+                                >
                                     <label className="block font-bold text-slate-700 mb-1">
                                         (Charges: e.g. Account Code / Fund Source):
                                     </label>
@@ -1621,10 +2070,14 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
                                         placeholder="e.g. 5-02-02-100 / CY 2026 General Fund"
                                     />
-                                </div>
+                                </CommentableCell>
 
                                 {/* Place of Delivery */}
-                                <div className="space-y-1">
+                                <CommentableCell
+                                    as="div"
+                                    {...getCommentProps(activeList.itemId, activeListItemNo, 'att_place_of_delivery', `Detailed Specifications #${activeListItemNo} • Place of Delivery`, activeList.placeOfDelivery)}
+                                    className="space-y-1 p-1 rounded-lg"
+                                >
                                     <div className="flex items-center justify-between">
                                         <label className="block font-bold text-slate-700">Place of Delivery:</label>
                                         {isPolCondition ? (
@@ -1667,10 +2120,14 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                                 : 'border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none'
                                             }`}
                                     />
-                                </div>
+                                </CommentableCell>
 
                                 {/* Payment Method */}
-                                <div className="space-y-1">
+                                <CommentableCell
+                                    as="div"
+                                    {...getCommentProps(activeList.itemId, activeListItemNo, 'att_payment_method', `Detailed Specifications #${activeListItemNo} • Payment Method`, activeList.paymentMethod)}
+                                    className="space-y-1 p-1 rounded-lg"
+                                >
                                     <div className="flex items-center justify-between">
                                         <label className="block font-bold text-slate-700">Payment Method:</label>
                                         {isPolCondition ? (
@@ -1713,10 +2170,14 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                                 : 'border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none'
                                             }`}
                                     />
-                                </div>
+                                </CommentableCell>
 
                                 {/* Delivery Period */}
-                                <div className="space-y-1">
+                                <CommentableCell
+                                    as="div"
+                                    {...getCommentProps(activeList.itemId, activeListItemNo, 'att_delivery_period', `Detailed Specifications #${activeListItemNo} • Delivery Period`, activeList.deliveryPeriod)}
+                                    className="space-y-1 p-1 rounded-lg"
+                                >
                                     <div className="flex items-center justify-between">
                                         <label className="block font-bold text-slate-700">Delivery Period:</label>
                                         {isPolCondition ? (
@@ -1759,7 +2220,7 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                                 : 'border-slate-300 focus:ring-2 focus:ring-blue-500 focus:outline-none'
                                             }`}
                                     />
-                                </div>
+                                </CommentableCell>
                             </div>
                         </div>
 
@@ -1855,10 +2316,10 @@ export const PPMPAttachmentListView = ({ ppmp, user, canEdit = true, initialItem
                                         ? 'bg-rose-500/80 text-white cursor-not-allowed opacity-80'
                                         : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer disabled:opacity-50'
                                 }`}
-                                title={isActiveOverBudget ? `Total cost exceeds Allocated Budget (${formatCurrency(activePpmpBudget)})` : 'Save PPMP List of Attachment'}
+                                title={isActiveOverBudget ? `Total cost exceeds Allocated Budget (${formatCurrency(activePpmpBudget)})` : 'Save Detailed Specifications'}
                             >
                                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                {saving ? 'Saving...' : isActiveOverBudget ? 'Total Exceeds Budget' : (attachmentLists.length > 1 ? `Save Attachment (Item ${activeList.itemNo || activeItemIndex + 1})` : 'Save Attachment')}
+                                {saving ? 'Saving...' : isActiveOverBudget ? 'Total Exceeds Budget' : (attachmentLists.length > 1 ? `Save Specifications (Item ${activeList.itemNo || activeItemIndex + 1})` : 'Save Detailed Specifications')}
                             </button>
                         </div>
                     </div>

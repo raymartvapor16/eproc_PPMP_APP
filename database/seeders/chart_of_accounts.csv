@@ -1,0 +1,827 @@
+Republic of the Philippines,,
+PROVINCE OF DAVAO DEL SUR,,
+,,
+OFFICE OF THE MUNICIPAL ACCOUNTANT,,
+,,
+CHART OF ACCOUNTS,,
+,,
+,,
+,,
+,    ,      - - Flood Control System
+,    ,      - - Other General Services-Cash For Work
+,1-01-01-010,Cash Local Treasury
+,1-01-01-020,Petty Cash
+,1-01-02-010,"Cash in Bank - Local Currency, Current Account"
+,1-01-02-020,"Cash in Bank - Local Currency, Savings Account"
+,1-01-03-010,"Cash in Bank - Foreign Currency, Current Account"
+,1-01-03-020,"Cash in Bank - Foreign Currency, Savings Account"
+,1-02-01-010,"Cash in Bank -Local Currency, Time Deposits"
+,1-02-01-020,"Cash in Bank - Foreign Currency, Time Deposits"
+,1-02-01-030,Treasury Bills
+,1-02-02-010,Financial Assets Held for Trading
+,1-02-03-010,Investments in Treasury Bills - Local
+,1-02-03-011,Allowance for Impairment - Investments in Treasury Bill
+,1-02-03-020,Investments in Bonds-Local
+,1-02-03-021,Allowance for Impairment - Investments in Bonds - Local
+,1-02-04-010,Investments in Stocks
+,1-02-04-020,Investments in Bonds
+,1-02-05-010,Deposits on Letters of Credit
+,1-02-05-011,Allowance for Impairment - Deposits in Letters of Credi
+,1-02-05-020,Guaranty Deposits
+,1-02-05-021,Other Current Assets
+,1-02-05-990,Other Investments
+,1-02-05-991,Allowance for Impairment - Other Investments
+,1-02-06-010,Investments in Joint Venture
+,1-02-06-011,Allowance for Impairment - Investments in Joint Venture
+,1-02-07-010,Sinking Fund
+,    ,      -02 - R/M OFFICE EQUIPMENT
+,1-03-01-010,Accounts Receivable
+,1-03-01-011,Allowance for Impairment - Accounts Receivable
+,1-03-01-020,Real Property Tax Receivable
+,1-03-01-021,Allowance for Impairment - RPT Receivable
+,1-03-01-030,Special Education Tax Receivable
+,1-03-01-031,Allowance for Impairment - SET Receivable
+,1-03-01-040,Notes Receivable
+,1-03-01-041,Allowance for Impairment - Notes Receivable
+,1-03-01-050,Loans Receivable - Government-Owned and/or Controlled C
+,1-03-01-051,Allowance for Impairment - Loans Receivable - Governmen
+,1-03-01-060,Loans Receivable - Local Government Units
+,1-03-01-061,Allowance for Impairment - Loans Receivable - Local Gov
+,1-03-01-070,Interests Receivable
+,1-03-01-071,Allowance for Impairment - Interests Receivable
+,1-03-01-080,Dividends Receivable
+,1-03-01-081,Allowance for Impairment - Dividends Receivable
+,1-03-01-990,Loans Receivable - Others
+,    ,      -0002 - CY2020 Loans Receivable - Others
+,    ,      -0004 - CY2022 Loans Receivable - Others
+,    ,      -0005 - CY2023 Loans Receivable - Others
+,    ,      -0006 - CY2024 Loans Receivable - Others
+,    ,      -0007 - CY2025 Loans Receivable - Others
+,1-03-01-991,Allowance for Impairment - Loans Receivable - Others
+,1-03-02-010,Operating Lease Receivable
+,1-03-02-011,Allowance for Impairment - Operating Lease Receivable
+,1-03-02-020,Finance Lease Receivable
+,1-03-02-021,Allowance for Impairment - Finance Lease Receivable
+,1-03-03-010,Due from National Government Agencies
+,1-03-03-011,Allowance for Impairment - Due from National Government
+,1-03-03-020,Due from Government-Owned and/or Controlled Corporation
+,1-03-03-021,Allowance for Impairment - Due from GOCCs
+,1-03-03-030,Due from Local Government Units
+,1-03-03-031,Allowance for Impairment - Due from LGUs
+,1-03-03-040,Due from Joint Venture
+,1-03-03-041,Allowance for Impairment - Due from Joint Venture
+,1-03-04-050,Due from Other Funds
+,1-03-04-060,Due from Special Accounts
+,1-03-04-070,Due from Local Economic Enterprise
+,1-03-05-010,Advances for Operating Expenses
+,1-03-05-020,Advances for Payroll
+,1-03-05-030,Advances to Special Disbursing Officer
+,1-03-05-040,Advances for Officers and Employees
+,1-03-06-010,Receivables - Disallowances/Charges
+,1-03-06-011,Allowance for Impairment - Receivables- Disallowances/C
+,1-03-06-020,Due from Officers and Employees
+,1-03-06-021,Allowance for Impairment - Due from Officers and Employ
+,1-03-06-030,Due from Non-Government Organizations/People's Organiza
+,1-03-06-031,Allowance for Impairment - Due from Non-Government Orga
+,1-03-06-990,Other Receivables
+,1-03-06-991,Allowance for Impairment - Other Receivables
+,1-04-01-010,Merchandise Inventory
+,1-04-02-010,Food Supplies for Distribution
+,1-04-02-020,Welfare Goods for Distribution
+,1-04-02-030,Drugs and Medicines for Distribution
+,1-04-02-040,"Medical, Dental and Laboratory Supplies for Distributio"
+,1-04-02-050,Agricultural and Marine Supplies for Distribution
+,1-04-02-070,Textbooks and Instructional Materials for Distribution
+,1-04-02-080,Construction Materials for Distribution
+,1-04-02-090,Property and Equipment for Distribution
+,1-04-02-990,Other Supplies and Materials for Distribution
+,1-04-03-010,Raw Materials Inventory
+,1-04-03-020,Work-in-Process Inventory
+,1-04-03-030,Finished Goods Inventory
+,1-04-04-010,Office Supplies Inventory
+,1-04-04-020,"Accountable Forms, Plates and Stickers"
+,1-04-04-030,Non-Accountable Forms Inventory
+,1-04-04-040,Animal/Zoological Supplies Inventory
+,1-04-04-050,Food Supplies Inventory
+,1-04-04-060,Drugs and Medicines Inventory
+,1-04-04-070,"Medical, Dental and Laboratory Supplies Inventory"
+,1-04-04-080,"Fuel, Oil and Lubricants Inventory"
+,1-04-04-090,Agricultural and Marine Supplies Inventory
+,1-04-04-100,Textbooks and Instructional Materials Inventory
+,1-04-04-110,"Military, Police and Traffic Supplies Inventory"
+,1-04-04-120,Chemical and Filtering Supplies Inventory
+,1-04-04-130,Construction Materials Inventory
+,1-04-04-990,Other Supplies and Materials Inventory
+,1-04-05-010,Semi-Expendable Machinery
+,1-04-05-020,Semi-Expendable Office Equipment
+,1-04-05-030,Semi-Expendable Information and Communications Technology
+,1-04-05-040,Semi-Expendable Agricultural and Forestry Equipment
+,1-04-05-050,Semi-Expendable Marine and Fishery Equipment
+,1-04-05-060,Semi-Expendable Airport Equipment
+,1-04-05-070,Semi-Expendable Communications Equipment
+,1-04-05-080,Semi-Expendable Disaster Response and Rescue Equipment
+,1-04-05-090,"Semi-Expendable Military, Police and Security Equipment"
+,1-04-05-100,"Semi-Expendable Medical, Dental and Laboratory Equipment"
+,1-04-05-110,Semi-Expendable Printing Equipment
+,1-04-05-120,Semi-Expendable Sports Equipment
+,1-04-05-130,Semi-Expendable Technical and Scientific Equipment
+,1-04-05-140,Semi-Expendable Construction Equipment
+,1-04-05-990,Semi-Expendable Other Machinery and Equipment
+,1-04-06-010,Semi-Expendable Furniture and Fixtures
+,1-04-06-020,Semi-Expendable Books
+,1-05-01-010,Advances to Contractors
+,1-05-01-020,Prepaid Rent
+,1-05-01-030,Prepaid Registration
+,1-05-01-040,Prepaid Interest
+,1-05-01-050,Prepaid Insurance
+,1-05-01-990,Other Prepayments
+,1-05-02-010,Discount on Advance Payments
+,1-06-01-010,"Investment Property, Land"
+,1-06-01-011,"Accumulated Impairment Losses - Investment Property, La"
+,1-06-01-020,"Investment Property, Buildings"
+,1-06-01-021,"Accumulated Depreciation - Investment Property, Buildin"
+,1-06-01-022,"Accumulated Impairment Losses - Investment Property, Bu"
+,1-06-01-030,"Construction in Progress - Investment Property, Buildin"
+,1-06-11-020,"Arts,Archeological Specimen and other Exhibits"
+,1-07-01-010,Land
+,    ,      -0003 - CY2021 Land
+,    ,      -0004 - CY2022 Land
+,    ,      -0005 - CY2023 Land
+,    ,      -0006 - CY2024 Land
+,    ,      -0007 - CY2025 Land
+,1-07-01-011,Accumulated Impairment Losses - Land
+,1-07-02-010,"Land Improvements, Aquaculture Structures"
+,1-07-02-011,"Accumulated Depreciation - Land Improvements, Aquacultu"
+,1-07-02-012,"Accumulated Impairment Losses - Land Improvements, Aqua"
+,1-07-02-990,Other Land Improvements
+,    ,      -0005 - CY2023 Other Land Improvements
+,    ,      -0006 - CY2024 Other Land Improvements
+,    ,      -0007 - CY2025 Other Land Improvements
+,1-07-02-991,Accumulated Depreciation - Other Land Improvements
+,1-07-02-992,Accumulated Impairment Losses - Other Land Improvements
+,1-07-03-010,Road Networks
+,    ,      - - Concreting/Improvement of Provincial Roads
+,    ,      -0003 - CY2021 Road Networks
+,    ,      -0004 - CY2022 Road Networks
+,    ,      -0005 - CY2023 Road Networks
+,    ,      -07 - CY2025 Road Networks
+,    ,      -6 - CY2024 Road Networks
+,1-07-03-011,Accumulated Depreciation - Road Networks
+,1-07-03-012,Accumulated Impairment Losses - Road Networks
+,1-07-03-020,Flood Control System
+,    ,      -000 - Flood Control
+,    ,      -005 - CY2023 Flood Control System
+,    ,      -006 - CY2024 Flood Control System
+,    ,      -007 - CY2025 Flood Control System
+,1-07-03-021,Accumulated Depreciation - Flood Control Systems
+,1-07-03-022,Accumulated Impairment Losses - Flood Control Systems
+,1-07-03-030,Sewer Systems
+,    ,      -0005 - CY2023 Sewer Systems
+,    ,      -0006 - CY2024 Sewer Systems
+,    ,      -0007 - CY2025 Sewer Systems
+,1-07-03-031,Accumulated Depreciation - Sewer Systems
+,1-07-03-032,Accumulated Impairment Losses - Sewer Systems
+,1-07-03-040,Water Supply Systems
+,    ,      -0003 - CY2021 Water Supply Systems
+,    ,      -0004 - CY2022 Water Supply Systems
+,    ,      -0005 - CY2023 Water Supply Systems
+,    ,      -0006 - CY2024 Water Supply Systems
+,    ,      -0007 - CY2025 Water Supply Systems
+,1-07-03-041,Accumulated Depreciation - Water Supply Systems
+,1-07-03-042,Accumulated Impairment Losses - Water Supply Systems
+,1-07-03-050,Power Supply Systems
+,    ,      -0006 - CY2024 Power Supply System
+,    ,      -0007 - CY2025 Power Supply System
+,1-07-03-051,Accumulated Depreciation - Power Supply Systems
+,1-07-03-052,Accumulated Impairment Losses - Power Supply Systems
+,1-07-03-060,Communication Networks
+,    ,      -0006 - CY2024 Communication Networks
+,    ,      -0007 - CY2025 Communication Networks
+,1-07-03-061,Accumulated Depreciation - Communication Networks
+,1-07-03-062,Accumulated Impairment Losses - Communication Networks
+,1-07-03-070,Seaport Systems
+,1-07-03-071,Accumulated Depreciation - Seaport Systems
+,1-07-03-072,Accumulated Impairment Losses - Seaport Systems
+,1-07-03-080,Airport Systems
+,1-07-03-081,Accumulated Depreciation - Airport Systems
+,1-07-03-082,Accumulated Impairment Losses - Airport Systems
+,1-07-03-090,"Parks, Plazas and Monuments"
+,1-07-03-091,"Accumulated Depreciation - Parks, Plazas and Monuments"
+,1-07-03-092,"Accumulated Impairment Losses - Parks, Plazas and Monum"
+,1-07-03-990,Other Infrastructure Assets
+,    ,      -0003 - CY2021 Other Infrastructure Assets
+,    ,      -0004 - CY2022 Other Infrastructure
+,    ,      -0005 - CY2023 Other Infrastructure
+,    ,      -0006 - CY2024 Other Infrastructure Assets
+,    ,      -0007 - CY2025 Other Infrastructure Assets
+,1-07-03-991,Accumulated Deprec - Other Infrastructure Assets
+,1-07-03-992,Accumulated Impairment Losses - Other Infrastructure As
+,1-07-04-010,Buildings
+,    ,      -0004 - CY2022 Buildings
+,    ,      -0005 - CY2023 Buildings
+,    ,      -0006 - CY2024 Buildings
+,    ,      -0007 - CY2025 Buildings
+,1-07-04-011,Accumulated Depreciation - Buildings
+,1-07-04-012,Accumulated Impairment Losses - Buildings
+,1-07-04-020,School Buildings
+,    ,      -0006 - CY2024 School Buildings
+,    ,      -0007 - CY2025 School Buildings
+,1-07-04-021,Accumulated Depreciation - School Buildings
+,1-07-04-022,Accumulated Impairment Losses - School Buildings
+,1-07-04-030,Hospitals and Health Centers
+,    ,      -0003 - CY2021 Hospitals and Health Centers
+,    ,      -0004 - CY2022 Hospitals and Health Centers
+,    ,      -0005 - CY2023 Hospitals and Health Centers
+,    ,      -0006 - CY2024 Hospitals and Health Centers
+,    ,      -0007 - CY2025 Hospitals and Health Centers
+,1-07-04-031,Accumulated Depreciation - Hospitals and Health Centers
+,1-07-04-032,Accumulated Impairment Losses - Hospitals and Health Ce
+,1-07-04-040,Markets
+,1-07-04-041,Accumulated Depreciation - Markets
+,1-07-04-042,Accumulated Impairment Losses - Markets
+,1-07-04-050,Slaughterhouses
+,1-07-04-051,Accumulated Depreciation - Slaughterhouses
+,1-07-04-052,Accumulated Impairment Losses- Slaughterhouses
+,1-07-04-060,Hostels and Dormitories
+,    ,      -0001 - CY2019 Hostels and Dormitories
+,    ,      -0002 - CY2020 Hostels and Dormitories
+,    ,      -0003 - CY2021 Hostels and Dormitories
+,    ,      -0004 - CY2022 Hostels and Dormitories
+,    ,      -0005 - CY2023 Hostels and Dormitories
+,    ,      -0006 - CY2024 Hostels and Dormitories
+,    ,      -0007 - CY2025 Hostels and Dormitories
+,1-07-04-061,Accumulated Depreciation - Hostels and Dormitories
+,1-07-04-062,Accumulated Impairment Losses - Hostels and Dormitories
+,1-07-04-990,Other Structures
+,    ,      -0003 - CY2021 Other Structures
+,    ,      -0004 - CY2022 Other Structures
+,    ,      -0005 - CY2023 Other Structures
+,    ,      -0006 - CY2024 Other Structures
+,    ,      -0007 - CY2025 Other Structures
+,1-07-04-991,Accumulated Depreciation - Other Structures
+,1-07-04-992,Accumulated Impairment Losses - Other Structures
+,1-07-05-010,Machinery
+,1-07-05-011,Accumulated Depreciation - Machinery
+,1-07-05-012,Accumulated Impairment Losses - Machinery
+,1-07-05-020,Office Equipment
+,    ,      -0001 - CY2019 Office Equipment
+,    ,      -0002 - CY2020 Office Equipment
+,    ,      -0003 - CY2021 Office Equipment
+,    ,      -0004 - CY2022 Office Equipment
+,    ,      -0005 - CY2023 Office Equipment
+,    ,      -0006 - CY2024 Office Equipment
+,    ,      -0007 - CY2025 Office Equipment
+,1-07-05-021,Accumulated Depreciation - Office Equipment
+,1-07-05-022,Accumulated Impairment Losses - Office Equipment
+,1-07-05-030,Information and Communication Technology Equipment
+,    ,      -0001 - CY2019 ICT Equipment
+,    ,      -0002 - CY2020 ICT Equipment
+,    ,      -0003 - CY2021 ICT Equipment
+,    ,      -0004 - CY2022 ICT Equipment
+,    ,      -0005 - CY 2023 ICT Equipment
+,    ,      -0006 - CY2024 ICT Equipment
+,    ,      -0007 - CY2025 ICT Equipment
+,1-07-05-031,Accumulated Depreciation - Info. and Comm. Tech Equip.
+,1-07-05-032,Accumulated Impairment Losses - Information and Communi
+,1-07-05-040,Agricultural and Forestry Equipment
+,1-07-05-041,Accumulated Depreciation - Agri. and Forestry Equip.
+,1-07-05-042,Accumulated Impairment Losses - Agricultural and Forest
+,1-07-05-050,Marine and Fishery Equipment
+,1-07-05-051,Accumulated Depreciation - Marine and Fishery Equipment
+,1-07-05-052,Accumulated Impairment Losses - Marine and Fishery Equi
+,1-07-05-060,Airport Equipment
+,1-07-05-061,Accumulated Depreciation - Airport Equipment
+,1-07-05-062,Accumulated Impairment Losses - Airport Equipment
+,1-07-05-070,Communication Equipment
+,    ,      -0001 - CY2019 Communication Equipment
+,    ,      -0002 - CY2020 Communication Equipment
+,    ,      -0003 - CY2021 Communication Equipment
+,    ,      -0004 - CY2022 Communication Equipment
+,    ,      -0005 - CY2023 Communication Equipment
+,    ,      -0006 - CY2024 Communication Equipment
+,    ,      -0007 - CY2025 Communication Equipment
+,1-07-05-071,Accumulated Depreciation - Communication Equipment
+,1-07-05-072,Accumulated Impairment Losses - Communication Equipment
+,1-07-05-080,Construction and Heavy Equipment
+,    ,      -0004 - CY2022 Construction and Heavy Equipment
+,    ,      -0005 - CY2023 Construction and Heavy Equipment
+,1-07-05-081,Accumulated Depreciation - Construction and Heavy Equip
+,1-07-05-082,Accumulated Impairment Losses - Construction and Heavy
+,1-07-05-090,Disaster Response and Rescue Equipment
+,    ,      -0004 - CY2022 Disaster Response and Rescue Equipment
+,    ,      -0005 - CY2023 Disaster Response and Rescue Equipment
+,    ,      -0006 - CY2024 Disaster Response and Rescue Equipment
+,    ,      -0007 - CY2025 Disaster Response and Rescue Equipment
+,    ,      -0007 - CY2025 Disaster Response and Rescue Equipment
+,1-07-05-091,Accumulated Depreciation -Disaster Resp. & Rescue Equip
+,1-07-05-092,Accumulated Impairment Losses - Disaster Response and R
+,1-07-05-100,"Military, Police and Security Equipment"
+,1-07-05-101,"Accumulated Depreciation - Military, Police & Security"
+,1-07-05-102,"Accumulated Impairment Losses - Military, Police and Se"
+,1-07-05-110,Medical Equipment
+,    ,      -0001 - CY2019 Medical Equipment
+,    ,      -0002 - CY2020 Medical Equipment
+,    ,      -0003 - CY2021 Medical Equipment
+,    ,      -0004 - CY2022 Medical Equipment
+,    ,      -0005 - CY2023 Medical Equipment
+,    ,      -0006 - CY2024 Medical Equipment
+,    ,      -0007 - CY2025 Medical Equipment
+,1-07-05-112,Accumulated Impairment Losses - Medical Equipment
+,1-07-05-120,Printing Equipment
+,1-07-05-121,Accumulated Depreciation - Printing Equipment
+,1-07-05-122,Accumulated Impairment Losses - Printing Equipment
+,1-07-05-130,Sports Equipment
+,    ,      -0004 - CY2022 Sports Equipment
+,    ,      -0005 - CY2023 Sports Equipment
+,1-07-05-131,Accumulated Depreciation - Sports Equipment
+,1-07-05-132,Accumulated Impairment Losses - Sports Equipment
+,1-07-05-140,Technical and Scientific Equipment
+,    ,      -0002 - CY2020 Technical and Scientific Equipment
+,    ,      -0004 - CY2022 Technical and Scientific Equipment
+,    ,      -0005 - CY2023 Technical and Scientific Equipment
+,    ,      -0006 - CY2024 Technical and Scientific Equipment
+,    ,      -0007 - CY2025 Technical and Scientific Equipment
+,1-07-05-141,Accumulated Depreciation - Technical & Scientific Equip
+,1-07-05-142,Accumulated Impairment Losses - Technical and Scientifi
+,1-07-05-990,Other Machinery and Equipment
+,    ,      -0001 - CY2019 Other Machinery and Equipment
+,    ,      -0002 - CY2020 Other Machinery and Equipment
+,    ,      -0003 - CY2021 Other Machinery and Equipment
+,    ,      -0004 - CY2022 Other Machinery and Equipment
+,    ,      -0005 - CY2023 Other Machinery and Equipment
+,    ,      -0006 - CY2024 Other Machinery and Equipment
+,    ,      -0007 - CY2025 Other Machinery and Equipment
+,1-07-05-991,Accumulated Depreciation - Other Machinery & Equipment
+,1-07-05-992,Accumulated Impairment Losses - Other Machinery and Equ
+,1-07-06-010,Motor Vehicles
+,    ,      -0001 - CY2019 Motor Vehicles
+,    ,      -0002 - CY2020 Motor Vehicles
+,    ,      -0003 - CY2021 Motor Vehicles
+,    ,      -0004 - CY2022 Motor Vehicles
+,    ,      -0005 - CY2023 Motor Vehicles
+,    ,      -0006 - CY2024 Motor Vehicles
+,    ,      -0007 - CY2025 Motor Vehicles
+,1-07-06-011,Accumulated Depreciation - Motor Vehicles
+,1-07-06-012,Accumulated Impairment Losses - Motor Vehicles
+,1-07-06-020,Trains
+,1-07-06-021,Accumulated Depreciation - Trains
+,1-07-06-022,Accumulated Impairment Losses - Trains
+,1-07-06-030,Aircrafts and Aircrafts Ground Equipment
+,1-07-06-031,Accum. Deprec. - Aircrafts & Aircrafts Ground Equip.
+,1-07-06-032,Accumulated Impairment Losses - Aircrafts and Aircrafts
+,1-07-06-040,Watercrafts
+,    ,      -0004 - CY2022 Watercrafts
+,    ,      -0005 - CY2023 Watercrafts
+,    ,      -0006 - CY2024 Watercrafts
+,    ,      -0007 - CY2025 Watercrafts
+,1-07-06-041,Accumulated Depreciation - Watercrafts
+,1-07-06-042,Accumulated Impairment Losses - Watercrafts
+,1-07-06-990,Other Transportation Equipment
+,1-07-06-991,Accum. Depreciation - Other Transportation Equipment
+,1-07-06-992,Accumulated Impairment Losses - Other Transportation Eq
+,1-07-07-010,Furniture and Fixtures
+,    ,      -0001 - CY2019 Furniture and Fixtures
+,    ,      -0002 - CY2020 Furniture and Fixtures
+,    ,      -0003 - CY2021 Furniture and Fixtures
+,    ,      -0004 - CY2022 Furniture and Fixtures
+,    ,      -0005 - CY2023 Furniture and Fixtures
+,    ,      -0006 - CY2024 Furniture and Fixtures
+,    ,      -0007 - CY2025 Furniture and Fixtures
+,1-07-07-011,Accumulated Depreciation - Furniture and Fixtures
+,1-07-07-012,Accumulated Impairment Losses - Furniture and Fixtures
+,1-07-07-020,Books
+,    ,      -0004 - CY2022 Books
+,    ,      -0005 - CY2023 Books
+,    ,      -0006 - CY2024 Books
+,    ,      -0007 - CY2025 Books
+,1-07-07-021,Accumulated Depreciation - Books
+,1-07-07-022,Accumulated Impairment Losses - Books
+,1-07-08-010,"Leased Assets, Land"
+,1-07-08-011,"Accumulated Impairment Losses-Leased Assets, Land"
+,1-07-08-020,"Leased Assets, Buildings and Other Structures"
+,1-07-08-021,"Accumulated Depreciation - Leased Assets, Buildings and"
+,1-07-08-022,"Accumulated Impairment Losses - Leased Assets, Building"
+,1-07-08-030,"Leased Assets, Machinery and Equipment"
+,1-07-08-031,"Accumulated Depreciation - Leased Assets, Machinery and"
+,1-07-08-032,"Accumulated Impairment Losses - Leased Assets, Machiner"
+,1-07-08-040,"Leased Assets, Transportation Equipment"
+,1-07-08-041,"Accumulated Depreciation - Leased Assets, Transportatio"
+,1-07-08-042,"Accumulated Impairment Losses - Leased Assets, Transpor"
+,1-07-08-990,Other Leased Assets
+,1-07-08-991,Accumulated Depreciation - Other Leased Assets
+,1-07-08-992,Accumulated Impairment Losses - Other Leased Assets
+,1-07-09-010,"Leased Assets Improvements, Land"
+,1-07-09-011,Accumulated Depreciation - Leased Assets Improv. Land
+,1-07-09-012,Accumulated Impairment Losses - Leased Assets Improveme
+,1-07-09-020,"Leased Assets Improvements, Buildings"
+,1-07-09-021,Accumulated Depreciation - Leased Assets Improv. Bldg.
+,1-07-09-022,Accumulated Impairment Losses - Leased Assets Improveme
+,1-07-09-990,Other Leased Assets Improvements
+,1-07-09-991,Accumulated Depreciation - Other Leased Assets Improvem
+,1-07-09-992,Accumulated Impairment Losses - Other Leased Assets Imp
+,1-07-10-010,Construction in Progress - Land Improvements
+,1-07-10-030,Construction in Progress - Buildings and Other Structur
+,1-07-10-040,Construction in Progress - Leased Assets
+,1-07-10-050,Construction in Progress - Leased Assets Improvements
+,1-07-11-010,Service Concession Assets
+,1-07-11-011,Accumulated Depreciation - Service Concession Assets
+,1-07-11-012,Accumulated Impairment Losses - Service Concession Asse
+,1-07-99-010,Work/Zoo Animals
+,    ,      -0007 - CY2025 Work/Zoo Animals
+,1-07-99-011,Accumulated Depreciation - Work/Zoo Animals
+,1-07-99-012,Accumulated Impairment Losses - Work/Zoo Animals
+,1-07-99-990,"Other Property, Plant & Equipment"
+,1-07-99-991,"Accum. Depreciation - Other Property, Plant and Equip."
+,1-07-99-992,"Accumulated Impairment Losses - Other Property, Plant a"
+,1-08-01-010,Breeding Stocks
+,1-08-01-020,Plants and Trees
+,1-08-01-030,Aquaculture
+,1-08-01-990,Other Bearer Biological Assets
+,1-09-01-010,Patents/Copyrights
+,1-09-01-011,Accumulated Amortization - Patents/Copyrights
+,1-09-01-012,Accumulated Impairment - Patents/Copyrights
+,1-09-01-020,Computer Software
+,    ,      -0006 - CY2024 Computer Software
+,1-09-01-021,Accumulated Amortization - Computer Software
+,1-09-01-022,Accumulated Impairment - Computer Software
+,1-09-01-990,Other Intangible Assets
+,1-09-01-991,Accumulated Amortization - Other Intangible Assets
+,1-09-01-992,Accumulated Impairment - Other Intangible Assets
+,1-09-02-010,Service Concession Assets - Intangible Assets
+,    ,      -9999 - Capital Outlay - Unprogrammmed
+,2-01-01-010,Accounts Payable
+,2-01-01-020,Due to Officers and Employees
+,2-01-01-040,Notes Payable
+,2-01-01-050,Interest Payable
+,2-01-01-060,Operating Lease Payable
+,2-01-01-070,Finance Lease Payable
+,2-01-01-080,Awards and Rewards Payable
+,2-01-01-090,Service Concession Arrangement Payable
+,2-01-01-100,Pension Benefits Payable
+,2-01-01-110,Leave Benefits Payable
+,2-01-01-110,Monetization of Leave Credits
+,2-01-01-120,Retirement Gratuity Payable
+,2-01-02-020,Bonds Payable - Domestic
+,2-01-02-021,Discount on Bonds Payable - Domestic
+,2-01-02-022,Premium on Bonds Payable - Domestic
+,2-01-02-040,Loans Payable - Domestic
+,    ,      -0003 - CY2021 Loans Payable - Domestic
+,    ,      -0004 - CY2022 Loans Payable - Domestic
+,    ,      -0005 - CY2023 Loans Payable - Domestic
+,    ,      -0006 - CY2024 Loans Payable - Domestic
+,    ,      -0007 - CY2025 Loans Payable - Domestic
+,2-01-02-050,Loans Payable - Foreign
+,2-02-01-010,Due to BIR
+,2-02-01-020,Due to GSIS
+,2-02-01-030,Due to Pag-IBIG
+,2-02-01-040,Due to PhilHealth
+,2-02-01-050,Due to NGAs
+,2-02-01-060,Due to GOCCs
+,2-02-01-070,Due to LGUs
+,2-02-01-080,Due to Joint Venture
+,2-03-01-010,Due to Other Funds
+,2-03-01-020,Due to Special Accounts
+,2-03-01-030,Due to Economic Enterprises
+,2-04-01-010,Trust Liabilities
+,2-04-01-020,Trust Liabilities - Disaster Risk Reduction and Managem
+,2-04-01-030,Bail Bonds Payable
+,2-04-01-040,Guaranty/Security Deposits Payable
+,2-04-01-050,Customers' Deposits Payable
+,2-05-01-010,Deferred Real Property Tax
+,2-05-01-020,Deferred Special Education Tax
+,2-05-01-030,Deferred Finance Lease Revenue
+,2-05-01-040,Deferred Service Concession Revenue
+,2-05-01-050,Unearned Revenue - Investment Property
+,2-05-01-990,Other Deferred Credits
+,2-06-01-040,Termination Benefits
+,2-06-01-990,Other Provisions
+,2-99-99-990,Other Payables
+,3-01-01-010,Government Equity
+,3-01-01-020,Prior Period Adjustment
+,3-02-01-010,Income and Expense Summary
+,3-03-01-010,Equity in Joint Venture
+,3-04-01-010,Unrealized Gain/(Loss) from Changes in the Fair Value o
+,4-01-01-020,Professional Tax
+,4-01-01-050,Community Tax
+,4-01-02-040,Real Property Tax- Basic
+,4-01-02-041,Discount on Real Property Tax- Basic
+,4-01-02-050,Special Education Tax
+,4-01-02-051,Discount on Special Education Tax
+,4-01-02-060,Special Levy on Idle Lands
+,4-01-02-070,Special Levy on Lands Benefited by Public Works Project
+,4-01-02-080,Real Property Transfer Tax
+,4-01-03-030,Business Tax
+,4-01-03-040,"Tax on Sand, Gravel and Other Quarry Products"
+,4-01-03-050,Tax on Delivery Trucks and Vans
+,4-01-03-060,Amusement Tax
+,4-01-03-070,Franchise Tax (Local Tax)
+,4-01-03-070,Franchise Tax
+,4-01-03-080,Printing and Publication Tax
+,4-01-04-990,Other Taxes
+,4-01-05-010,Tax Revenue - Fines and Penalties - Taxes on Individual
+,4-01-05-020,Tax Revenue - Fines and Penalties - Property Taxes
+,4-01-05-030,Tax Revenue - Fines and Penalties - Taxes on Goods and
+,4-01-05-040,Tax Revenue - Fines and Penalties - Other Taxes
+,4-01-06-010,Share from Internal Revenue Collections (IRA)
+,4-01-06-020,Share from Expanded Value Added Tax
+,4-01-06-030,Share from National Wealth
+,4-01-06-040,Share from Tobacco Excise Tax (RA 7171 and 8240)
+,4-01-06-050,Share from Economic Zones
+,4-02-01-010,Permit Fees
+,4-02-01-020,Registration Fees
+,4-02-01-030,"Registration Plates, Tags and Stickers Fees"
+,4-02-01-040,Clearance and Certification Fees
+,4-02-01-070,Supervision and Regulation Enforcement Fees
+,4-02-01-100,Inspection Fees
+,4-02-01-110,Verification and Authentication Fees
+,4-02-01-130,Processing Fees
+,4-02-01-140,Occupation Tax
+,4-02-01-150,Fishery Rental Fees
+,4-02-01-160,Fees for Sealing and Licensing of Weights and Measures
+,4-02-01-980,Fines and Penalties-Service Income
+,4-02-01-990,Other Service Income
+,4-02-02-010,School Fees
+,4-02-02-020,Affiliation Fees
+,4-02-02-040,Seminar/Training Fees
+,4-02-02-050,Rent Income
+,4-02-02-060,Communication Network Fees
+,4-02-02-070,Transportation System Fees
+,4-02-02-080,Road Network Fees
+,4-02-02-090,Waterworks System Fees
+,4-02-02-100,Power Supply System Fees
+,4-02-02-110,Seaport System Fees
+,4-02-02-120,Parking Fees
+,4-02-02-130,Receipts from Operation of Hostels/Dormitories and Othe
+,4-02-02-140,Receipt from Market Operations
+,4-02-02-150,Receipt from Slaughterhouse Operation
+,4-02-02-160,Receipt from Cemetery Operations
+,4-02-02-170,Income from Printing and Publication
+,4-02-02-180,Sales Revenue
+,4-02-02-181,Sales Discounts
+,4-02-02-190,Garbage Fees
+,4-02-02-210,Dividend Income
+,4-02-02-220,Interest Income
+,4-02-02-230,Service Concession Revenue
+,4-02-02-240,Other Service Concession Revenue
+,4-02-02-250,Lease Revenue
+,4-02-02-260,Share in the Profit of Joint Venture
+,4-02-02-980,Fines and Penalties - Business Income
+,4-02-02-990,Other Business Income
+,4-03-01-010,Subsidy from National Government
+,4-03-01-020,Subsidy from Local Government Units
+,4-03-01-030,Subsidy from Government-Owned and/or Controlled Corpora
+,4-03-01-040,Subsidy from Other Funds
+,4-03-01-050,Subsidy from General Fund Proper/Other Special Accounts
+,4-03-01-060,Subsidy from Other Local Economic Enterprise
+,4-03-02-010,Transfers from General Fund as Project Equity Share
+,4-03-02-020,Transfers from General Fund of Unspent DRRMF
+,4-04-01-010,Share from PAGCOR
+,4-04-01-020,Share from PCSO
+,4-04-02-010,Grants and Donations in Cash
+,4-04-02-020,Grants and Donations in Kind
+,4-04-02-030,Grants from Concessionary loans
+,4-05-01-010,Gain from Changes in Fair Value of Financial Instrument
+,4-05-01-020,Gain on Foreign Exchange (FOREX)
+,4-05-01-030,Gain on Sale of Investments
+,4-05-01-040,Gain on Sale of Investment Property
+,4-05-01-050,"Gain on Sale of Property, Plant and Equipment"
+,4-05-01-060,Gain on Initial Recognition of Biological Assets
+,4-05-01-070,Gain on Sale of Biological Assets
+,4-05-01-080,Gain from Changes in Fair Value Less Cost to Sell of Bi
+,4-05-01-090,Gain from Changes in Fair Value Less Cost to Sell of Bi
+,4-05-01-100,Gain from Initial Recognition of Agricultural Produce
+,4-05-01-110,Gain on Sale of Intangible Assets
+,4-05-01-120,Reversal of Impairment Losses
+,4-05-01-990,Other Gains
+,4-06-01-010,Miscellaneous Income
+,4-07-01-010,Sale of Garnished/Confiscated/Abandoned/Seized Goods
+,5-00-00-000,Unprogrammed
+,    ,      -0001 - CY2019 Unprogrammed
+,    ,      -0002 - CY2020 Unprogrammed
+,    ,      -0003 - CY2021 Unprogrammed
+,    ,      -0004 - CY2022 Unprogrammed
+,    ,      -0005 - CY2023 Unprogrammed
+,    ,      -0006 - CY2024 Unprogrammed
+,    ,      -0007 - CY2025 Unprogrammed
+,    ,      -1 - Unprogrammed-MOOE
+,    ,      -2 - Unprogrammed-Capital Outlay
+,5-01-01-010,Salaries and Wages - Regular
+,5-01-01-020,Salaries and Wages - Casual/Contractual
+,5-01-02-010,Personal Economic Relief Allowance (PERA)
+,5-01-02-020,Representation Allowance (RA)
+,5-01-02-030,Transportation Allowance (TA)
+,5-01-02-040,Clothing/Uniform Allowance
+,5-01-02-050,Subsistence Allowance
+,5-01-02-060,Laundry Allowance
+,5-01-02-070,Quarters Allowance
+,5-01-02-080,Productivity Incentive Allowance
+,5-01-02-090,Overseas Allowance
+,5-01-02-100,Honoraria
+,5-01-02-110,Hazard Pay
+,5-01-02-120,Longevity Pay
+,5-01-02-130,Overtime and Night Pay
+,5-01-02-140,Year End Bonus
+,5-01-02-150,Cash Gift
+,5-01-02-990,Other Bonuses and Allowances
+,    ,      - - Other Bonuses & Allowance-ANNIVERSARY
+,5-01-03-010,Retirement and Life Insurance Premiums
+,5-01-03-020,Pag-IBIG Contributions
+,5-01-03-030,PhilHealth Contributions
+,5-01-03-040,Employees Compensation Insurance Premiums
+,5-01-03-050,Provident/Welfare Fund Contributions
+,5-01-04-010,Pension Benefits
+,5-01-04-020,Retirement Gratuity
+,5-01-04-030,Terminal Leave Benefits
+,5-01-04-990,Other Personnel Benefits
+,    ,      -9999 - Personal Services - Unprogrammed
+,5-01-990,Other Personnel Benefits
+,5-02-01-010,Traveling Expenses - Local
+,    ,      -0007 - CY2025 Traveling Expenses - Local
+,5-02-01-020,Traveling Expenses - Foreign
+,5-02-02-010,Training Expenses
+,    ,      -0004 - CY2022 Training Expenses
+,    ,      -0005 - CY 2023 Training Expenses
+,    ,      -0007 - CY2025 Training Expenses
+,5-02-02-020,Scholarship Grants/Expenses
+,5-02-03-010,Office Supplies Expenses
+,    ,      -0005 - CY2023 Office Supplies Expenses
+,    ,      -0007 - CY2025 Office Supplies Expenses
+,5-02-03-020,Accountable Forms Expenses
+,5-02-03-030,Non-Accountable Forms Expenses
+,5-02-03-040,Animal/Zoological Supplies Expenses
+,5-02-03-050,Food Supplies Expenses
+,    ,      -0003 - CY2021 Food Supplies Expenses
+,5-02-03-060,Welfare Goods Expenses
+,5-02-03-070,Drugs and Medicines Expenses
+,    ,      -0003 - CY2021 Drugs and Medicines Expenses
+,5-02-03-080,"Medical, Dental and Laboratory Supplies Expenses"
+,    ,"      -0003 - CY2021 Medical, Dental and Laboratory Supplies Expenses"
+,5-02-03-090,"Fuel, Oil and Lubricants Expenses"
+,    ,"      -0003 - CY2021 Fuel, Oil and Lubricants Expenses"
+,    ,"      -0005 - CY2023 Fuel, Oil and Lubricants Expenses"
+,5-02-03-100,Agricultural and Marine Supplies Expenses
+,5-02-03-110,Textbooks and Instructional Materials Expenses
+,5-02-03-120,"Military,Police & Traffic Supplies Expenses"
+,5-02-03-130,Chemical and Filtering Supplies Expenses
+,5-02-03-210,Semi-Expendable Machinery and Equipment Expenses
+,    ,      -0007 - CY2025 Semi-Expendable Machinery and Equipment Expenses
+,5-02-03-220,"Semi-Expendable Furniture, Fixtures and Books Expenses"
+,5-02-03-990,Other Supplies and Materials Expenses
+,    ,      -0003 - CY2021 Other Supplies and Materials Expenses
+,    ,      -0004 - CY2022 Other Supplies and Materials Expenses
+,    ,      -0005 - CY2023 Other Supplies and Materials Expenses
+,    ,      -0007 - CY2025 Other Supplies and Materials Expenses
+,5-02-04-010,Water Expenses
+,    ,      -0003 - CY2021 Water Expenses
+,    ,      -0004 - CY2022 Water Expenses
+,    ,      -0005 - CY2023 Water Expenses
+,5-02-04-020,Electricity Expenses
+,    ,      -0003 - CY2021 Electricity Expenses
+,    ,      -0004 - CY2022 Electricity Expenses
+,    ,      -0005 - CY2023 Electricity Expenses
+,5-02-05-010,Postage and Courier Services
+,5-02-05-020,Telephone Expenses
+,5-02-05-030,Internet Subscription Expenses
+,5-02-05-040,"Cable, Satellite, Telegraph and Radio Expenses"
+,5-02-06-010,Awards/Rewards Expenses
+,5-02-06-020,Prizes
+,5-02-07-010,Survey Expenses
+,5-02-07-020,"Research, Exploration and Development Expenses"
+,5-02-08-010,Demolition and Relocation Expenses
+,5-02-08-020,Desilting and Dredging Expenses
+,5-02-09-010,"Generation, Transmission and Distribution Expenses"
+,5-02-10-010,Confidential Expenses
+,5-02-10-020,Intelligence Expenses
+,5-02-10-030,Extraordinary and Miscellaneous Expenses
+,5-02-11-010,Legal Services
+,5-02-11-020,Auditing Services
+,5-02-11-030,Consultancy Services
+,5-02-11-990,Other Professional Services
+,5-02-12-010,Environment/Sanitary Services
+,5-02-12-020,Janitorial Services
+,5-02-12-030,Security Services
+,    ,      -03 - Rep. & Maint-ICT Equipment
+,    ,      -99 - Rep. & Maint-Other Machinery & Eqpt.
+,5-02-12-990,Other General Services
+,    ,      -0003 - CY2021 Other General Services
+,    ,      -0004 - CY2022 Other General Services
+,    ,      -0005 - CY2023 Other General Services
+,    ,      -01 - Other General Services-Cash For Work
+,    ,      -02 - Financial Internal Control Mgt
+,    ,      -03 - Other General Services-Piece Work
+,5-02-13-010,Repairs and Maintenance - Investment Property
+,5-02-13-020,Repairs and Maintenance - Land Improvements
+,5-02-13-030,Repairs and Maintenance - Infrastructure Assets
+,    ,      -01 - Road Networks
+,5-02-13-040,Repairs & Maint Building and Other Structures
+,    ,      -01 - Buildings
+,    ,      -02 - School Buildings
+,    ,      -03 - Hospital & Health Centers
+,    ,      -04 - Markets
+,    ,      -99 - Other Structures
+,5-02-13-050,Repair & Maintenance-Machinery & Equipment
+,    ,      -01 - Machinery
+,    ,      -02 - Office Equipment
+,    ,      -02. - Rep. & Maint-Office Equipment
+,    ,      -03 - ICT Equipment
+,    ,      -04 - R/M- FARM MACHINERIES
+,    ,      -07 - Repairs/Maintenance-Communication Equipment
+,    ,      -08 - Construction and Heavy Equipment
+,    ,      -09 - Disaster Response & Rescue Equipment
+,    ,      -11 - Medical Equipment
+,    ,      -13 - R/M-SPORTS EQUIPMENT
+,    ,      -14 - Technical and Scientific Equipment
+,    ,      -99 - Other Machineries & Equipment
+,5-02-13-060,Repairs and Maintenance - Transportation Equipment
+,    ,      -01 - Motor Vehicles
+,    ,      -04 - R/M-Watercraft
+,    ,      -99 - Other Transportation Equipment
+,5-02-13-070,Repairs and Maintenance - Furniture and Fixtures
+,    ,      -01 - Rep. & Maint-Furniture and Fixtures
+,5-02-13-080,Repairs and Maintenance - Leased Assets
+,5-02-13-090,Repair and Maitennance-Leased Assets Improvement
+,5-02-13-210,Repairs and Maintenance-Semi-Expendable Machinery and Equipment
+,5-02-13-220,"Repairs and Maintenance-Semi-Expendable Furniture, Fixtures and Books"
+,5-02-13-990,"Repairs and Maintenance - Other Property, Plant and Equ"
+,5-02-14-020,Subsidy to NGAs
+,5-02-14-030,Subsidy to Local Government Units
+,5-02-14-060,Subsidy to Other Funds
+,    ,      -00 - EQUITY TO THE CONC.OF POB.TACUL PROV.ROAD
+,    ,      -01 - REHAB OF POB.TACUL SAN ISIDRO FRM-MKT ROAD
+,    ,      -02 - CONSTRUCTION OF 14 UNITS WAREHOUSE W/SOLAR DRYER
+,5-02-14-070,Subsidy to General Fund Proper/Special Accounts
+,5-02-14-080,Subsidy to Local Economic Enterprises
+,5-02-14-990,Subsidies - Others
+,5-02-15-010,Transfers of Unspent Current Year DRRM Funds to the Tru
+,5-02-15-020,Transfers for Project Equity Share /LGU Counterpart
+,5-02-16-010,"Taxes, Duties and Licenses"
+,5-02-16-020,Fidelity Bond Premiums
+,5-02-16-030,Insurance Expenses
+,5-02-99-010,Advertising Expenses
+,    ,      -0005 - CY2023 Advertising Expenses
+,5-02-99-020,Printing and Publication Expenses
+,    ,      -0003 - CY2021 Printing and Publication Expenses
+,5-02-99-030,Representation Expenses
+,    ,      -0007 - CY2025 Representation Expenses
+,5-02-99-040,Transportation and Delivery Expenses
+,5-02-99-050,Rent Expenses
+,    ,      -0003 - CY2021 Rent Expenses
+,5-02-99-060,Membership Dues and Contributions to Organizations
+,5-02-99-070,Subscription Expenses
+,5-02-99-080,Donations
+,    ,      -0001 - Donations-Training on Carpentry
+,    ,      -0001 - Blood Asst.
+,    ,      -0002 - Donations-Training on Plumbing
+,    ,      -0003 - Training on Welding
+,    ,      -0004 - CY2022 Donations
+,    ,      -01 - Donations(Purchase of PE& GI Pipes)
+,    ,      -02 - Donations (Subsidy to NGOs/POs)
+,5-02-99-990,Other Maintenance and Operating Expenses
+,    ,      - - Other MOE-Blood Products
+,    ,      -0001 - Other MOE-Philhealth Premium
+,    ,      -9999 - MOOE - Unprogrammed
+,5-03-01-010,Management Supervision/Trusteeship Fees
+,5-03-01-020,Interest Expenses
+,    ,      -0007 - CY2025 Interest Expenses
+,5-03-01-030,Guarantee Fees
+,5-03-01-040,Bank Charges
+,5-03-01-050,Commitment Fees
+,5-03-01-990,Other Financial Charges
+,5-04-01-010,Direct Materials
+,5-04-01-020,Direct Labor
+,5-04-01-030,Manufacturing Overhead
+,5-04-02-010,Cost of Sales
+,5-05-01-010,Depreciation - Investment Property
+,5-05-01-020,Depreciation - Land Improvements
+,5-05-01-030,Depreciation- Infrastructure Assets
+,5-05-01-040,Depreciation-Building and Other Structures
+,5-05-01-050,Depreciation - Machinery and  Equipment
+,5-05-01-060,Depreciation - Other Transportation Equipment
+,5-05-01-070,Depreciation - Machinery and  Equipment
+,5-05-01-080,Depreciation - Leased Assets
+,5-05-01-090,Depreciation - Other Leased Assets Improvements
+,5-05-01-100,Depreciation -Service Concession Assets
+,5-05-01-990,"Depreciation - Other Property, Plant and Equipment"
+,5-05-02-010,Amortization - Intangible Assets
+,5-05-03-010,Impairment Loss - Financial Assets Held to Maturity
+,5-05-03-020,Impairment Loss - Loans and Receivables
+,5-05-03-030,Impairment Loss - Lease Receivables
+,5-05-03-040,Impairment Loss - Investments in GOCCs
+,5-05-03-050,Impairment Loss - Investments in Joint Venture
+,5-05-03-060,Impairment Loss - Other Receivables
+,5-05-03-070,Impairment Loss - Inventories
+,5-05-03-080,Impairment Loss - Investment Property
+,5-05-03-090,"Impairment Loss - Property, Plant and Equipment"
+,5-05-03-100,Impairment Loss - Intangible Assets
+,5-05-04-010,Loss on Foreign Exchange (FOREX)
+,5-05-04-020,Loss on Sale of Investments
+,5-05-04-030,Loss on Sale of Investment Property
+,5-05-04-040,"Loss on Sale of Propery, Plant and Equipment"
+,5-05-04-050,Loss on Sale of Biological Assets
+,5-05-04-060,Loss on Sale of Intangible Assets
+,5-05-04-070,Loss on Sale of Assets
+,5-05-04-080,Loss on Initial Recognition of Biological Assets
+,5-05-04-090,Loss of Assets
+,5-05-04-100,Loss on Guaranty
+,5-05-04-990,Other Losses
+,5-05-05-010,Grants for Concessionary loans

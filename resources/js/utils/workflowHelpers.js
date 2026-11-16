@@ -18,31 +18,36 @@ export const isAwaitingReceive = (ppmp, user) => {
 
     const status = ppmp.status;
     const role = user.role;
+    const isAdmin = ['admin', 'super_admin'].includes(role);
 
     // When an End User submits an Amendment / Supplemental request, it routes to Admin for approval
     if (ppmp.amendment_status === 'PENDING_APPROVAL') {
-        return ['admin', 'super_admin'].includes(role) && !ppmp.admin_received_at;
+        return isAdmin && !ppmp.admin_received_at;
     }
 
     if (status === 'HEAD_PENDING') {
         const isTargetHead = (role === 'head' || role === 'authorized_staff') && (user.office_id === ppmp.office_id || !ppmp.office_id);
-        return isTargetHead && !ppmp.head_received_at;
+        return (isTargetHead || isAdmin) && !ppmp.head_received_at;
     }
 
     if (status === 'BUDGET_OFFICER_REVIEW') {
-        return role === 'budget_officer' && !ppmp.budget_received_at;
+        const isAssigned = !ppmp.budget_reviewer_id || ppmp.budget_reviewer_id === user.id || isAdmin;
+        return isAssigned && (role === 'budget_officer' || isAdmin) && !ppmp.budget_received_at;
     }
 
     if (status === 'PACCO_REVIEW') {
-        return role === 'pacco' && !ppmp.pacco_received_at;
+        const isAssigned = !ppmp.budget_reviewer_id || ppmp.budget_reviewer_id === user.id || isAdmin;
+        return isAssigned && (role === 'pacco' || isAdmin) && !ppmp.pacco_received_at;
     }
 
     if (status === 'OPPMO_REVIEW') {
-        return role === 'oppmo' && !ppmp.oppmo_received_at;
+        const isAssigned = !ppmp.oppmo_reviewer_id || ppmp.oppmo_reviewer_id === user.id || isAdmin;
+        return isAssigned && (role === 'oppmo' || isAdmin) && !ppmp.oppmo_received_at;
     }
 
     if (status === 'TWG_REVIEW') {
-        return role === 'twg' && !ppmp.twg_received_at;
+        const isAssigned = !ppmp.twg_reviewer_id || ppmp.twg_reviewer_id === user.id || isAdmin;
+        return isAssigned && (role === 'twg' || isAdmin) && !ppmp.twg_received_at;
     }
 
     if ([
@@ -55,7 +60,7 @@ export const isAwaitingReceive = (ppmp, user) => {
         'TWG_RETURNED'
     ].includes(status)) {
         const isCreator = ppmp.created_by === user.id;
-        return isCreator && !ppmp.enduser_received_at;
+        return (isCreator || isAdmin) && !ppmp.enduser_received_at;
     }
 
     return false;
@@ -73,6 +78,7 @@ export const getStageReceiptInfo = (ppmp, user) => {
 
     const status = ppmp.status;
     const role = user?.role;
+    const isAdmin = ['admin', 'super_admin'].includes(role);
 
     let recipientRole = null;
     let isReceived = false;
@@ -83,33 +89,41 @@ export const getStageReceiptInfo = (ppmp, user) => {
         recipientRole = 'Administrator';
         isReceived = Boolean(ppmp.admin_received_at);
         receivedAt = ppmp.admin_received_at;
-        canCurrentUserReceive = ['admin', 'super_admin'].includes(role) && !isReceived;
+        canCurrentUserReceive = isAdmin && !isReceived;
     } else if (status === 'HEAD_PENDING') {
         recipientRole = 'Office Head';
         isReceived = Boolean(ppmp.head_received_at);
         receivedAt = ppmp.head_received_at;
         const isTargetHead = (role === 'head' || role === 'authorized_staff') && (user?.office_id === ppmp.office_id || !ppmp.office_id);
-        canCurrentUserReceive = (isTargetHead || ['admin', 'super_admin'].includes(role)) && !isReceived;
+        canCurrentUserReceive = (isTargetHead || isAdmin) && !isReceived;
     } else if (status === 'BUDGET_OFFICER_REVIEW') {
-        recipientRole = 'Budget Officer';
+        const assignedName = ppmp.budget_reviewer?.name || ppmp.budgetReviewer?.name;
+        recipientRole = assignedName ? `Budget Officer (${assignedName})` : 'Budget Officer';
         isReceived = Boolean(ppmp.budget_received_at);
         receivedAt = ppmp.budget_received_at;
-        canCurrentUserReceive = (role === 'budget_officer' || ['admin', 'super_admin'].includes(role)) && !isReceived;
+        const isAssigned = !ppmp.budget_reviewer_id || ppmp.budget_reviewer_id === user?.id || isAdmin;
+        canCurrentUserReceive = isAssigned && (role === 'budget_officer' || isAdmin) && !isReceived;
     } else if (status === 'PACCO_REVIEW') {
-        recipientRole = 'PACCO Reviewer';
+        const assignedName = ppmp.budget_reviewer?.name || ppmp.budgetReviewer?.name;
+        recipientRole = assignedName ? `PACCO Reviewer (${assignedName})` : 'PACCO Reviewer';
         isReceived = Boolean(ppmp.pacco_received_at);
         receivedAt = ppmp.pacco_received_at;
-        canCurrentUserReceive = (role === 'pacco' || ['admin', 'super_admin'].includes(role)) && !isReceived;
+        const isAssigned = !ppmp.budget_reviewer_id || ppmp.budget_reviewer_id === user?.id || isAdmin;
+        canCurrentUserReceive = isAssigned && (role === 'pacco' || isAdmin) && !isReceived;
     } else if (status === 'OPPMO_REVIEW') {
-        recipientRole = 'OPPMO';
+        const assignedName = ppmp.oppmo_reviewer?.name || ppmp.oppmoReviewer?.name;
+        recipientRole = assignedName ? `OPPMO (${assignedName})` : 'OPPMO';
         isReceived = Boolean(ppmp.oppmo_received_at);
         receivedAt = ppmp.oppmo_received_at;
-        canCurrentUserReceive = (role === 'oppmo' || ['admin', 'super_admin'].includes(role)) && !isReceived;
+        const isAssigned = !ppmp.oppmo_reviewer_id || ppmp.oppmo_reviewer_id === user?.id || isAdmin;
+        canCurrentUserReceive = isAssigned && (role === 'oppmo' || isAdmin) && !isReceived;
     } else if (status === 'TWG_REVIEW') {
-        recipientRole = 'TWG';
+        const assignedName = ppmp.twg_reviewer?.name || ppmp.twgReviewer?.name;
+        recipientRole = assignedName ? `BAC-TWG (${assignedName})` : 'TWG';
         isReceived = Boolean(ppmp.twg_received_at);
         receivedAt = ppmp.twg_received_at;
-        canCurrentUserReceive = (role === 'twg' || ['admin', 'super_admin'].includes(role)) && !isReceived;
+        const isAssigned = !ppmp.twg_reviewer_id || ppmp.twg_reviewer_id === user?.id || isAdmin;
+        canCurrentUserReceive = isAssigned && (role === 'twg' || isAdmin) && !isReceived;
     } else if ([
         'HEAD_APPROVED',
         'READY_TO_PRINT',
@@ -123,7 +137,7 @@ export const getStageReceiptInfo = (ppmp, user) => {
         isReceived = Boolean(ppmp.enduser_received_at);
         receivedAt = ppmp.enduser_received_at;
         const isCreator = user && ppmp.created_by === user.id;
-        canCurrentUserReceive = (isCreator || ['admin', 'super_admin'].includes(role)) && !isReceived;
+        canCurrentUserReceive = (isCreator || isAdmin) && !isReceived;
     }
 
     if (!recipientRole) return null;
@@ -133,5 +147,56 @@ export const getStageReceiptInfo = (ppmp, user) => {
         isReceived,
         receivedAt,
         canCurrentUserReceive,
+    };
+};
+
+/**
+ * Helper to get the Supplemental Kind information for display in badges and request listings.
+ * Resolves whether the supplemental request or child PPMP is 'For continuation' or 'Other: [specify]'.
+ */
+export const getSupplementalKindInfo = (ppmp) => {
+    if (!ppmp) {
+        return { isSupplemental: false, isContinuation: false, purpose: 'CONTINUATION', specify: '', label: '' };
+    }
+
+    const type = ppmp.requested_amendment_type || ppmp.amendment_type;
+    const isSupplemental = type === 'SUPPLEMENTAL';
+
+    const isContinuation = Boolean(
+        ppmp.is_continuation ||
+        ppmp.requested_supplemental_purpose === 'CONTINUATION' ||
+        ppmp.supplemental_purpose === 'CONTINUATION' ||
+        ppmp.amendment?.requested_supplemental_purpose === 'CONTINUATION' ||
+        ppmp.amendment?.supplemental_purpose === 'CONTINUATION'
+    );
+
+    const rawPurpose = ppmp.requested_supplemental_purpose ||
+        ppmp.supplemental_purpose ||
+        ppmp.amendment?.requested_supplemental_purpose ||
+        ppmp.amendment?.supplemental_purpose;
+
+    const purpose = isContinuation ? 'CONTINUATION' : (rawPurpose || (isSupplemental ? 'CONTINUATION' : null));
+
+    const specify = ppmp.requested_supplemental_specify ||
+        ppmp.supplemental_purpose_specify ||
+        ppmp.amendment?.requested_supplemental_specify ||
+        ppmp.amendment?.supplemental_purpose_specify ||
+        '';
+
+    let label = '';
+    if (isSupplemental || isContinuation) {
+        if (purpose === 'OTHER') {
+            label = specify ? `Other: ${specify}` : 'Other';
+        } else {
+            label = 'Continuation';
+        }
+    }
+
+    return {
+        isSupplemental,
+        isContinuation,
+        purpose,
+        specify,
+        label,
     };
 };

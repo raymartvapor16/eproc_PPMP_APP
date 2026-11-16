@@ -83,11 +83,10 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
     const topProjects = activeData?.top_projects ?? analytics?.top_projects ?? [];
     const workflowStages = activeData?.workflow_stages ?? analytics?.workflow_stages ?? [
         { stage: 'DRAFT', label: 'End-User Drafting', count: draft, color: '#64748b' },
-        { stage: 'HEAD_PENDING', label: 'Office Head Approval', count: headPending, color: '#f59e0b' },
+        { stage: 'TWG_REVIEW', label: 'Technical Working Group (TWG)', count: 0, color: '#ec4899' },
         { stage: 'BUDGET_OFFICER_REVIEW', label: 'Provincial Budget (PBO)', count: 0, color: '#3b82f6' },
         { stage: 'PACCO_REVIEW', label: 'Accounting Office (PACCO)', count: 0, color: '#06b6d4' },
         { stage: 'OPPMO_REVIEW', label: 'Procurement Management (OPPMO)', count: 0, color: '#8b5cf6' },
-        { stage: 'TWG_REVIEW', label: 'Technical Working Group (TWG)', count: 0, color: '#ec4899' },
         { stage: 'READY_TO_PRINT', label: 'Cleared / Ready to Print', count: readyToPrint, color: '#10b981' },
     ];
     const statusDistribution = activeData?.status_distribution ?? analytics?.status_distribution ?? [

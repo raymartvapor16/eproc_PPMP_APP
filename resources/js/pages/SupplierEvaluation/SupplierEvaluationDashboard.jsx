@@ -33,6 +33,7 @@ import {
     Sparkles,
 } from 'lucide-react';
 import { supplierEvaluationService } from '../../services/api';
+import { showConfirm } from '../../utils/modalAlert';
 import {
     EvaluationFormPrintModal,
     AnalyticsReportPrintModal,
@@ -49,6 +50,7 @@ import {
     ActivityLogsModal,
 } from './SupplierEvaluationModals';
 import { PaginationControl } from '../../components/UI/PaginationControl';
+import { SystemSwitcherDropdown } from '../../components/Layout/SystemSwitcherDropdown';
 
 const ROLE_BADGES = {
     administrator: { label: 'System Administrator', bg: 'bg-rose-500/20 text-rose-200 border-rose-400/40' },
@@ -65,6 +67,7 @@ export function SupplierEvaluationDashboard({
     onNavigateToPortal,
     onBackToPpmpSystem,
     onLogout,
+    onNavigate,
 }) {
     const [initData, setInitData] = useState(null);
     const [effectiveRole, setEffectiveRole] = useState('end_user');
@@ -377,7 +380,14 @@ export function SupplierEvaluationDashboard({
     };
 
     const handleSoftDeleteEvaluation = async (evalRow) => {
-        if (!window.confirm(`Move evaluation for P.O. ${evalRow.po_no} (${evalRow.supplier_name}) to the Recycle Bin?`)) {
+        const confirmed = await showConfirm({
+            title: 'Move to Recycle Bin',
+            message: `Are you sure you want to move evaluation for P.O. ${evalRow.po_no} (${evalRow.supplier_name}) to the Recycle Bin?`,
+            confirmText: 'Move to Recycle Bin',
+            cancelText: 'Cancel',
+            type: 'warning',
+        });
+        if (!confirmed) {
             return;
         }
         try {
@@ -437,26 +447,14 @@ export function SupplierEvaluationDashboard({
 
                     {/* Right Navigation & User Controls */}
                     <div className="flex flex-wrap items-center gap-2">
-                        {onBackToPpmpSystem && (
-                            <button
-                                type="button"
-                                onClick={onBackToPpmpSystem}
-                                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-slate-700"
-                            >
-                                <ArrowLeft className="w-3.5 h-3.5 text-blue-400" />
-                                <span>PPMP System</span>
-                            </button>
-                        )}
-                        {onNavigateToPortal && (
-                            <button
-                                type="button"
-                                onClick={onNavigateToPortal}
-                                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-slate-700"
-                            >
-                                <Globe className="w-3.5 h-3.5 text-amber-400" />
-                                <span>Portal Home</span>
-                            </button>
-                        )}
+                        <SystemSwitcherDropdown
+                            user={user}
+                            currentSystem="supplierevaluation"
+                            onNavigate={onNavigate || ((view) => {
+                                if (view === 'dashboard' || view === 'ppmps') onBackToPpmpSystem && onBackToPpmpSystem();
+                                else if (view === 'landing') onNavigateToPortal && onNavigateToPortal();
+                            })}
+                        />
                         <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-xl bg-slate-800/90 border border-slate-700 text-xs">
                             <div className="w-6 h-6 rounded-full bg-orange-500 text-white font-black flex items-center justify-center text-[11px]">
                                 {(user?.name || 'U').charAt(0).toUpperCase()}

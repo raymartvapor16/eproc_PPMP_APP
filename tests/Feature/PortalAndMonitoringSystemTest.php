@@ -79,6 +79,35 @@ class PortalAndMonitoringSystemTest extends TestCase
         $this->assertGreaterThanOrEqual(1, count($res->json('systems') ?? $res->json()));
     }
 
+    public function test_pims_status_endpoint_reflects_active_and_inactive_status(): void
+    {
+        $pims = PortalSystem::where('link_url', '/pims')->first();
+        if (!$pims) {
+            $pims = PortalSystem::create([
+                'name' => 'Procurement Information Management System (PIMS)',
+                'description' => 'PIMS Module',
+                'link_url' => '/pims',
+                'sort_order' => 4,
+                'status' => 'active',
+            ]);
+        } else {
+            $pims->update(['status' => 'active']);
+        }
+
+        // When active
+        $res = $this->getJson('/api/portal-systems/pims-status');
+        $res->assertOk();
+        $this->assertTrue($res->json('is_active'));
+        $this->assertEquals('active', $res->json('status'));
+
+        // When updated to inactive
+        $pims->update(['status' => 'inactive']);
+        $resInactive = $this->getJson('/api/portal-systems/pims-status');
+        $resInactive->assertOk();
+        $this->assertFalse($resInactive->json('is_active'));
+        $this->assertEquals('inactive', $resInactive->json('status'));
+    }
+
     public function test_super_admin_can_manage_portal_systems(): void
     {
         $this->actingAs($this->superAdmin);
@@ -208,6 +237,27 @@ class PortalAndMonitoringSystemTest extends TestCase
 
         $this->actingAs($this->admin);
         $this->getJson('/api/monitoring/stats')->assertOk();
+    }
+
+    public function test_user_without_checked_system_access_is_forbidden(): void
+    {
+        // 1. User with only PPMP access cannot access PIMS
+        $this->endUser->update(['accessible_systems' => ['/eprocrementppmpapp']]);
+        $this->actingAs($this->endUser);
+        $this->getJson('/api/pims/dashboard')->assertForbidden();
+        $this->getJson('/api/monitoring/stats')->assertForbidden();
+        $this->assertFalse($this->endUser->canAccessSystem('/pims'));
+        $this->assertFalse($this->endUser->canAccessSystem('/monitoringsystem'));
+        $this->assertTrue($this->endUser->canAccessSystem('/eprocrementppmpapp'));
+
+        // 2. Granting /pims access enables PIMS
+        $this->endUser->update(['accessible_systems' => ['/eprocrementppmpapp', '/pims']]);
+        $this->assertTrue($this->endUser->canAccessSystem('/pims'));
+        $this->getJson('/api/pims/dashboard')->assertOk();
+
+        // Still forbidden from monitoring because it is not checked
+        $this->assertFalse($this->endUser->canAccessSystem('/monitoringsystem'));
+        $this->getJson('/api/monitoring/stats')->assertForbidden();
     }
 
     public function test_end_user_can_view_monitoring_project_but_cannot_add_edit_or_delete_steps(): void
@@ -412,7 +462,7 @@ class PortalAndMonitoringSystemTest extends TestCase
 
         $overBudgetResponse->assertStatus(422);
         $overBudgetResponse->assertJsonFragment([
-            'message' => 'Cannot save: The Total Cost (₱555,500.00) of the PPMP List of Attachment exceeds the Allocated Budget (₱500,000.00) from the PPMP data by ₱55,500.00. The total cost must coincide with or be lower than the Allocated Budget.',
+            'message' => 'Cannot save: The Total Cost (₱555,500.00) of the Detailed Specifications exceeds the Allocated Budget (₱500,000.00) from the PPMP data by ₱55,500.00. The total cost must coincide with or be lower than the Allocated Budget.',
         ]);
 
         // 2. Coincides with budget (₱500,000 == ₱500,000) -> 200 accepted

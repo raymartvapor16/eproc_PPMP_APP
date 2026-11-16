@@ -64,6 +64,7 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
             'Plan Type': p.plan_type || 'N/A',
             'Office / Department': p.office ? `${p.office.code} - ${p.office.name}` : 'N/A',
             'Project Title': p.title || 'Untitled',
+            'Source of Funds': p.source_of_fund || p.items?.find(i => i.source_of_fund)?.source_of_fund || 'General Fund',
             'Total Budget (PHP)': parseFloat(p.total_budget || 0),
             'Status': p.status,
             'Date Created': p.created_at ? new Date(p.created_at).toLocaleDateString() : 'N/A',
@@ -274,6 +275,7 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
                                 <th className="p-3">Office / Sector</th>
                                 <th className="p-3">Project Title</th>
                                 <th className="p-3">Period</th>
+                                <th className="p-3">Source of Funds</th>
                                 <th className="p-3 text-right">Budget (PHP)</th>
                                 <th className="p-3">Current Status</th>
                                 <th className="p-3 text-right">Action</th>
@@ -282,7 +284,7 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
                         <tbody className="divide-y divide-slate-100">
                             {filteredReports.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} className="p-8 text-center text-slate-400 italic">
+                                    <td colSpan={9} className="p-8 text-center text-slate-400 italic">
                                         No PPMP records match your selected report filter parameters.
                                     </td>
                                 </tr>
@@ -330,6 +332,18 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
                                         </td>
                                         <td className="p-3 text-slate-600">
                                             CY {p.fiscal_year} ({p.plan_type})
+                                        </td>
+                                        <td className="p-3 text-slate-700">
+                                            <span
+                                                className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold max-w-[180px] truncate ${
+                                                    ((p.source_of_fund || p.items?.find(i => i.source_of_fund)?.source_of_fund || '').toLowerCase().includes('trust'))
+                                                        ? 'bg-teal-50 text-teal-800 border border-teal-200'
+                                                        : 'bg-blue-50 text-blue-800 border border-blue-200'
+                                                }`}
+                                                title={p.source_of_fund || p.items?.find(i => i.source_of_fund)?.source_of_fund || 'General Fund'}
+                                            >
+                                                {p.source_of_fund || p.items?.find(i => i.source_of_fund)?.source_of_fund || 'General Fund'}
+                                            </span>
                                         </td>
                                         <td className="p-3 text-right font-mono font-bold text-slate-900">
                                             {formatCurrency(p.total_budget)}

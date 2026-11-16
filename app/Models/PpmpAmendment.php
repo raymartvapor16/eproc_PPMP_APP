@@ -20,6 +20,10 @@ class PpmpAmendment extends Model
         'amendment_type',
         'amendment_reason',
         'amendment_scope',
+        'requested_supplemental_purpose',
+        'requested_supplemental_specify',
+        'supplemental_purpose',
+        'supplemental_purpose_specify',
         'amendment_requested_at',
         'amendment_approved_at',
     ];

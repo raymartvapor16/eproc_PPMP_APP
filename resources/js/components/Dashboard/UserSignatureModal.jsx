@@ -9,16 +9,16 @@ export const UserSignatureModal = ({
     onClose,
     onUpdated,
 }) => {
-    if (!isOpen || !user) return null;
-
     const [isDrawPadOpen, setIsDrawPadOpen] = useState(false);
     const [previewUrl, setPreviewUrl] = useState(null);
     const [newSignatureData, setNewSignatureData] = useState(null);
-    const [isEditing, setIsEditing] = useState(!user.signature_path);
+    const [isEditing, setIsEditing] = useState(!user?.signature_path);
     const [saving, setSaving] = useState(false);
     const [imageError, setImageError] = useState(false);
     const [timestamp, setTimestamp] = useState(Date.now());
     const [feedback, setFeedback] = useState({ type: '', text: '' });
+
+    if (!isOpen || !user) return null;
 
     const handleFileUpload = (e) => {
         const file = e.target.files?.[0];

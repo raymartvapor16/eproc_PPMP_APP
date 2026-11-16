@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { authService, portalSystemService } from '../../services/api';
+import { authService, portalSystemService, systemSettingService } from '../../services/api';
 import { 
     Shield, 
     Lock, 
@@ -35,6 +35,8 @@ import {
 } from 'lucide-react';
 import { SignaturePadModal } from '../../components/UI/SignaturePadModal';
 import { SpiderParticlesCanvas } from '../../components/UI/SpiderParticlesCanvas';
+import { AccountCodeMultiSelect } from '../../components/UI/AccountCodeMultiSelect';
+import { CloudflareSecurityVerification } from '../../components/UI/CloudflareSecurityVerification';
 
 export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, initialError = '', targetSystem = 'dashboard' }) => {
     const [mode, setMode] = useState('login'); // 'login' or 'register'
@@ -70,7 +72,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
     const [registerData, setRegisterData] = useState({
         name: '',
         email: '',
-        role: 'end_user',
+        role: '',
         phone_number: '',
         address: '',
         office_id: '',
@@ -80,49 +82,138 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
     });
     const [authorizationLetter, setAuthorizationLetter] = useState(null);
     const [authorizationLetterError, setAuthorizationLetterError] = useState('');
+    const [selectedAccountCodeIds, setSelectedAccountCodeIds] = useState([]);
     const authLetterInputRef = useRef(null);
+
+    const validateAndSetAuthorizationLetter = (file, inputElement = null) => {
+        if (!file) {
+            setAuthorizationLetter(null);
+            return;
+        }
+
+        const filename = String(file.name || '').toLowerCase();
+        const isPdfExt = filename.endsWith('.pdf');
+
+        // 1. Strict extension check: reject non-PDFs (like .url, .exe, .bat, etc.)
+        if (!isPdfExt) {
+            setAuthorizationLetter(null);
+            if (inputElement) inputElement.value = '';
+            setAuthorizationLetterError(`Security Restriction: "${file.name}" is not a valid PDF document. Only official signed PDF files (.pdf) are permitted. Other file formats (e.g. .url, shortcuts, executables) are strictly blocked.`);
+            return;
+        }
+
+        // 2. Reject suspicious disguised multi-extensions (e.g. file.php.pdf, file.exe.pdf, file.url.pdf)
+        if (/\.(php|exe|bat|cmd|sh|vbs|js|jar|py|pl|url|lnk)\.pdf$/i.test(filename)) {
+            setAuthorizationLetter(null);
+            if (inputElement) inputElement.value = '';
+            setAuthorizationLetterError(`Security Warning: Suspicious disguised file naming detected for "${file.name}". Upload rejected.`);
+            return;
+        }
+
+        // 3. File size check (5MB max)
+        if (file.size > 5 * 1024 * 1024) {
+            setAuthorizationLetter(null);
+            if (inputElement) inputElement.value = '';
+            setAuthorizationLetterError(`File size exceeds the 5MB maximum limit (${(file.size / (1024 * 1024)).toFixed(1)} MB). Only PDF files up to 5MB are permitted.`);
+            return;
+        }
+
+        // 4. Client-side Magic Byte Inspection (%PDF-)
+        const reader = new FileReader();
+        reader.onloadend = (e) => {
+            try {
+                const arr = new Uint8Array(e.target.result);
+                const header = String.fromCharCode(...arr.slice(0, 5));
+                if (header !== '%PDF-') {
+                    setAuthorizationLetter(null);
+                    if (inputElement) inputElement.value = '';
+                    setAuthorizationLetterError(`Security Violation: "${file.name}" does not contain a genuine PDF file signature (%PDF- header). Upload rejected.`);
+                    return;
+                }
+                // Validation passed!
+                setAuthorizationLetterError('');
+                setAuthorizationLetter(file);
+            } catch (err) {
+                setAuthorizationLetterError('Failed to verify document signature.');
+            }
+        };
+        reader.onerror = () => {
+            setAuthorizationLetter(null);
+            if (inputElement) inputElement.value = '';
+            setAuthorizationLetterError('Unable to read selected file.');
+        };
+        reader.readAsArrayBuffer(file.slice(0, 64));
+    };
     const [offices, setOffices] = useState([]);
     const [loadingOffices, setLoadingOffices] = useState(false);
 
     // Requested Digital Systems State (Multi-select)
     const [availableSystems, setAvailableSystems] = useState([
-        { id: 1, name: 'E-Procurement PPMP & APP System', link_url: '/eprocrementppmpapp', badge: 'Primary System', description: 'Automated preparation, review lifecycle, and consolidation of PPMP and APP plans.' },
-        { id: 2, name: 'OPPMO Real-Time Monitoring System', link_url: '/monitoringsystem', badge: 'Live Monitoring', description: 'Procurement implementation monitoring, milestone stage tracking, and PIMS timeline across provincial offices.' },
-        { id: 3, name: 'Provincial Bids & Awards Portal', link_url: '/eprocrementppmpapp', badge: 'BAC Portal', description: 'Public bidding notices, awards, and procurement transparency documentation.' },
-        { id: 4, name: 'Supplier Evaluation System', link_url: '/supplierevaluation', badge: 'Evaluations', description: 'Comprehensive supplier performance appraisal, criteria scoring, and vendor ratings.' },
+        {
+            id: 1,
+            name: 'E-Procurement PPMP & APP System',
+            link_url: '/eprocrementppmpapp',
+            badge: 'Primary System',
+            description: 'Automated preparation, review lifecycle, e-signature validation, and consolidation of Project Procurement Management Plans (PPMP) and Annual Procurement Plans (APP).'
+        },
+        {
+            id: 2,
+            name: 'OPPMO Real-Time Monitoring System',
+            link_url: '/monitoringsystem',
+            badge: 'Live Monitoring',
+            description: 'Procurement implementation monitoring, milestone stage tracking, PIMS automatic publishing, and purchase request timelines across provincial offices.'
+        },
+        {
+            id: 3,
+            name: 'Procurement Information Management System (PIMS)',
+            link_url: '/pims',
+            badge: 'PIMS Portal',
+            description: 'Comprehensive procurement surveillance, Purchase Request (PR) generation, and multi-stage evaluation across provincial offices.'
+        },
+        {
+            id: 4,
+            name: 'Supplier Evaluation System',
+            link_url: '/supplierevaluation',
+            badge: 'Supplier Rating',
+            description: 'Official Supplier Performance Assessment & Rating System across Price, Quality, Customer Care, and Delivery Fulfillment with digital authorization.'
+        },
     ]);
-    const [selectedSystems, setSelectedSystems] = useState(() => {
-        if (targetSystem === 'supplierevaluation') return ['/supplierevaluation'];
-        if (targetSystem === 'monitoring') return ['/monitoringsystem'];
-        return ['/eprocrementppmpapp'];
-    });
+    const [selectedSystems, setSelectedSystems] = useState([]);
     const [isSystemsDropdownOpen, setIsSystemsDropdownOpen] = useState(false);
     const systemsDropdownRef = useRef(null);
 
-    useEffect(() => {
-        if (targetSystem === 'supplierevaluation') {
-            setSelectedSystems((prev) => prev.includes('/supplierevaluation') ? prev : ['/supplierevaluation']);
-        } else if (targetSystem === 'monitoring') {
-            setSelectedSystems((prev) => prev.includes('/monitoringsystem') ? prev : ['/monitoringsystem']);
-        }
-    }, [targetSystem]);
-
-    // CAPTCHA State for Account Registration
-    const [captchaCode, setCaptchaCode] = useState('');
-    const [captchaInput, setCaptchaInput] = useState('');
-
-    const generateCaptcha = () => {
-        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-        let code = '';
-        for (let i = 0; i < 5; i++) {
-            code += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
-        setCaptchaCode(code);
-        setCaptchaInput('');
-    };
+    // Cloudflare Turnstile Security Verification State (Login & Register)
+    const [turnstileEnabled, setTurnstileEnabled] = useState(() => window.App?.turnstile_enabled !== false);
+    const [loginTurnstileToken, setLoginTurnstileToken] = useState('');
+    const [loginTurnstileReset, setLoginTurnstileReset] = useState(0);
+    const [registerTurnstileToken, setRegisterTurnstileToken] = useState('');
+    const [registerTurnstileReset, setRegisterTurnstileReset] = useState(0);
 
     useEffect(() => {
-        generateCaptcha();
+        let isMounted = true;
+        systemSettingService.getTurnstileSettings()
+            .then((res) => {
+                if (isMounted && res?.data && typeof res.data.enabled !== 'undefined') {
+                    const enabledVal = Boolean(res.data.enabled);
+                    setTurnstileEnabled(enabledVal);
+                    if (window.App) {
+                        window.App.turnstile_enabled = enabledVal;
+                    }
+                }
+            })
+            .catch(() => {});
+
+        const handleTurnstileChanged = (e) => {
+            if (e.detail && typeof e.detail.enabled !== 'undefined') {
+                setTurnstileEnabled(Boolean(e.detail.enabled));
+            }
+        };
+
+        window.addEventListener('turnstile_settings:changed', handleTurnstileChanged);
+        return () => {
+            isMounted = false;
+            window.removeEventListener('turnstile_settings:changed', handleTurnstileChanged);
+        };
     }, []);
 
     // Draw Signature State for Account Registration (Modal-only Freeform Studio)
@@ -172,7 +263,18 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
             try {
                 const res = await portalSystemService.getPublic();
                 if (res.data && res.data.length > 0) {
-                    setAvailableSystems(res.data);
+                    setAvailableSystems(prev => {
+                        const merged = [...prev];
+                        res.data.forEach((sys) => {
+                            const idx = merged.findIndex((m) => m.link_url === sys.link_url);
+                            if (idx >= 0) {
+                                merged[idx] = { ...merged[idx], ...sys };
+                            } else {
+                                merged.push(sys);
+                            }
+                        });
+                        return merged;
+                    });
                 }
             } catch (err) {
                 console.warn('Using default systems on login/register', err);
@@ -244,16 +346,26 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
         e.preventDefault();
         if (lockoutSeconds > 0) return;
 
+        if (turnstileEnabled && !loginTurnstileToken) {
+            setError('Please wait for or complete the Cloudflare security verification to confirm that you are human.');
+            return;
+        }
+
         setError('');
         setSuccessMsg('');
         setLoading(true);
 
         try {
-            const res = await authService.login({ email, password });
+            const res = await authService.login({
+                email,
+                password,
+                cf_turnstile_response: loginTurnstileToken,
+            });
             onLoginSuccess(res.data.user);
         } catch (err) {
             const serverMsg = err.response?.data?.message || 'Invalid credentials or inactive account.';
             setError(serverMsg);
+            setLoginTurnstileReset((prev) => prev + 1);
 
             if (err.response?.status === 429 && err.response?.data?.retry_after) {
                 setLockoutSeconds(err.response.data.retry_after);
@@ -293,6 +405,11 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
             return;
         }
 
+        if (!registerData.role) {
+            setError('Please select your system role.');
+            return;
+        }
+
         if (!registerData.designation?.trim()) {
             setError('Please enter your official position / designation.');
             return;
@@ -319,9 +436,18 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                 return;
             }
             if (authorizationLetter.type !== 'application/pdf' && !authorizationLetter.name.toLowerCase().endsWith('.pdf')) {
-                setError('Only PDF documents are accepted for the Authorization Letter.');
+                setError('Only official PDF documents (.pdf) are accepted for the Authorization Letter.');
                 return;
             }
+            if (authorizationLetter.size > 5 * 1024 * 1024) {
+                setError('Authorization Letter exceeds the 5MB maximum limit. Please upload a PDF up to 5MB.');
+                return;
+            }
+        }
+
+        if (registerData.role === 'twg' && (!selectedAccountCodeIds || selectedAccountCodeIds.length === 0)) {
+            setError('Please select at least one assigned Account Code for the BAC-TWG Reviewer role.');
+            return;
         }
 
         if (!hasSignature || !signatureDataUrl) {
@@ -330,14 +456,8 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
             return;
         }
 
-        if (!captchaInput.trim()) {
-            setError('Please enter the security verification CAPTCHA code.');
-            return;
-        }
-
-        if (captchaInput.trim().toUpperCase() !== captchaCode.toUpperCase()) {
-            setError('Security CAPTCHA verification code is incorrect. Please try again.');
-            generateCaptcha();
+        if (turnstileEnabled && !registerTurnstileToken) {
+            setError('Please wait for or complete the Cloudflare security verification to confirm that you are human.');
             return;
         }
 
@@ -361,11 +481,17 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                 payload.append('signature', finalSigUrl || '');
                 payload.append('authorization_letter', authorizationLetter);
                 payload.append('accessible_systems', JSON.stringify(selectedSystems));
+                payload.append('cf_turnstile_response', registerTurnstileToken);
+                if (registerData.role === 'twg') {
+                    payload.append('account_code_ids', JSON.stringify(selectedAccountCodeIds));
+                }
             } else {
                 payload = {
                     ...registerData,
                     signature: finalSigUrl,
                     accessible_systems: selectedSystems,
+                    account_code_ids: registerData.role === 'twg' ? selectedAccountCodeIds : [],
+                    cf_turnstile_response: registerTurnstileToken,
                 };
             }
 
@@ -380,7 +506,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
             setRegisterData({
                 name: '',
                 email: '',
-                role: 'end_user',
+                role: '',
                 phone_number: '',
                 address: '',
                 office_id: '',
@@ -388,16 +514,18 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                 password: '',
                 password_confirmation: '',
             });
-            setSelectedSystems(['/eprocrementppmpapp']);
+            setSelectedAccountCodeIds([]);
+            setSelectedSystems([]);
             setAuthorizationLetter(null);
             setAuthorizationLetterError('');
             if (authLetterInputRef.current) authLetterInputRef.current.value = '';
             clearSignature();
-            generateCaptcha();
+            setRegisterTurnstileReset((prev) => prev + 1);
 
             // Open the pending approval popup message
             setShowPendingModal(true);
         } catch (err) {
+            setRegisterTurnstileReset((prev) => prev + 1);
             if (err.response?.data?.errors) {
                 const firstKey = Object.keys(err.response.data.errors)[0];
                 setError(err.response.data.errors[firstKey][0]);
@@ -778,10 +906,19 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                         </div>
                                     </div>
 
-                                    <div className="pt-2">
+                                    {/* Cloudflare Security Verification (auto-collapses once secured) */}
+                                    {turnstileEnabled && (
+                                        <CloudflareSecurityVerification
+                                            actionLabel="sign in"
+                                            onVerify={setLoginTurnstileToken}
+                                            resetTrigger={loginTurnstileReset}
+                                        />
+                                    )}
+
+                                    <div className="pt-1">
                                         <button
                                             type="submit"
-                                            disabled={loading || lockoutSeconds > 0}
+                                            disabled={loading || lockoutSeconds > 0 || (turnstileEnabled && !loginTurnstileToken)}
                                             className={`w-full flex justify-center items-center gap-2 py-2.5 px-4 rounded-xl shadow-md text-xs font-bold uppercase tracking-wider text-white transition-all transform active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-offset-2 ${
                                                 lockoutSeconds > 0
                                                     ? 'bg-rose-600 hover:bg-rose-700 cursor-not-allowed opacity-90'
@@ -1075,9 +1212,15 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                             <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
                                                 Requested Digital Systems Access <span className="text-rose-500">*</span>
                                             </label>
-                                            <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
-                                                {selectedSystems.length} {selectedSystems.length === 1 ? 'system' : 'systems'} selected
-                                            </span>
+                                            {selectedSystems.length > 0 ? (
+                                                <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                                                    {selectedSystems.length} {selectedSystems.length === 1 ? 'system' : 'systems'} selected
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                                                    0 systems selected
+                                                </span>
+                                            )}
                                         </div>
 
                                         {/* Dropdown Button Trigger */}
@@ -1098,7 +1241,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                                     <div className="truncate text-xs font-semibold text-slate-800 flex items-center gap-1.5 flex-wrap">
                                                         {selectedSystems.map((url) => {
                                                             const matched = availableSystems.find((s) => s.link_url === url);
-                                                            const label = matched?.name || (url === '/monitoringsystem' ? 'Monitoring System' : 'PPMP & APP System');
+                                                            const label = matched?.name || (url === '/monitoringsystem' ? 'Monitoring System' : url === '/pims' ? 'PIMS System' : url === '/supplierevaluation' ? 'Supplier Evaluation' : 'PPMP & APP System');
                                                             return (
                                                                 <span
                                                                     key={url}
@@ -1111,8 +1254,8 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                                         })}
                                                     </div>
                                                 ) : (
-                                                    <span className="text-xs text-slate-400">
-                                                        -- Select Systems (Multi-select) --
+                                                    <span className="text-xs text-slate-400 font-normal">
+                                                        Please select system access...
                                                     </span>
                                                 )}
                                             </div>
@@ -1228,16 +1371,21 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                                     required
                                                     value={registerData.role}
                                                     onChange={(e) => setRegisterData({ ...registerData, role: e.target.value })}
-                                                    className="w-full text-xs pl-9 pr-3.5 py-2.5 bg-slate-50 hover:bg-white focus:bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 focus:outline-none transition shadow-sm font-medium"
+                                                    className={`w-full text-xs pl-9 pr-3.5 py-2.5 bg-slate-50 hover:bg-white focus:bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 focus:outline-none transition shadow-sm font-medium ${
+                                                        !registerData.role ? 'text-slate-400' : 'text-slate-800'
+                                                    }`}
                                                 >
-                                                    <option value="end_user">End User (Preparer)</option>
-                                                    <option value="head">Office Head / Approver</option>
-                                                    <option value="authorized_staff">Authorize Staff</option>
-                                                    <option value="budget_officer">Budget Officer</option>
-                                                    <option value="oppmo">OPPMO Reviewer</option>
-                                                    <option value="twg">BAC-TWG Reviewer</option>
-                                                    <option value="pacco">PACCO Reviewer (Provincial Accounting)</option>
-                                                    <option value="admin">Administrator</option>
+                                                    <option value="" disabled className="text-slate-400">
+                                                        Please select user system role...
+                                                    </option>
+                                                    <option value="end_user" className="text-slate-800">End User (Preparer)</option>
+                                                    <option value="head" className="text-slate-800">Office Head / Approver</option>
+                                                    <option value="authorized_staff" className="text-slate-800">Authorize Staff</option>
+                                                    <option value="budget_officer" className="text-slate-800">Budget Officer</option>
+                                                    <option value="oppmo" className="text-slate-800">OPPMO Reviewer</option>
+                                                    <option value="twg" className="text-slate-800">BAC-TWG Reviewer</option>
+                                                    <option value="pacco" className="text-slate-800">PACCO Reviewer (Provincial Accounting)</option>
+                                                    <option value="admin" className="text-slate-800">Administrator</option>
                                                 </select>
                                             </div>
                                         </div>
@@ -1357,20 +1505,25 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                                         Authorization Letter (PDF) <span className="text-rose-500">*</span>
                                                     </span>
                                                 </div>
-                                                {authorizationLetter && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setAuthorizationLetter(null);
-                                                            setAuthorizationLetterError('');
-                                                            if (authLetterInputRef.current) authLetterInputRef.current.value = '';
-                                                        }}
-                                                        className="text-[11px] font-semibold text-rose-600 hover:text-rose-800 flex items-center gap-1 cursor-pointer transition px-1"
-                                                    >
-                                                        <Eraser className="w-3 h-3" />
-                                                        Remove
-                                                    </button>
-                                                )}
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-full flex items-center gap-1">
+                                                        <Lock className="w-2.5 h-2.5" /> PDF Only &bull; Max 5MB
+                                                    </span>
+                                                    {authorizationLetter && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setAuthorizationLetter(null);
+                                                                setAuthorizationLetterError('');
+                                                                if (authLetterInputRef.current) authLetterInputRef.current.value = '';
+                                                            }}
+                                                            className="text-[11px] font-semibold text-rose-600 hover:text-rose-800 flex items-center gap-1 cursor-pointer transition px-1"
+                                                        >
+                                                            <Eraser className="w-3 h-3" />
+                                                            Remove
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
 
                                             <p className="text-[11px] text-blue-900 leading-relaxed font-medium">
@@ -1385,22 +1538,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                                 id="authorization-letter-file-input"
                                                 onChange={(e) => {
                                                     const file = e.target.files?.[0];
-                                                    if (!file) return;
-
-                                                    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-                                                        setAuthorizationLetterError('Only official PDF files are accepted.');
-                                                        setAuthorizationLetter(null);
-                                                        return;
-                                                    }
-
-                                                    if (file.size > 20 * 1024 * 1024) {
-                                                        setAuthorizationLetterError('File size exceeds maximum limit of 20MB.');
-                                                        setAuthorizationLetter(null);
-                                                        return;
-                                                    }
-
-                                                    setAuthorizationLetterError('');
-                                                    setAuthorizationLetter(file);
+                                                    validateAndSetAuthorizationLetter(file, e.target);
                                                 }}
                                             />
 
@@ -1417,7 +1555,9 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                                 className={`border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition select-none ${
                                                     authorizationLetter
                                                         ? 'border-emerald-400 bg-emerald-50/60 hover:bg-emerald-50'
-                                                        : 'border-blue-300 hover:border-blue-500 bg-white hover:bg-blue-50/40'
+                                                        : authorizationLetterError
+                                                            ? 'border-rose-300 hover:border-rose-400 bg-rose-50/30'
+                                                            : 'border-blue-300 hover:border-blue-500 bg-white hover:bg-blue-50/40'
                                                 }`}
                                             >
                                                 {authorizationLetter ? (
@@ -1427,10 +1567,11 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                                         </div>
                                                         <div className="min-w-0 flex-1 text-left">
                                                             <div className="text-xs font-bold text-slate-900 truncate">
-                                                                {authorizationLetter.name}
+                                                                Validated PDF: {authorizationLetter.name}
                                                             </div>
-                                                            <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                                                                {(authorizationLetter.size / 1024 / 1024).toFixed(2)} MB &bull; PDF Document Attached
+                                                            <div className="text-[10px] text-emerald-700 font-medium mt-0.5 flex items-center gap-1">
+                                                                <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                                                                <span>{(authorizationLetter.size / 1024 / 1024).toFixed(2)} MB &bull; Digital header verified (%PDF-)</span>
                                                             </div>
                                                         </div>
                                                         <span className="text-[11px] font-bold text-blue-600 hover:underline shrink-0">
@@ -1446,10 +1587,18 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                                             Click here to attach Authorization Letter (PDF)
                                                         </span>
                                                         <span className="text-[10px] text-blue-700/80 mt-0.5">
-                                                            PDF format up to 20MB &bull; Saved to secure private storage
+                                                            Strictly genuine PDF format up to 5MB &bull; Saved to secure private storage
                                                         </span>
                                                     </div>
                                                 )}
+                                            </div>
+
+                                            {/* Security advisory note */}
+                                            <div className="p-2 bg-white/90 border border-blue-200 rounded-lg text-[10px] text-slate-600 flex items-start gap-1.5">
+                                                <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.2" />
+                                                <span>
+                                                    <strong>Security Protection:</strong> Authorization letters are verified against genuine PDF header signatures (%PDF-), checked for executable macros, and stored in secure private government storage.
+                                                </span>
                                             </div>
 
                                             {authorizationLetterError && (
@@ -1458,6 +1607,18 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                                     {authorizationLetterError}
                                                 </p>
                                             )}
+                                        </div>
+                                    )}
+
+                                    {/* BAC-TWG Reviewer Assigned Account Codes - Shown when role === 'twg' */}
+                                    {registerData.role === 'twg' && (
+                                        <div className="p-3.5 bg-amber-50/70 border-2 border-amber-300 rounded-xl space-y-2.5 shadow-sm animate-fade-in-up">
+                                            <AccountCodeMultiSelect
+                                                selectedIds={selectedAccountCodeIds}
+                                                onChange={setSelectedAccountCodeIds}
+                                                isPublic={true}
+                                                label="Assigned Account Codes (TWG Scope)"
+                                            />
                                         </div>
                                     )}
 
@@ -1557,62 +1718,19 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                         </div>
                                     </div>
 
-                                    {/* Security Verification CAPTCHA */}
-                                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <label
-                                                htmlFor="register-captcha"
-                                                className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider"
-                                            >
-                                                Security Verification (CAPTCHA) <span className="text-rose-500">*</span>
-                                            </label>
-                                            <button
-                                                type="button"
-                                                onClick={generateCaptcha}
-                                                className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer transition"
-                                                title="Click to generate a new CAPTCHA code"
-                                            >
-                                                <RefreshCw className="w-3 h-3" />
-                                                Refresh
-                                            </button>
-                                        </div>
-
-                                        <div className="flex items-center gap-3">
-                                            <div 
-                                                onClick={generateCaptcha}
-                                                className="select-none cursor-pointer px-4 py-2 bg-slate-900 text-white font-mono text-base font-black tracking-[0.35em] rounded-lg shadow-inner border border-slate-700 flex items-center justify-center relative overflow-hidden active:scale-95 transition-transform"
-                                                title="Click to refresh CAPTCHA"
-                                            >
-                                                <div className="absolute inset-0 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:8px_8px] opacity-25 pointer-events-none" />
-                                                <span className="relative z-10 italic drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] line-through decoration-amber-400/50">
-                                                    {captchaCode}
-                                                </span>
-                                            </div>
-
-                                            <div className="flex-1">
-                                                <input
-                                                    id="register-captcha"
-                                                    name="captcha"
-                                                    type="text"
-                                                    autoComplete="off"
-                                                    required
-                                                    maxLength={5}
-                                                    value={captchaInput}
-                                                    onChange={(e) => setCaptchaInput(e.target.value.toUpperCase())}
-                                                    placeholder="Enter 5-digit code"
-                                                    className="w-full text-xs px-3.5 py-2 font-mono uppercase font-bold tracking-widest border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 focus:outline-none transition shadow-sm bg-white"
-                                                />
-                                            </div>
-                                        </div>
-                                        <p className="text-[10px] text-slate-400 italic">
-                                            Type the 5 alphanumeric characters shown above (not case-sensitive).
-                                        </p>
-                                    </div>
+                                    {/* Cloudflare Security Verification (auto-collapses once secured) */}
+                                    {turnstileEnabled && (
+                                        <CloudflareSecurityVerification
+                                            actionLabel="register"
+                                            onVerify={setRegisterTurnstileToken}
+                                            resetTrigger={registerTurnstileReset}
+                                        />
+                                    )}
 
                                     <div className="pt-2">
                                         <button
                                             type="submit"
-                                            disabled={loading}
+                                            disabled={loading || (turnstileEnabled && !registerTurnstileToken)}
                                             className="w-full flex justify-center items-center gap-2 py-2.5 px-4 rounded-xl shadow-md text-xs font-bold uppercase tracking-wider text-white bg-slate-900 hover:bg-slate-800 shadow-slate-900/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900 transition-all transform active:scale-[0.99] disabled:opacity-50"
                                         >
                                             {loading ? (

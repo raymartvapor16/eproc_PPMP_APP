@@ -48,12 +48,18 @@ class PpmpAttachmentController extends Controller
         }
 
         $request->validate([
-            'file' => 'required|file|mimes:pdf,jpg,jpeg,png,webp|max:20480', // max 20MB
+            'file' => 'required|file|mimes:pdf,jpg,jpeg,png,webp|max:5120', // max 5MB strictly
         ]);
 
         $uploadedFile = $request->file('file');
+        $origName = $uploadedFile->getClientOriginalName();
         $mime = $uploadedFile->getMimeType();
         $extension = strtolower($uploadedFile->getClientOriginalExtension());
+
+        // Security: Block suspicious disguised multi-extensions (e.g. file.php.pdf, script.exe.png)
+        if (preg_match('/\.(php|phtml|phar|exe|bat|cmd|sh|vbs|js|jar|py|pl|url|lnk)\.(pdf|jpg|jpeg|png|webp)$/i', $origName)) {
+            return response()->json(['message' => 'Disguised executable file naming detected. Upload rejected for security reasons.'], 422);
+        }
 
         $allowedMimes = [
             'application/pdf',
@@ -66,23 +72,39 @@ class PpmpAttachmentController extends Controller
             return response()->json(['message' => 'Only PDF documents or image files (JPG, PNG, WebP) are allowed.'], 422);
         }
 
-        // Verify PDF Magic Bytes if PDF
+        // Verify PDF / Image Magic Bytes to prevent MIME-spoofing and ransomware injection
         if ($mime === 'application/pdf') {
             $handle = fopen($uploadedFile->getRealPath(), 'rb');
             $header = fread($handle, 5);
             fclose($handle);
             if ($header !== '%PDF-') {
-                return response()->json(['message' => 'Invalid file content. Must be a valid PDF document.'], 422);
+                return response()->json(['message' => 'Invalid file content. Must be a valid PDF document (%PDF- signature).'], 422);
             }
             $fileExt = 'pdf';
         } else {
-            $fileExt = in_array($extension, ['jpg', 'jpeg', 'png', 'webp']) ? $extension : 'png';
+            $handle = fopen($uploadedFile->getRealPath(), 'rb');
+            $imgHeader = fread($handle, 12);
+            fclose($handle);
+            $isValidImg = false;
+            if (str_starts_with($imgHeader, "\xFF\xD8\xFF")) {
+                $isValidImg = true;
+                $fileExt = 'jpg';
+            } elseif (str_starts_with($imgHeader, "\x89PNG\x0D\x0A\x1A\x0A")) {
+                $isValidImg = true;
+                $fileExt = 'png';
+            } elseif (str_starts_with($imgHeader, "RIFF") && substr($imgHeader, 8, 4) === "WEBP") {
+                $isValidImg = true;
+                $fileExt = 'webp';
+            }
+            if (!$isValidImg) {
+                return response()->json(['message' => 'Security Error: File content does not match genuine image binary signature.'], 422);
+            }
         }
 
         // Generate safe internal filename
         $internalFilename = (string) Str::uuid() . '.' . $fileExt;
         $directory = 'ppmp/' . $ppmp->id;
-        
+
         // Store in private disk (storage/app/private/)
         $path = $uploadedFile->storeAs($directory, $internalFilename, 'local');
 
@@ -121,6 +143,105 @@ class PpmpAttachmentController extends Controller
     }
 
     /**
+     * Store external cloud document link (Only for Infrastructure Projects)
+     * e.g. Large CAD, POW, Detailed Engineering Design files on Google Drive, OneDrive, Dropbox
+     */
+    public function storeLink(Request $request, string $uuid): JsonResponse
+    {
+        $user = $request->user();
+        $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
+
+        $isCreator = $ppmp->created_by === $user->id;
+        $isBeforeFormalReview = in_array($ppmp->status, [
+            'DRAFT',
+            'HEAD_PENDING',
+            'HEAD_APPROVED',
+            'HEAD_RETURNED',
+            'BUDGET_OFFICER_RETURNED',
+            'PACCO_RETURNED',
+            'OPPMO_RETURNED',
+            'TWG_RETURNED',
+        ]);
+
+        $canUpload = ($isCreator && $isBeforeFormalReview) || $user->isAdmin();
+        if (!$canUpload) {
+            return response()->json([
+                'message' => 'Only the end-user (creator) can attach documents or links to this PPMP.'
+            ], 403);
+        }
+
+        // Verify that this is an Infrastructure project
+        $isInfra = Str::contains(strtolower($ppmp->project_type ?? ''), 'infra') ||
+            $ppmp->items()->whereRaw('LOWER(project_type) LIKE ?', ['%infra%'])->exists();
+
+        if (!$isInfra) {
+            return response()->json([
+                'message' => 'External cloud storage links are restricted to Infrastructure Projects only.'
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'url' => 'required|string|max:2048',
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string|max:1000',
+        ]);
+
+        $rawUrl = trim($validated['url']);
+
+        // Protocol Security Check: Strictly allow only secure https
+        if (!preg_match('/^https:\/\//i', $rawUrl)) {
+            return response()->json([
+                'message' => 'Security Error: Only secure SSL/TLS encrypted web URLs (https://) are accepted.'
+            ], 422);
+        }
+
+        // Parse and validate URL structure
+        $parsed = parse_url($rawUrl);
+        if (!$parsed || empty($parsed['host'])) {
+            return response()->json([
+                'message' => 'Invalid URL structure.'
+            ], 422);
+        }
+
+        $host = strtolower($parsed['host']);
+
+        // Disallow dangerous hosts, loopback, private IPs (SSRF prevention)
+        if (
+            in_array($host, ['localhost', '127.0.0.1', '::1'], true) ||
+            preg_match('/^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.|169\.254\.)/', $host)
+        ) {
+            return response()->json([
+                'message' => 'Security Error: Links to local or private internal networks are strictly prohibited.'
+            ], 422);
+        }
+
+        $attachment = PpmpAttachment::create([
+            'uuid' => (string) Str::uuid(),
+            'ppmp_id' => $ppmp->id,
+            'uploaded_by' => $user->id,
+            'original_filename' => $validated['title'],
+            'stored_filename' => 'external_link',
+            'storage_path' => $rawUrl,
+            'external_url' => $rawUrl,
+            'link_description' => $validated['description'] ?? null,
+            'mime_type' => 'application/x-external-link',
+            'attachment_type' => 'INFRA_OTHER_DOC',
+            'file_size' => 0,
+        ]);
+
+        AuditLog::log('ATTACHMENT_LINK_ADDED', 'ppmp_attachments', $attachment->id, null, [
+            'title' => $attachment->original_filename,
+            'url' => $attachment->external_url,
+            'type' => $attachment->attachment_type,
+        ], $user->id);
+
+        return response()->json([
+            'message' => 'Infrastructure cloud document link attached successfully.',
+            'attachment' => $attachment->load('uploader'),
+        ], 201);
+    }
+
+    /**
      * Update an attachment's type (e.g. MARKET_SCOPING, SUPPORTING_DOC)
      */
     public function updateType(Request $request, string $uuid, string $attachmentUuid): JsonResponse
@@ -141,7 +262,7 @@ class PpmpAttachmentController extends Controller
         }
 
         $validated = $request->validate([
-            'attachment_type' => 'required|string|in:MARKET_SCOPING,SUPPORTING_DOC,APP_DOCUMENT,ATTACHMENT_LIST_DOC,REQUEST_LETTER',
+            'attachment_type' => 'required|string|in:MARKET_SCOPING,SUPPORTING_DOC,APP_DOCUMENT,ATTACHMENT_LIST_DOC,REQUEST_LETTER,INFRA_OTHER_DOC',
         ]);
 
         $attachment->update([
@@ -181,11 +302,19 @@ class PpmpAttachmentController extends Controller
         $attachment = PpmpAttachment::whereIn('ppmp_id', $ancestorIds)
             ->where(function ($q) use ($resolvedUuid, $attachmentUuid) {
                 $q->where('uuid', $resolvedUuid)
-                  ->orWhere('uuid', $attachmentUuid);
+                    ->orWhere('uuid', $attachmentUuid);
             })
             ->firstOrFail();
 
         $this->authorizeAttachmentAccess($user, $ppmp, $attachment);
+
+        if ($attachment->external_url || $attachment->mime_type === 'application/x-external-link') {
+            return response()->json([
+                'is_external_link' => true,
+                'external_url' => $attachment->external_url ?: $attachment->storage_path,
+                'title' => $attachment->original_filename,
+            ]);
+        }
 
         if (!Storage::disk('local')->exists($attachment->storage_path)) {
             return response()->json(['message' => 'Attachment file not found on disk.'], 404);
@@ -232,11 +361,19 @@ class PpmpAttachmentController extends Controller
         $attachment = PpmpAttachment::whereIn('ppmp_id', $ancestorIds)
             ->where(function ($q) use ($resolvedUuid, $attachmentUuid) {
                 $q->where('uuid', $resolvedUuid)
-                  ->orWhere('uuid', $attachmentUuid);
+                    ->orWhere('uuid', $attachmentUuid);
             })
             ->firstOrFail();
 
         $this->authorizeAttachmentAccess($user, $ppmp, $attachment);
+
+        if ($attachment->external_url || $attachment->mime_type === 'application/x-external-link') {
+            return response()->json([
+                'is_external_link' => true,
+                'external_url' => $attachment->external_url ?: $attachment->storage_path,
+                'title' => $attachment->original_filename,
+            ]);
+        }
 
         if (!Storage::disk('local')->exists($attachment->storage_path)) {
             return response()->json(['message' => 'Attachment file not found on disk.'], 404);
@@ -264,7 +401,7 @@ class PpmpAttachmentController extends Controller
         $attachment = PpmpAttachment::where('ppmp_id', $ppmp->id)
             ->where(function ($q) use ($resolvedUuid, $attachmentUuid) {
                 $q->where('uuid', $resolvedUuid)
-                  ->orWhere('uuid', $attachmentUuid);
+                    ->orWhere('uuid', $attachmentUuid);
             })
             ->firstOrFail();
 
@@ -286,8 +423,10 @@ class PpmpAttachmentController extends Controller
             return response()->json(['message' => 'You cannot remove attachments from this PPMP in its current status.'], 403);
         }
 
-        if (Storage::disk('local')->exists($attachment->storage_path)) {
-            Storage::disk('local')->delete($attachment->storage_path);
+        if (!$attachment->external_url && $attachment->mime_type !== 'application/x-external-link') {
+            if (Storage::disk('local')->exists($attachment->storage_path)) {
+                Storage::disk('local')->delete($attachment->storage_path);
+            }
         }
 
         $filename = $attachment->original_filename;
