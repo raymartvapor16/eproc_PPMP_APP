@@ -120,7 +120,6 @@ class InfrastructureAttachmentLinkTest extends TestCase
     {
         $ppmp = $this->createTestPpmp('Infrastructure Projects');
 
-        // 1. Plain HTTP is rejected
         $httpResponse = $this->actingAs($this->creator)
             ->postJson("/api/ppmps/{$ppmp->uuid}/attachments/link", [
                 'title' => 'Insecure link',
@@ -128,7 +127,6 @@ class InfrastructureAttachmentLinkTest extends TestCase
             ]);
         $httpResponse->assertStatus(422);
 
-        // 2. Localhost SSRF is rejected
         $localResponse = $this->actingAs($this->creator)
             ->postJson("/api/ppmps/{$ppmp->uuid}/attachments/link", [
                 'title' => 'Localhost exploit',
@@ -136,7 +134,6 @@ class InfrastructureAttachmentLinkTest extends TestCase
             ]);
         $localResponse->assertStatus(422);
 
-        // 3. Private 192.168.x.x SSRF is rejected
         $privateIpResponse = $this->actingAs($this->creator)
             ->postJson("/api/ppmps/{$ppmp->uuid}/attachments/link", [
                 'title' => 'Private IP exploit',

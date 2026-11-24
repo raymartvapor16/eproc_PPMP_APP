@@ -22,9 +22,7 @@ use Illuminate\Support\Str;
 
 class PurchaseRequestController extends Controller
 {
-    /**
-     * Authorize user access to PIMS or PPMP-related purchase request operations
-     */
+
     protected function authorizePims(Request $request, ?PurchaseRequest $pr = null): void
     {
         $user = $request->user();
@@ -32,13 +30,10 @@ class PurchaseRequestController extends Controller
             abort(response()->json(['message' => 'Unauthenticated.'], 401));
         }
 
-        // 1. Direct access to PIMS (or administrator)
         if ($user->canAccessSystem('/pims')) {
             return;
         }
 
-        // 2. Allow users authorized for PPMP & APP System to query or manage purchase requests linked to a PPMP
-        // (e.g. from PPMP Detail view, reminder cards, or PR generation from PPMP)
         if ($user->canAccessSystem('/eprocrementppmpapp')) {
             if (
                 $request->filled('ppmp_id') ||
@@ -53,9 +48,6 @@ class PurchaseRequestController extends Controller
         abort(response()->json(['message' => 'Forbidden. Your account is not authorized to access PIMS.'], 403));
     }
 
-    /**
-     * List purchase requests with filters and search
-     */
     public function index(Request $request): JsonResponse
     {
         $this->authorizePims($request);
@@ -72,19 +64,16 @@ class PurchaseRequestController extends Controller
             'routes.toUser',
         ]);
 
-        // Filter by PPMP ID if requested (e.g. from PPMP Detail view or reminder card)
         if ($request->filled('ppmp_id')) {
             $query->where('ppmp_id', $request->ppmp_id);
         }
 
-        // Filter by PPMP UUID if requested
         if ($request->filled('ppmp_uuid')) {
             $query->whereHas('ppmp', function ($q) use ($request) {
                 $q->where('uuid', $request->ppmp_uuid);
             });
         }
 
-        // Restrict end users to their own office's PRs unless admin / oppmo / monitor / twg
         if ($user->isEndUser() || $user->isHead()) {
             if ($user->office_id) {
                 $query->where(function ($q) use ($user, $request) {
@@ -103,32 +92,26 @@ class PurchaseRequestController extends Controller
             }
         }
 
-        // Filter by Status
         if ($request->filled('status') && $request->status !== 'ALL') {
             $query->where('status', $request->status);
         }
 
-        // Filter by Stage
         if ($request->filled('stage') && $request->stage !== 'ALL') {
             $query->where('current_stage', $request->stage);
         }
 
-        // Filter by Source (PPMP or APP)
         if ($request->filled('source') && $request->source !== 'ALL') {
             $query->where('source', $request->source);
         }
 
-        // Filter by Office
         if ($request->filled('office_id') && $request->office_id !== 'ALL') {
             $query->where('office_id', $request->office_id);
         }
 
-        // Filter by Year
         if ($request->filled('year') && $request->year !== 'ALL') {
             $query->whereYear('date_published', $request->year);
         }
 
-        // Search by tracker_id, pr_number, purpose, department, requested_by_name
         if ($request->filled('search')) {
             $search = '%' . trim($request->search) . '%';
             $query->where(function ($q) use ($search) {
@@ -147,9 +130,6 @@ class PurchaseRequestController extends Controller
         ]);
     }
 
-    /**
-     * Get single purchase request with items, routes, and attachments
-     */
     public function show(Request $request, string $idOrUuid): JsonResponse
     {
         $pr = PurchaseRequest::with([
@@ -174,9 +154,6 @@ class PurchaseRequestController extends Controller
         ]);
     }
 
-    /**
-     * Pre-populate data from PPMP, attachment list, and monitoring project for PR Generation
-     */
     public function getPpmpData(Request $request, string $ppmpUuid): JsonResponse
     {
         $this->authorizePims($request);
@@ -190,34 +167,26 @@ class PurchaseRequestController extends Controller
             'monitoringProjects',
         ])->where('uuid', $ppmpUuid)->firstOrFail();
 
-        // Find primary or latest attachment list
         $attachmentList = $ppmp->attachmentLists()->first();
         if (!$attachmentList && !empty($ppmp->attachment_list_data)) {
             $ppmp->syncAttachmentLists(json_decode($ppmp->attachment_list_data, true) ?: []);
             $attachmentList = $ppmp->attachmentLists()->first();
         }
 
-        // Latest monitoring project
         $monitoringProject = $ppmp->monitoringProjects()->latest()->first();
 
-        // Check if a PR already exists for this PPMP
         $existingPr = PurchaseRequest::where('ppmp_id', $ppmp->id)->first();
 
-        // Resolve Department / Office Name
         $department = $ppmp->implementing_unit ?: ($ppmp->office?->name ?: 'Provincial Government Office');
 
-        // Resolve Tracker ID from PPMP
         $trackerId = $ppmp->tracking_number ?: $ppmp->ppmp_number ?: ('PR-' . date('Y') . '-' . Str::upper(Str::random(6)));
 
-        // Resolve Purpose / Title
         $purpose = $attachmentList?->project_title ?: ($ppmp->title ?: 'Procurement Requirement');
 
-        // Resolve Charges
         $fiscalYearStr = $ppmp->fiscal_year ? "CY {$ppmp->fiscal_year} " : '';
         $rawFund = $ppmp->source_of_fund ?: 'GENERAL FUND';
         $charges = $attachmentList?->charges ?: "{$fiscalYearStr}{$rawFund} Account Code: " . ($ppmp->account_code ?: 'N/A');
 
-        // Items breakdown
         $items = [];
         if ($attachmentList && !empty($attachmentList->rows) && is_array($attachmentList->rows)) {
             foreach ($attachmentList->rows as $index => $row) {
@@ -246,10 +215,8 @@ class PurchaseRequestController extends Controller
             }
         }
 
-        // Green procurement specifications
         $greenSpecs = $attachmentList?->other_terms ?: ($ppmp->warranty_and_other_terms ?: '');
 
-        // Resolve is_infrastructure flag from items, category, and metadata
         $isInfra = false;
         if ($monitoringProject?->category === 'INFRA') {
             $isInfra = true;
@@ -268,7 +235,6 @@ class PurchaseRequestController extends Controller
 
         $category = $isInfra ? 'INFRA' : ($monitoringProject?->category ?: 'GOODS_CONSULTING');
 
-        // Resolve signatories
         $signatories = DB::table('ppmp_signatories')->where('is_active', true)->get();
         $treasurer = $signatories->firstWhere('signatory_type', 'cash_availability') ?: $signatories->firstWhere('position', 'Provincial Treasurer');
         $governor = $signatories->firstWhere('signatory_type', 'approved_by') ?: $signatories->firstWhere('position', 'Provincial Governor');
@@ -306,18 +272,13 @@ class PurchaseRequestController extends Controller
         ]);
     }
 
-    /**
-     * Store a newly generated Purchase Request (PR)
-     */
     public function store(Request $request): JsonResponse
     {
         $this->authorizePims($request);
         $user = $request->user();
 
-        // Support JSON string parsing if submitted via FormData
         $input = $request->all();
 
-        // Convert empty strings to null for nullable dates/ids/strings
         foreach (['monitoring_project_id', 'pr_number', 'pr_certification_date', 'section', 'charges', 'green_specifications', 'direct_end_user_signed_at', 'pr_date'] as $field) {
             if (isset($input[$field]) && trim((string)$input[$field]) === '') {
                 $input[$field] = null;
@@ -337,7 +298,6 @@ class PurchaseRequestController extends Controller
             }
         }
 
-        // Sanitize items: cast item_no to string, is_lot_header to boolean, default missing descriptions
         if (is_array($input['items'] ?? null)) {
             foreach ($input['items'] as $idx => &$item) {
                 if (isset($item['item_no'])) {
@@ -393,7 +353,7 @@ class PurchaseRequestController extends Controller
             'items.*.total_cost' => 'nullable|numeric|min:0',
             'items.*.is_lot_header' => 'nullable|boolean',
             'pdf_files' => 'nullable|array',
-            'pdf_files.*' => 'file|mimes:pdf|max:10240', // PDF only, max 10MB per file
+            'pdf_files.*' => 'file|mimes:pdf|max:10240',
             'links' => 'nullable|array',
             'links.*.url' => 'required|string|url',
             'links.*.title' => 'nullable|string|max:255',
@@ -408,7 +368,6 @@ class PurchaseRequestController extends Controller
 
         $validated = $validator->validated();
 
-        // Strict URL security check: Links must start with https://
         if (!empty($validated['links'])) {
             foreach ($validated['links'] as $link) {
                 $url = trim($link['url'] ?? '');
@@ -420,7 +379,6 @@ class PurchaseRequestController extends Controller
             }
         }
 
-        // Strict PDF Binary Magic Bytes Verification (%PDF-)
         $uploadedPdfFiles = $request->file('pdf_files') ?: [];
         if (!is_array($uploadedPdfFiles) && $uploadedPdfFiles instanceof \Illuminate\Http\UploadedFile) {
             $uploadedPdfFiles = [$uploadedPdfFiles];
@@ -445,7 +403,6 @@ class PurchaseRequestController extends Controller
 
         $ppmp = Ppmp::where('uuid', $validated['ppmp_uuid'])->firstOrFail();
 
-        // Check if duplicate PR already exists for this PPMP
         $existingPr = PurchaseRequest::where('ppmp_id', $ppmp->id)->first();
         if ($existingPr) {
             return response()->json([
@@ -497,7 +454,6 @@ class PurchaseRequestController extends Controller
                 'created_by' => $user->id,
             ]);
 
-            // Save normalized items
             foreach ($validated['items'] as $idx => $itemData) {
                 $pr->items()->create([
                     'item_no' => $itemData['item_no'],
@@ -511,7 +467,6 @@ class PurchaseRequestController extends Controller
                 ]);
             }
 
-            // Save uploaded multiple PDF files securely
             foreach ($uploadedPdfFiles as $file) {
                 $safeName = (string) Str::uuid() . '.pdf';
                 $dir = 'purchase_requests/' . $pr->uuid;
@@ -528,7 +483,6 @@ class PurchaseRequestController extends Controller
                 ]);
             }
 
-            // Save secure external links
             if (!empty($validated['links'])) {
                 foreach ($validated['links'] as $link) {
                     $url = trim($link['url'] ?? '');
@@ -542,7 +496,6 @@ class PurchaseRequestController extends Controller
                 }
             }
 
-            // Create initial route (Submission into PR Division Review)
             $pr->routes()->create([
                 'from_user_id' => $user->id,
                 'from_stage' => 'end_user',
@@ -553,7 +506,6 @@ class PurchaseRequestController extends Controller
                 'acted_at' => now(),
             ]);
 
-            // Automatic Monitoring System Sync: Automatically fetch data & register/update monitoring project!
             $monitoringProject = null;
             if (!empty($validated['monitoring_project_id'])) {
                 $monitoringProject = MonitoringProject::find($validated['monitoring_project_id']);
@@ -575,7 +527,7 @@ class PurchaseRequestController extends Controller
                     'procurement_mode' => $pr->procurement_mode ?: 'SVP',
                     'abc_amount' => $pr->total_cost,
                     'pr_number' => $trackerNo,
-                    'pims_pr_id' => $trackerNo, // PR ID is the tracker no!
+                    'pims_pr_id' => $trackerNo,
                     'office_id' => $pr->office_id ?: $ppmp->office_id,
                     'implementing_unit' => $pr->department ?: ($ppmp->implementing_unit ?: $ppmp->office?->name),
                     'end_user_name' => $pr->direct_end_user_name ?: ($ppmp->creator?->name ?: $user->name),
@@ -590,7 +542,7 @@ class PurchaseRequestController extends Controller
             } else {
                 $monitoringProject->update([
                     'purchase_request_id' => $pr->id,
-                    'pims_pr_id' => $trackerNo, // PR ID is the tracker no!
+                    'pims_pr_id' => $trackerNo,
                     'pr_number' => $trackerNo,
                     'project_title' => $pr->purpose,
                     'abc_amount' => $pr->total_cost,
@@ -601,7 +553,6 @@ class PurchaseRequestController extends Controller
 
             $pr->update(['monitoring_project_id' => $monitoringProject->id]);
 
-            // Mark PPMP as published to PIMS
             $ppmp->update([
                 'is_published_to_pims' => true,
                 'pims_published_at' => now(),
@@ -631,9 +582,6 @@ class PurchaseRequestController extends Controller
         ], 201);
     }
 
-    /**
-     * Download or view a PR PDF attachment securely
-     */
     public function downloadAttachment(Request $request, string $prUuid, string $attachmentUuid)
     {
         $pr = PurchaseRequest::where('uuid', $prUuid)->orWhere('id', $prUuid)->firstOrFail();
@@ -654,9 +602,6 @@ class PurchaseRequestController extends Controller
         ]);
     }
 
-    /**
-     * Update an editable Purchase Request
-     */
     public function update(Request $request, string $idOrUuid): JsonResponse
     {
         $this->authorizePims($request);
@@ -664,7 +609,6 @@ class PurchaseRequestController extends Controller
 
         $pr = PurchaseRequest::where('id', $idOrUuid)->orWhere('uuid', $idOrUuid)->firstOrFail();
 
-        // Only creator when returned, or admin can update
         if (!$user->isAdmin() && $pr->created_by !== $user->id && $pr->status !== 'RETURNED') {
             return response()->json(['message' => 'This Purchase Request is currently locked in review and cannot be edited.'], 403);
         }
@@ -716,10 +660,6 @@ class PurchaseRequestController extends Controller
         ]);
     }
 
-    /**
-     * Execute reviewer workflow transition
-     * Flow: PR division -> BAC TWG -> PR division (Control) -> PR approved
-     */
     public function review(Request $request, string $idOrUuid): JsonResponse
     {
         $this->authorizePims($request);
@@ -731,7 +671,7 @@ class PurchaseRequestController extends Controller
             'action' => 'required|in:approve,return',
             'remarks' => 'nullable|string|max:2000',
             'return_to_stage' => 'nullable|string|in:end_user,pr_division,bac_twg',
-            'assigned_pr_number' => 'nullable|string|max:100', // Option to assign/update official P.R No. during control
+            'assigned_pr_number' => 'nullable|string|max:100',
         ]);
 
         $action = $validated['action'];
@@ -742,7 +682,6 @@ class PurchaseRequestController extends Controller
             return response()->json(['message' => 'Remarks/comments are strictly required when returning a Purchase Request.'], 422);
         }
 
-        // Determine next stage & status based on review sequence
         $nextStage = $currentStage;
         $nextStatus = $pr->status;
 
@@ -767,7 +706,7 @@ class PurchaseRequestController extends Controller
                     return response()->json(['message' => 'This Purchase Request is already completed.'], 400);
             }
         } else {
-            // Return action
+
             $nextStage = $validated['return_to_stage'] ?? 'end_user';
             $nextStatus = 'RETURNED';
             $defaultRemark = "Returned from " . strtoupper(str_replace('_', ' ', $currentStage)) . " with feedback: {$remarks}";
@@ -790,7 +729,6 @@ class PurchaseRequestController extends Controller
 
             $pr->update($updateData);
 
-            // Record routing history
             $pr->routes()->create([
                 'from_user_id' => $user->id,
                 'from_stage' => $currentStage,
@@ -801,7 +739,6 @@ class PurchaseRequestController extends Controller
                 'acted_at' => now(),
             ]);
 
-            // If PR is approved, also update monitoring project step if present
             if ($nextStatus === 'PR_APPROVED' && $pr->monitoring_project_id) {
                 $mp = MonitoringProject::find($pr->monitoring_project_id);
                 if ($mp) {
@@ -836,4 +773,3 @@ class PurchaseRequestController extends Controller
         ]);
     }
 }
-

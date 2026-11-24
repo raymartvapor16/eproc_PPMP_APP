@@ -28,7 +28,6 @@ class PpmpWorkflowTest extends TestCase
     {
         parent::setUp();
 
-        // Prepare test environment
         $this->office = Office::firstOrCreate(
             ['code' => 'TEST-OFFICE'],
             ['name' => 'Testing Office', 'head_user_id' => null]
@@ -64,13 +63,9 @@ class PpmpWorkflowTest extends TestCase
         );
     }
 
-    /**
-     * Test full normal happy path workflow
-     * DRAFT -> (Pre-submission checks: APP, Attachment List, Market Scoping PDF) -> BUDGET -> OPPMO -> TWG -> HEAD -> READY_TO_PRINT
-     */
     public function test_complete_ppmp_workflow_and_signatures(): void
     {
-        // 1. End User creates PPMP Draft
+
         $createRes = $this->actingAs($this->endUser)->postJson('/api/ppmps', [
             'title' => 'Automated Workflow Testing PPMP',
             'fiscal_year' => '2026',
@@ -92,18 +87,15 @@ class PpmpWorkflowTest extends TestCase
         $this->assertEquals('DRAFT', $createRes->json('ppmp.status'));
         $this->assertEquals('TEST-OFFICEGOODS-2026-000001', $createRes->json('ppmp.tracking_number'));
 
-        // Verify End user e-signature exists
         $ppmp = Ppmp::where('uuid', $ppmpUuid)->first();
         $this->assertTrue($ppmp->signatures()->where('role', 'end_user')->exists());
 
-        // 2. Attempting to submit for review before requirements must fail with 422
         $prematureRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmpUuid}/submit-for-review");
         $prematureRes->assertStatus(422)
             ->assertJsonPath('checks.is_ready', false)
             ->assertJsonPath('checks.attachment_list_generated', false)
             ->assertJsonPath('checks.market_scoping_attached', false);
 
-        // 3. End User uploads Market Scoping PDF
         Storage::fake('local');
         $pdfContent = "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\nxref\n0 2\ntrailer<</Size 2/Root 1 0 R>>\nstartxref\n50\n%%EOF";
         $fakePdf = UploadedFile::fake()->createWithContent('market_scoping_assessment.pdf', $pdfContent);
@@ -115,11 +107,9 @@ class PpmpWorkflowTest extends TestCase
         $uploadRes->assertStatus(201);
         $attachmentUuid = $uploadRes->json('attachment.uuid');
 
-        // Verify attachment can be downloaded securely
         $downloadRes = $this->actingAs($this->endUser)->get("/api/ppmps/{$ppmpUuid}/attachments/{$attachmentUuid}/download");
         $downloadRes->assertStatus(200);
 
-        // 4. End user attempting to save APP Data is rejected with 403 (only OPPMO after TWG can generate APP)
         $unauthAppRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmpUuid}/app-data", [
             'prepared_by_name' => 'NORJANNA M. CAMAGUIN, MPA',
             'rows' => [
@@ -133,7 +123,6 @@ class PpmpWorkflowTest extends TestCase
         ]);
         $unauthAppRes->assertStatus(403);
 
-        // End User generates PPMP List of Attachment Data
         $attListSaveRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmpUuid}/attachment-list", [
             'prepared_by_name' => 'Test End User',
             'rows' => [
@@ -149,38 +138,30 @@ class PpmpWorkflowTest extends TestCase
         ]);
         $attListSaveRes->assertStatus(200);
 
-        // 5. Submit for formal review: Routes directly to BAC-TWG (first to review is the TWG)
         $submitReviewRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmpUuid}/submit-for-review");
         $submitReviewRes->assertStatus(200);
         $this->assertEquals('TWG_REVIEW', $submitReviewRes->json('ppmp.status'));
 
-        // 6. TWG receives before approving
         $this->actingAs($this->twgUser)->postJson("/api/ppmps/{$ppmpUuid}/receive")->assertStatus(200);
 
-        // TWG Approves -> routes to BUDGET_OFFICER_REVIEW (General Fund)
         $twgApproveRes = $this->actingAs($this->twgUser)->postJson("/api/ppmps/{$ppmpUuid}/twg/approve");
         $twgApproveRes->assertStatus(200);
         $this->assertEquals('BUDGET_OFFICER_REVIEW', $twgApproveRes->json('ppmp.status'));
         $this->assertTrue($ppmp->fresh()->signatures()->where('role', 'twg')->exists());
 
-        // 7. Budget Officer receives before approving
         $this->actingAs($this->budgetUser)->postJson("/api/ppmps/{$ppmpUuid}/receive")->assertStatus(200);
 
-        // Budget Officer Approves -> routes to OPPMO_REVIEW
         $budgetApproveRes = $this->actingAs($this->budgetUser)->postJson("/api/ppmps/{$ppmpUuid}/budget/approve");
         $budgetApproveRes->assertStatus(200);
         $this->assertEquals('OPPMO_REVIEW', $budgetApproveRes->json('ppmp.status'));
         $this->assertTrue($ppmp->fresh()->signatures()->where('role', 'budget_officer')->exists());
 
-        // 8. OPPMO receives before approving
         $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$ppmpUuid}/receive")->assertStatus(200);
 
-        // Attempting to approve without generating APP must fail with 422
         $prematureOppmoRes = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$ppmpUuid}/oppmo/approve");
         $prematureOppmoRes->assertStatus(422)
             ->assertJsonPath('message', 'Please generate or regenerate the Annual Procurement Plan (APP) before granting final approval.');
 
-        // OPPMO generates/saves APP Data
         $appSaveRes = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$ppmpUuid}/app-data", [
             'prepared_by_name' => 'NORJANNA M. CAMAGUIN, MPA',
             'rows' => [
@@ -194,13 +175,11 @@ class PpmpWorkflowTest extends TestCase
         ]);
         $appSaveRes->assertStatus(200);
 
-        // OPPMO Approves -> marks READY_TO_PRINT
         $oppmoFinalApproveRes = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$ppmpUuid}/oppmo/approve");
         $oppmoFinalApproveRes->assertStatus(200);
         $this->assertEquals('READY_TO_PRINT', $oppmoFinalApproveRes->json('ppmp.status'));
         $this->assertTrue($ppmp->fresh()->signatures()->where('role', 'oppmo')->exists());
 
-        // Verify required approval signatures and route to READY_TO_PRINT exist
         $freshPpmp = $ppmp->fresh(['signatures', 'routes']);
         $this->assertTrue($freshPpmp->signatures()->where('role', 'twg')->exists());
         $this->assertTrue($freshPpmp->signatures()->where('role', 'budget_officer')->exists());
@@ -208,9 +187,6 @@ class PpmpWorkflowTest extends TestCase
         $this->assertTrue($freshPpmp->routes()->where('status', 'READY_TO_PRINT')->exists());
     }
 
-    /**
-     * Test Reviewer UPDATE / REMARKS return loop with mandatory remarks
-     */
     public function test_reviewer_return_requires_remarks_and_allows_correction(): void
     {
         $ppmp = Ppmp::create([
@@ -244,16 +220,13 @@ class PpmpWorkflowTest extends TestCase
             'estimated_budget' => 100000.00,
         ]);
 
-        // Receive document first
         $this->actingAs($this->budgetUser)->postJson("/api/ppmps/{$ppmp->uuid}/receive")->assertStatus(200);
 
-        // Attempt return without remarks (Must fail validation)
         $failRes = $this->actingAs($this->budgetUser)->postJson("/api/ppmps/{$ppmp->uuid}/budget/return", [
             'remarks' => '',
         ]);
         $failRes->assertStatus(422);
 
-        // Submit valid return with remarks and field correction
         $returnRes = $this->actingAs($this->budgetUser)->postJson("/api/ppmps/{$ppmp->uuid}/budget/return", [
             'remarks' => 'Please lower the ABC in Item 1 to 90,000.',
             'field_changes' => [
@@ -269,19 +242,14 @@ class PpmpWorkflowTest extends TestCase
         $returnRes->assertStatus(200);
         $this->assertEquals('BUDGET_OFFICER_RETURNED', $returnRes->json('ppmp.status'));
 
-        // Verify change log and updated total
         $this->assertTrue($ppmp->changeLogs()->where('field_name', 'estimated_budget')->exists());
         $this->assertEquals(90000.00, (float)$ppmp->fresh()->total_budget);
 
-        // End user corrects and resubmits for review
         $resubmitRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmp->uuid}/submit-for-review");
         $resubmitRes->assertStatus(200);
         $this->assertEquals('BUDGET_OFFICER_REVIEW', $resubmitRes->json('ppmp.status'));
     }
 
-    /**
-     * Test unauthorized role access is forbidden
-     */
     public function test_unauthorized_role_access_is_forbidden(): void
     {
         $ppmp = Ppmp::create([
@@ -295,18 +263,13 @@ class PpmpWorkflowTest extends TestCase
             'total_budget' => 50000.00,
         ]);
 
-        // End user tries to approve own PPMP as head -> HTTP 403
         $unauthRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmp->uuid}/head/approve");
         $unauthRes->assertStatus(403);
 
-        // Budget officer tries to approve TWG endpoint -> HTTP 403
         $unauthRes2 = $this->actingAs($this->budgetUser)->postJson("/api/ppmps/{$ppmp->uuid}/twg/approve");
         $unauthRes2->assertStatus(403);
     }
 
-    /**
-     * Test explicit receive endpoint for Head, Reviewers, and End User
-     */
     public function test_explicit_receive_document_endpoint(): void
     {
         $ppmp = Ppmp::create([
@@ -333,17 +296,14 @@ class PpmpWorkflowTest extends TestCase
             'uploaded_by' => $this->endUser->id,
         ]);
 
-        // 1. End user submits for review (Routes directly to BAC-TWG)
         $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmp->uuid}/submit-for-review")->assertStatus(200);
         $this->assertEquals('TWG_REVIEW', $ppmp->fresh()->status);
         $this->assertNull($ppmp->fresh()->twg_received_at);
 
-        // 2. TWG receives document
         $twgReceiveRes = $this->actingAs($this->twgUser)->postJson("/api/ppmps/{$ppmp->uuid}/receive");
         $twgReceiveRes->assertStatus(200);
         $this->assertNotNull($ppmp->fresh()->twg_received_at);
 
-        // TWG returns document with remarks
         $this->actingAs($this->twgUser)->postJson("/api/ppmps/{$ppmp->uuid}/twg/return", [
             'remarks' => 'Please revise item quantity and technical specifications.',
         ])->assertStatus(200);
@@ -351,7 +311,6 @@ class PpmpWorkflowTest extends TestCase
         $this->assertEquals('TWG_RETURNED', $ppmp->fresh()->status);
         $this->assertNull($ppmp->fresh()->enduser_received_at);
 
-        // 3. End user receives returned document
         $endUserReceiveRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmp->uuid}/receive");
         $endUserReceiveRes->assertStatus(200);
         $this->assertNotNull($ppmp->fresh()->enduser_received_at);
@@ -370,8 +329,8 @@ class PpmpWorkflowTest extends TestCase
                     'project_type' => 'Infrastructure',
                     'quantity_size' => '1 lot',
                     'procurement_mode' => 'Public Bidding',
-                    'pre_proc_conference' => false, // explicitly false
-                    'estimated_budget' => 5000000,   // 5 million
+                    'pre_proc_conference' => false,
+                    'estimated_budget' => 5000000,
                 ],
                 [
                     'description' => 'Minor Maintenance Repair',
@@ -379,7 +338,7 @@ class PpmpWorkflowTest extends TestCase
                     'quantity_size' => '1 unit',
                     'procurement_mode' => 'Small Value Procurement',
                     'pre_proc_conference' => false,
-                    'estimated_budget' => 450000,    // Under 5M
+                    'estimated_budget' => 450000,
                 ]
             ],
         ];
@@ -391,10 +350,8 @@ class PpmpWorkflowTest extends TestCase
         $this->assertNotNull($created);
         $items = $created->items()->orderBy('item_no')->get();
 
-        // Item 1 (5,000,000) must have pre_proc_conference = true
         $this->assertTrue((bool) $items[0]->pre_proc_conference);
 
-        // Item 2 (450,000) retains false
         $this->assertFalse((bool) $items[1]->pre_proc_conference);
     }
 
@@ -436,7 +393,7 @@ class PpmpWorkflowTest extends TestCase
 
     public function test_tracker_number_sequence_continues_correctly_when_amendments_or_supplementals_exist(): void
     {
-        // 1. Create baseline PPMP with tracking number sequence 7
+
         $baseline = Ppmp::create([
             'uuid' => (string) Str::uuid(),
             'tracking_number' => 'TEST-OFFICEGOODS-2026-000007',
@@ -453,11 +410,10 @@ class PpmpWorkflowTest extends TestCase
             'is_annual' => true,
         ]);
 
-        // 2. An amendment child was created with the same tracking number (as in approved amendments)
         $amendedChild = Ppmp::create([
             'uuid' => (string) Str::uuid(),
             'parent_id' => $baseline->id,
-            'tracking_number' => 'TEST-OFFICEGOODS-2026-000007', // Reuses baseline tracker number
+            'tracking_number' => 'TEST-OFFICEGOODS-2026-000007',
             'ppmp_number' => '7',
             'title' => 'Project Seven Amended',
             'fiscal_year' => '2026',
@@ -471,7 +427,6 @@ class PpmpWorkflowTest extends TestCase
             'is_annual' => false,
         ]);
 
-        // 3. Now create a new PPMP
         $res = $this->actingAs($this->endUser)->postJson('/api/ppmps', [
             'title' => 'Brand New Project Eight',
             'fiscal_year' => '2026',
@@ -489,7 +444,6 @@ class PpmpWorkflowTest extends TestCase
         $res->assertStatus(201);
         $newPpmp = Ppmp::where('uuid', $res->json('ppmp.uuid'))->firstOrFail();
 
-        // Must be sequence 000008 (NOT skipped to 000009!)
         $this->assertEquals('TEST-OFFICEGOODS-2026-000008', $newPpmp->tracking_number);
     }
 
@@ -515,7 +469,6 @@ class PpmpWorkflowTest extends TestCase
         $ppmp = Ppmp::where('uuid', $res->json('ppmp.uuid'))->firstOrFail();
         $this->assertEquals('Provincial Health Outreach Program', $ppmp->program_name);
 
-        // Update program_name
         $updateRes = $this->actingAs($this->endUser)->putJson("/api/ppmps/{$ppmp->uuid}", [
             'title' => 'Health Equipment Procurement Updated',
             'fiscal_year' => '2026',
@@ -538,7 +491,7 @@ class PpmpWorkflowTest extends TestCase
 
     public function test_ppmp_milestones_normalized_relationship_and_schema_integrity(): void
     {
-        // 1. Verify ppmps table does not have denormalized milestone columns
+
         $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'head_received_at'));
         $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'budget_received_at'));
         $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'admin_received_at'));
@@ -557,7 +510,6 @@ class PpmpWorkflowTest extends TestCase
         $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'requested_amendment_scope'));
         $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('ppmps', 'requested_amendment_reason'));
 
-        // 2. Verify ppmp_milestones & ppmp_amendments tables exist with foreign key relationships
         $this->assertTrue(\Illuminate\Support\Facades\Schema::hasTable('ppmp_milestones'));
         $this->assertTrue(\Illuminate\Support\Facades\Schema::hasColumn('ppmp_milestones', 'ppmp_id'));
         $this->assertTrue(\Illuminate\Support\Facades\Schema::hasColumn('ppmp_milestones', 'head_received_at'));
@@ -570,7 +522,6 @@ class PpmpWorkflowTest extends TestCase
         $this->assertTrue(\Illuminate\Support\Facades\Schema::hasColumn('ppmp_amendments', 'amendment_type'));
         $this->assertTrue(\Illuminate\Support\Facades\Schema::hasColumn('ppmp_amendments', 'amendment_scope'));
 
-        // 3. Create PPMP via API and check normalized milestone and amendment record creation
         $res = $this->actingAs($this->endUser)->postJson('/api/ppmps', [
             'title' => 'Normalized Milestones Test PPMP',
             'fiscal_year' => '2026',
@@ -588,7 +539,6 @@ class PpmpWorkflowTest extends TestCase
         $res->assertStatus(201);
         $ppmp = Ppmp::where('uuid', $res->json('ppmp.uuid'))->firstOrFail();
 
-        // 4. Verify milestones & amendment relationships are populated
         $this->assertInstanceOf(\App\Models\PpmpMilestone::class, $ppmp->milestones);
         $this->assertInstanceOf(\App\Models\PpmpAmendment::class, $ppmp->amendment);
         $this->assertEquals($ppmp->id, $ppmp->milestones->ppmp_id);
@@ -596,7 +546,6 @@ class PpmpWorkflowTest extends TestCase
         $this->assertNotNull($ppmp->prepared_at);
         $this->assertNotNull($ppmp->milestones->prepared_at);
 
-        // 5. Route to HEAD_PENDING and receive
         $ppmp->update([
             'status' => 'HEAD_PENDING',
             'head_submitted_at' => now(),
@@ -611,12 +560,10 @@ class PpmpWorkflowTest extends TestCase
         $receiveRes = $this->actingAs($this->headUser)->postJson("/api/ppmps/{$ppmp->uuid}/receive");
         $receiveRes->assertStatus(200);
 
-        // Verify milestone was updated in ppmp_milestones table
         $freshPpmp = $ppmp->fresh();
         $this->assertNotNull($freshPpmp->milestones->head_received_at);
         $this->assertNotNull($freshPpmp->head_received_at);
 
-        // 6. Verify JSON response includes milestones and amendment relationships and delegated fields
         $showRes = $this->actingAs($this->endUser)->getJson("/api/ppmps/{$ppmp->uuid}");
         $showRes->assertStatus(200)
             ->assertJsonStructure([
@@ -640,4 +587,3 @@ class PpmpWorkflowTest extends TestCase
             ]);
     }
 }
-

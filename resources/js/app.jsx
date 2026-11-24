@@ -4,9 +4,11 @@ import { authService, dashboardService, ppmpService, portalSystemService } from 
 import { MainLayout } from './components/Layout/MainLayout';
 import { LoginPage } from './pages/Auth/LoginPage';
 import { Dashboard } from './pages/Dashboard/Dashboard';
+import { EndUserVisualAnalytics } from './components/Dashboard/EndUserVisualAnalytics';
 import { PPMPListPage } from './pages/PPMP/PPMPListPage';
 import { PPMPDetailPage } from './pages/PPMP/PPMPDetailPage';
 import { PPMPFormPage } from './pages/PPMP/PPMPFormPage';
+import { PnpkiRegistryPage } from './pages/PNPKI/PnpkiRegistryPage';
 import { PrivacyPolicyPage } from './pages/Privacy/PrivacyPolicyPage';
 import { MonitoringDashboard } from './pages/Monitoring/MonitoringDashboard';
 import { SupplierEvaluationDashboard } from './pages/SupplierEvaluation/SupplierEvaluationDashboard';
@@ -26,17 +28,14 @@ import {
     resolveCanonicalSystemPath,
 } from './components/UI/UnauthorizedSystemAccessView';
 import { AfkInactivityGuard } from './components/UI/AfkInactivityGuard';
+import { PnpkiRenewalReminderModal } from './components/UI/PnpkiRenewalReminderModal';
 
-// Initialize modern modal interceptor for window.alert
 initGlobalAlertModal();
 
 const ROUTE_STORAGE_KEY = 'eproc_active_route';
 const LAST_ACTIVE_SYSTEM_KEY = 'eproc_last_active_system';
 const DASHBOARD_PATH = '/eprocrementppmpapp';
 
-/**
- * Determine initial last active system from sessionStorage or initial pathname
- */
 const getInitialLastActiveSystem = () => {
     try {
         const stored = sessionStorage.getItem(LAST_ACTIVE_SYSTEM_KEY);
@@ -52,9 +51,6 @@ const getInitialLastActiveSystem = () => {
     return 'dashboard';
 };
 
-/**
- * Parse current browser URL pathname or fallback to sessionStorage route
- */
 const parseRouteFromLocation = () => {
     const path = window.location.pathname.replace(/\/+$/, '') || '/';
 
@@ -88,6 +84,14 @@ const parseRouteFromLocation = () => {
         return { view: 'ppmps', uuid: null };
     }
 
+    if (path === '/pnpki') {
+        return { view: 'pnpki', uuid: null };
+    }
+
+    if (path === '/analytics') {
+        return { view: 'analytics', uuid: null };
+    }
+
     if (path === '/eprocrementppmpapp' || path === '/eprocurementppmpapp' || path === '/dashboard') {
         return { view: 'dashboard', uuid: null };
     }
@@ -100,7 +104,6 @@ const parseRouteFromLocation = () => {
         return { view: 'landing', uuid: null };
     }
 
-    // Defensive fallback: check sessionStorage
     try {
         const saved = sessionStorage.getItem(ROUTE_STORAGE_KEY);
         if (saved) {
@@ -128,9 +131,6 @@ const parseRouteFromLocation = () => {
     return { view: 'landing', uuid: null };
 };
 
-/**
- * Synchronize browser URL and sessionStorage with current navigation state
- */
 const syncUrlAndState = (view, uuid = null, replace = false) => {
     let targetPath = '/';
     if (view === 'landing') {
@@ -139,6 +139,10 @@ const syncUrlAndState = (view, uuid = null, replace = false) => {
         targetPath = DASHBOARD_PATH;
     } else if (view === 'ppmps') {
         targetPath = '/ppmps';
+    } else if (view === 'pnpki') {
+        targetPath = '/pnpki';
+    } else if (view === 'analytics') {
+        targetPath = '/analytics';
     } else if (view === 'detail' && uuid) {
         targetPath = `/ppmps/${uuid}`;
     } else if (view === 'edit' && uuid) {
@@ -191,7 +195,7 @@ export function App() {
             }
         }
         return route;
-    }); // dashboard, ppmps, create, detail, edit, privacy, monitoring, supplierevaluation
+    });
     const [selectedPpmpUuid, setSelectedPpmpUuid] = useState(() => initialRoute.uuid || null);
     const [currentPpmp, setCurrentPpmp] = useState(null);
     const [dashboardData, setDashboardData] = useState(null);
@@ -222,9 +226,8 @@ export function App() {
         };
     }, []);
 
-    // Check existing session if needed
     const checkAuth = async () => {
-        // If server already told us user is not logged in, skip calling /api/me
+
         if (window.App && !window.App.user) {
             setUser(null);
             setLoading(false);
@@ -258,7 +261,7 @@ export function App() {
                 syncUrlAndState('supplierevaluation', null, true);
             }
         } catch (e) {
-            // Only clear user on actual 401 Unauthorized
+
             if (e.response?.status === 401) {
                 setUser(null);
             }
@@ -352,10 +355,9 @@ export function App() {
             view = 'ppmps';
         }
 
-        // Standard views: 'dashboard', 'ppmps'
         syncUrlAndState(view, null, !pushHistory);
         setCurrentView(view);
-        if (view === 'dashboard') {
+        if (view === 'dashboard' || view === 'analytics') {
             loadDashboard();
         }
     };
@@ -399,7 +401,6 @@ export function App() {
             return;
         }
 
-        // Fallbacks based on access privileges
         if (hasPpmp) {
             handleNavigate('dashboard', null, false);
         } else if (hasSupplierEval) {
@@ -413,7 +414,6 @@ export function App() {
         }
     };
 
-    // Track last active system to ensure returning from portal home routes to user's dashboard and system URL
     useEffect(() => {
         if (['dashboard', 'ppmps', 'create', 'edit', 'detail'].includes(currentView)) {
             setLastActiveSystem('dashboard');
@@ -438,7 +438,6 @@ export function App() {
         userRef.current = user;
     }, [user]);
 
-    // Restore PPMP details or list state on initial load / refresh
     useEffect(() => {
         if (!user) return;
         if ((currentView === 'detail' || currentView === 'edit') && selectedPpmpUuid) {
@@ -606,7 +605,6 @@ export function App() {
             setSelectedPpmpUuid(null);
             if (window.App) window.App.user = null;
 
-            // Retain the respective system URL so the user remains on their current system after logout
             if (activeSystem === 'supplierevaluation') {
                 syncUrlAndState('supplierevaluation', null, true);
                 setCurrentView('supplierevaluation');
@@ -620,7 +618,7 @@ export function App() {
                 syncUrlAndState('landing', null, true);
                 setCurrentView('landing');
             } else {
-                // E-Procurement PPMP & APP System views (dashboard, ppmps, detail, create, edit)
+
                 syncUrlAndState('dashboard', null, true);
                 setCurrentView('dashboard');
             }
@@ -745,8 +743,6 @@ export function App() {
         );
     }
 
-    // System Inactive / Under Maintenance Gate:
-    // If the target system is marked as "inactive" in Portal Systems Catalog, block access and display maintenance view.
     if (
         ['dashboard', 'ppmps', 'create', 'edit', 'detail', 'monitoring', 'pims', 'supplierevaluation'].includes(currentView) &&
         !isPortalSystemActive(portalSystems, currentView) &&
@@ -847,7 +843,6 @@ export function App() {
         );
     }
 
-    // Supplier Evaluation System Access Check
     if (currentView === 'supplierevaluation') {
         if (!canUserAccessSystem(user, '/supplierevaluation')) {
             return (
@@ -872,7 +867,6 @@ export function App() {
         );
     }
 
-    // Monitoring System Access Check
     if (currentView === 'monitoring') {
         if (!canUserAccessSystem(user, '/monitoringsystem')) {
             return (
@@ -896,7 +890,6 @@ export function App() {
         );
     }
 
-    // PIMS System Access Check (Dedicated standalone system dashboard)
     if (currentView === 'pims') {
         if (!canUserAccessSystem(user, '/pims')) {
             return (
@@ -918,8 +911,7 @@ export function App() {
         );
     }
 
-    // PPMP & APP System Access Check
-    if (['dashboard', 'ppmps', 'create', 'edit', 'detail'].includes(currentView)) {
+    if (['dashboard', 'ppmps', 'pnpki', 'analytics', 'create', 'edit', 'detail'].includes(currentView)) {
         if (!canUserAccessSystem(user, '/eprocrementppmpapp')) {
             return (
                 <UnauthorizedSystemAccessView
@@ -957,6 +949,34 @@ export function App() {
                     onSelectPpmp={(uuid) => loadPpmpDetail(uuid, true)}
                     onNavigate={handleNavigate}
                 />
+            )}
+
+            {currentView === 'pnpki' && (
+                <PnpkiRegistryPage user={user} />
+            )}
+
+            {currentView === 'analytics' && (
+                dashboardData?.end_user_analytics && (Number(dashboardData.end_user_analytics.gross_budget || 0) > 0 || (dashboardData.end_user_analytics.status_breakdown || []).some(s => s.count > 0)) ? (
+                    <EndUserVisualAnalytics
+                        analytics={dashboardData.end_user_analytics}
+                        onSelectPpmp={(p) => p?.uuid && loadPpmpDetail(p.uuid, true)}
+                        onCreateNew={() => handleNavigate('create')}
+                    />
+                ) : (
+                    <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-3 shadow-xs">
+                        <h3 className="text-base font-extrabold text-slate-900">No PPMP Analytics Data Yet</h3>
+                        <p className="text-xs text-slate-500 max-w-md mx-auto">
+                            Create your first PPMP to visualize your gross budget, net procured budget, and leftover retention balance here.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => handleNavigate('create')}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-xs transition cursor-pointer"
+                        >
+                            Prepare New PPMP
+                        </button>
+                    </div>
+                )
             )}
 
             {currentView === 'create' && (
@@ -1022,6 +1042,10 @@ export function App() {
     return (
         <>
             <AfkInactivityGuard user={user} onLogout={handleLogout} />
+            <PnpkiRenewalReminderModal
+                user={user}
+                onUserUpdate={(updatedUser) => setUser(updatedUser)}
+            />
             <CustomAlertModal />
             {renderContent()}
         </>
@@ -1032,4 +1056,3 @@ const rootElement = document.getElementById('root');
 if (rootElement) {
     createRoot(rootElement).render(<App />);
 }
-

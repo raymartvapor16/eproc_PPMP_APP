@@ -26,33 +26,21 @@ class AccountCode extends Model
         'display_order' => 'integer',
     ];
 
-    /**
-     * Associated PPMPs linked to this normalized account code.
-     */
     public function ppmps(): HasMany
     {
         return $this->hasMany(Ppmp::class, 'account_code_id');
     }
 
-    /**
-     * Users (TWG Reviewers) assigned to this account code.
-     */
     public function users()
     {
         return $this->belongsToMany(User::class, 'account_code_user')->withTimestamps();
     }
 
-    /**
-     * Scope to only active account codes.
-     */
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
     }
 
-    /**
-     * Helper to derive account class from code first digit.
-     */
     public static function deriveAccountClass(?string $code): string
     {
         if (!$code) return 'Other';
@@ -67,4 +55,3 @@ class AccountCode extends Model
         };
     }
 }
-

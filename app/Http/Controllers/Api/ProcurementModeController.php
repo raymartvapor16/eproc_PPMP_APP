@@ -13,11 +13,7 @@ use Illuminate\Support\Facades\DB;
 
 class ProcurementModeController extends Controller
 {
-    /**
-     * List procurement modes.
-     * End-users / general callers receive active modes only.
-     * Admins can view all modes with PPMP item and Monitoring project usage counts.
-     */
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -32,7 +28,6 @@ class ProcurementModeController extends Controller
 
         $modes = $query->get();
 
-        // If admin viewing all, calculate usage counts from PPMP items and Monitoring projects
         if ($isAdmin && !$activeOnly) {
             $ppmpItemCounts = PpmpItem::select('procurement_mode', DB::raw('count(*) as count'))
                 ->whereNotNull('procurement_mode')
@@ -64,9 +59,6 @@ class ProcurementModeController extends Controller
         return response()->json($modes);
     }
 
-    /**
-     * Create a new mode of procurement (Admin only).
-     */
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -102,9 +94,6 @@ class ProcurementModeController extends Controller
         ], 201);
     }
 
-    /**
-     * Update an existing mode of procurement (Admin only).
-     */
     public function update(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -134,7 +123,6 @@ class ProcurementModeController extends Controller
             'display_order' => $validated['display_order'] ?? $mode->display_order,
         ]);
 
-        // If the name changed, keep data integrity by updating existing PPMP items & monitoring projects referencing old name
         if ($oldName !== $newName) {
             PpmpItem::where('procurement_mode', $oldName)->update(['procurement_mode' => $newName]);
             MonitoringProject::where('procurement_mode', $oldName)->update(['procurement_mode' => $newName]);
@@ -160,9 +148,6 @@ class ProcurementModeController extends Controller
         ]);
     }
 
-    /**
-     * Toggle the active status of a mode of procurement (Admin only).
-     */
     public function toggleStatus(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -184,10 +169,6 @@ class ProcurementModeController extends Controller
         ]);
     }
 
-    /**
-     * Delete a mode of procurement (Admin only).
-     * Prevents deletion if existing PPMP items or Monitoring projects reference it.
-     */
     public function destroy(Request $request, int $id): JsonResponse
     {
         $user = $request->user();

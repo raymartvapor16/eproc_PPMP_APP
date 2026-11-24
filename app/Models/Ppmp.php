@@ -18,10 +18,20 @@ class Ppmp extends Model
         'review_submitted_at',
         'budget_received_at',
         'budget_approved_at',
+        'budget_head_received_at',
+        'budget_head_approved_at',
         'pacco_received_at',
         'pacco_approved_at',
+        'pacco_head_received_at',
+        'pacco_head_approved_at',
         'oppmo_received_at',
         'oppmo_approved_at',
+        'oppmo_head_received_at',
+        'oppmo_head_approved_at',
+        'app_preparer_received_at',
+        'app_preparer_approved_at',
+        'governor_received_at',
+        'governor_approved_at',
         'twg_received_at',
         'twg_approved_at',
         'ready_to_print_at',
@@ -101,10 +111,20 @@ class Ppmp extends Model
         'review_submitted_at',
         'budget_received_at',
         'budget_approved_at',
+        'budget_head_received_at',
+        'budget_head_approved_at',
         'pacco_received_at',
         'pacco_approved_at',
+        'pacco_head_received_at',
+        'pacco_head_approved_at',
         'oppmo_received_at',
         'oppmo_approved_at',
+        'oppmo_head_received_at',
+        'oppmo_head_approved_at',
+        'app_preparer_received_at',
+        'app_preparer_approved_at',
+        'governor_received_at',
+        'governor_approved_at',
         'twg_received_at',
         'twg_approved_at',
         'ready_to_print_at',
@@ -273,7 +293,7 @@ class Ppmp extends Model
                     \App\Models\MonitoringProject::syncFromPpmp($ppmp);
                 }
             } catch (\Throwable $e) {
-                // Defensive: prevent PPMP workflow failures on logging or sync exceptions
+
             }
         });
     }
@@ -318,13 +338,15 @@ class Ppmp extends Model
         })->exists();
     }
 
-    /**
-     * Get the root Annual PPMP (top-level ancestor where parent_id is null).
-     */
     public function getRootAnnualPpmp(): self
     {
         $current = $this;
+        $visited = [$this->id];
         while ($current->parent_id) {
+            if (in_array($current->parent_id, $visited, true)) {
+                break;
+            }
+            $visited[] = $current->parent_id;
             $parent = $current->parent;
             if (!$parent) {
                 break;
@@ -332,6 +354,57 @@ class Ppmp extends Model
             $current = $parent;
         }
         return $current;
+    }
+
+    public function getFamilyIds(): array
+    {
+        $root = $this->getRootAnnualPpmp();
+        $ids = [$root->id];
+        $queue = [$root->id];
+        $maxIterations = 50;
+        $iterations = 0;
+
+        while (!empty($queue) && $iterations < $maxIterations) {
+            $iterations++;
+            $childIds = self::whereIn('parent_id', $queue)
+                ->whereNotIn('id', $ids)
+                ->pluck('id')
+                ->all();
+            if (empty($childIds)) {
+                break;
+            }
+            $ids = array_values(array_unique(array_merge($ids, $childIds)));
+            $queue = $childIds;
+        }
+
+        if (!in_array($this->id, $ids, true)) {
+            $ids[] = $this->id;
+        }
+
+        return $ids;
+    }
+
+    public static function normalizeTrackingNumber(?string $raw): string
+    {
+        if ($raw === null) {
+            return '';
+        }
+        return strtoupper(preg_replace('/\s+/', '', trim($raw)));
+    }
+
+    public static function isTrackingNumberTaken(string $trackingNumber, array $excludeIds = []): bool
+    {
+        $normalized = self::normalizeTrackingNumber($trackingNumber);
+        if ($normalized === '') {
+            return false;
+        }
+
+        $query = self::whereRaw('UPPER(TRIM(tracking_number)) = ?', [$normalized]);
+        if (!empty($excludeIds)) {
+            $query->whereNotIn('id', $excludeIds);
+        }
+
+        return $query->exists();
     }
 
     protected $appends = [
@@ -342,11 +415,67 @@ class Ppmp extends Model
         'is_published_to_pims',
         'pims_published_at',
         'pending_cell_comments_count',
+        'current_stage_office_id',
+        'current_stage_user_id',
+        'submitted_by_head_user',
     ];
+
+    public function getSubmittedByHeadUserAttribute(): ?array
+    {
+        $head = null;
+        $officeHeadLoaded = $this->relationLoaded('office') && $this->office && $this->office->relationLoaded('head');
+
+        if ($officeHeadLoaded) {
+            $candidate = $this->office->head;
+            if ($candidate && $candidate->is_active && $candidate->approval_status === 'approved') {
+                $head = $candidate;
+            }
+        } elseif ($this->office_id) {
+            $head = User::with('pnpkiSignature')
+                ->withRole('head')
+                ->where('office_id', $this->office_id)
+                ->where('is_active', true)
+                ->where('approval_status', 'approved')
+                ->orderByDesc('id')
+                ->first();
+        }
+
+        if (!$head) {
+            return null;
+        }
+
+        return [
+            'id' => $head->id,
+            'name' => $head->name,
+            'designation' => $head->designation,
+            'signature_path' => $head->signature_path,
+            'pnpki_signature' => $head->relationLoaded('pnpkiSignature') ? $head->pnpkiSignature?->toArray() : null,
+        ];
+    }
+
+    public function getCurrentStageOfficeIdAttribute(): ?int
+    {
+        if (!in_array($this->status, ['BUDGET_HEAD_REVIEW', 'PACCO_HEAD_REVIEW', 'OPPMO_HEAD_REVIEW'], true)) {
+            return null;
+        }
+
+        $stage = \App\Support\ReviewHeadResolver::stageForStatus($this->status);
+        return $stage ? \App\Support\ReviewHeadResolver::resolveOfficeIdForStage($stage, $this) : null;
+    }
+
+    public function getCurrentStageUserIdAttribute(): ?int
+    {
+        if (!in_array($this->status, ['BUDGET_HEAD_REVIEW', 'PACCO_HEAD_REVIEW', 'OPPMO_HEAD_REVIEW', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW'], true)) {
+            return null;
+        }
+
+        $stage = \App\Support\ReviewHeadResolver::stageForStatus($this->status);
+        return $stage ? \App\Support\ReviewHeadResolver::resolveHeadUserForStage($stage, $this)?->id : null;
+    }
 
     public function getOfficeHeadNameAttribute(): ?string
     {
-        // 1. Approved / Recorded head signature
+
         if ($this->relationLoaded('signatures') && $this->signatures) {
             $headSig = $this->signatures->firstWhere('role', 'head');
             if ($headSig && !empty($headSig->signer_name)) {
@@ -354,7 +483,6 @@ class Ppmp extends Model
             }
         }
 
-        // 2. Direct office relation head
         if ($this->relationLoaded('office') && $this->office) {
             if ($this->office->relationLoaded('head') && $this->office->head && !empty($this->office->head->name)) {
                 return $this->office->head->name;
@@ -364,7 +492,6 @@ class Ppmp extends Model
             }
         }
 
-        // 3. Creator's office head
         if ($this->relationLoaded('creator') && $this->creator && $this->creator->relationLoaded('office') && $this->creator->office) {
             if ($this->creator->office->relationLoaded('head') && $this->creator->office->head && !empty($this->creator->office->head->name)) {
                 return $this->creator->office->head->name;
@@ -379,7 +506,7 @@ class Ppmp extends Model
 
     public function getOfficeHeadDesignationAttribute(): ?string
     {
-        // 1. Approved / Recorded head signature
+
         if ($this->relationLoaded('signatures') && $this->signatures) {
             $headSig = $this->signatures->firstWhere('role', 'head');
             if ($headSig && !empty($headSig->signer_designation)) {
@@ -387,7 +514,6 @@ class Ppmp extends Model
             }
         }
 
-        // 2. Direct office relation head
         if ($this->relationLoaded('office') && $this->office) {
             if ($this->office->relationLoaded('head') && $this->office->head && !empty($this->office->head->designation)) {
                 return $this->office->head->designation;
@@ -397,7 +523,6 @@ class Ppmp extends Model
             }
         }
 
-        // 3. Creator's office designation
         if ($this->relationLoaded('creator') && $this->creator && $this->creator->relationLoaded('office') && $this->creator->office) {
             if ($this->creator->office->relationLoaded('head') && $this->creator->office->head && !empty($this->creator->office->head->designation)) {
                 return $this->creator->office->head->designation;
@@ -422,12 +547,14 @@ class Ppmp extends Model
     {
         $array = parent::toArray();
         $serializedMilestones = $array['milestones'] ?? null;
-        foreach (self::$milestoneFields as $field) {
-            if (!array_key_exists($field, $this->pendingMilestoneAttributes) && is_array($serializedMilestones) && array_key_exists($field, $serializedMilestones)) {
-                $array[$field] = $serializedMilestones[$field];
-            } else {
-                $val = $this->getAttribute($field);
-                $array[$field] = $val instanceof \DateTimeInterface ? $this->serializeDate($val) : $val;
+        if ($this->relationLoaded('milestones') || !empty($this->pendingMilestoneAttributes)) {
+            foreach (self::$milestoneFields as $field) {
+                if (!array_key_exists($field, $this->pendingMilestoneAttributes) && is_array($serializedMilestones) && array_key_exists($field, $serializedMilestones)) {
+                    $array[$field] = $serializedMilestones[$field];
+                } else {
+                    $val = $this->getAttribute($field);
+                    $array[$field] = $val instanceof \DateTimeInterface ? $this->serializeDate($val) : $val;
+                }
             }
         }
         $serializedAmendment = $array['amendment'] ?? null;
@@ -449,7 +576,7 @@ class Ppmp extends Model
 
     public function getLatestReturnRemarks(): ?array
     {
-        // 1. Check reviews
+
         if ($this->relationLoaded('reviews')) {
             $review = $this->reviews
                 ->filter(fn ($r) => $r->action === 'return' || str_ends_with((string) $r->status_after, '_RETURNED'))
@@ -476,7 +603,6 @@ class Ppmp extends Model
             ];
         }
 
-        // 2. Fallback to routes
         if ($this->relationLoaded('routes')) {
             $route = $this->routes
                 ->filter(fn ($r) => str_ends_with((string) $r->action, '_RETURNED') || str_ends_with((string) $r->status, '_RETURNED'))
@@ -511,7 +637,7 @@ class Ppmp extends Model
         $raw = $this->attributes['app_data'] ?? null;
         $data = is_string($raw) ? json_decode($raw, true) : $raw;
         if (!empty($data) && is_array($data)) {
-            // If explicitly marked as needing regeneration due to amendments or line-item changes
+
             if (!empty($data['needs_regeneration'])) {
                 return false;
             }
@@ -544,11 +670,41 @@ class Ppmp extends Model
         });
     }
 
+    public function marketScoping()
+    {
+        return $this->hasOne(PpmpMarketScoping::class, 'ppmp_id');
+    }
+
+    public function hasMarketScopingForm(): bool
+    {
+        if ($this->relationLoaded('marketScoping') ? ($this->marketScoping !== null) : $this->marketScoping()->exists()) {
+            return true;
+        }
+
+        if ($this->parent_id && !$this->is_continuation) {
+            $curr = $this->parent;
+            $depth = 0;
+            while ($curr && $depth < 10) {
+                if ($curr->marketScoping()->exists()) {
+                    return true;
+                }
+                $curr = $curr->parent;
+                $depth++;
+            }
+        }
+
+        return false;
+    }
+
     public function hasMarketScopingPdf(): bool
     {
+        if ($this->hasMarketScopingForm()) {
+            return true;
+        }
+
         $atts = $this->relationLoaded('attachments') ? $this->attachments : $this->attachments()->get();
 
-        if ($atts->isEmpty() && $this->parent_id) {
+        if ($atts->isEmpty() && $this->parent_id && !$this->is_continuation) {
             $ancestorIds = [];
             $curr = $this->parent;
             while ($curr && count($ancestorIds) < 10) {
@@ -578,13 +734,15 @@ class Ppmp extends Model
     {
         $app = $this->hasAppGenerated();
         $attachmentList = $this->hasAttachmentListGenerated();
-        $marketScoping = $this->hasMarketScopingPdf();
-        // APP is created exclusively by OPPMO reviewer after BAC-TWG review
+        $marketScopingForm = $this->hasMarketScopingForm();
+        $marketScoping = $marketScopingForm || $this->hasMarketScopingPdf();
+
         $isReady = $attachmentList && $marketScoping;
 
         return [
             'app_generated' => $app,
             'attachment_list_generated' => $attachmentList,
+            'market_scoping_generated' => $marketScopingForm,
             'market_scoping_attached' => $marketScoping,
             'can_submit' => $isReady,
             'is_ready' => $isReady,
@@ -599,7 +757,6 @@ class Ppmp extends Model
         $bac = $signatories->firstWhere('signatory_type', 'bac_secretariat');
         $gov = $signatories->firstWhere('signatory_type', 'approved_by');
 
-        // APP specific signatories
         $appPrepared = $signatories->firstWhere('signatory_type', 'app_prepared_by');
         $appReviewed = $signatories->firstWhere('signatory_type', 'app_reviewed_by');
         $appRecommending = $signatories->firstWhere('signatory_type', 'app_recommending');
@@ -649,12 +806,6 @@ class Ppmp extends Model
         ];
     }
 
-    /**
-     * Get the app_data attribute with legacy signatory backfill applied.
-     *
-     * @param mixed $value
-     * @return mixed
-     */
     public function getAppDataAttribute(mixed $value): mixed
     {
         $data = is_string($value) ? json_decode($value, true) : $value;
@@ -666,8 +817,6 @@ class Ppmp extends Model
         $appPrepared = $defaultSignatories['app_prepared_by'] ?? null;
         $appReviewed = $defaultSignatories['app_reviewed_by'] ?? null;
 
-        // If legacy data had Norjanna saved under prepared_by_name before Gina Mae was introduced,
-        // automatically route Norjanna to reviewed_by and set prepared_by to active DB signatory (Gina Mae).
         $isLegacyNorjanna = !empty($data['prepared_by_name']) && (
             $data['prepared_by_name'] === 'NORJANNA M. CAMAGUIN, MPA' ||
             (isset($appReviewed['name']) && $data['prepared_by_name'] === $appReviewed['name'])
@@ -680,8 +829,6 @@ class Ppmp extends Model
             $data['prepared_by_position'] = $appPrepared['position'] ?? 'ADAS II';
         }
 
-        // Normalize rows in app_data: if PPMP has a program, End-User or Implementing Unit cell
-        // displays "(Implementing Office / Unit data) - (Program data)". If no program, displays Implementing Office / Unit data.
         if (!empty($data['rows']) && is_array($data['rows'])) {
             $unit = trim((string)($this->implementing_unit ?? ($this->relationLoaded('office') ? ($this->office?->name ?? '') : '')));
             $prog = trim((string)($this->program_name ?? ''));

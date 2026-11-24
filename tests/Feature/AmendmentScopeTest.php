@@ -124,7 +124,6 @@ class AmendmentScopeTest extends TestCase
     {
         $file = $this->createFakePdf();
 
-        // Ensure baseline PPMP has an approved APP
         $this->ppmpReady->update([
             'app_data' => [
                 'is_generated' => true,
@@ -133,7 +132,6 @@ class AmendmentScopeTest extends TestCase
             ],
         ]);
 
-        // End user requests ATTACHMENT_LIST only
         $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmpReady->uuid}/request-amendment-or-supplemental", [
             'request_scope' => 'ATTACHMENT_LIST',
             'request_type' => 'AMENDMENT',
@@ -141,24 +139,19 @@ class AmendmentScopeTest extends TestCase
             'letter_file' => $file,
         ]);
 
-        // Admin approves
         $approveRes = $this->actingAs($this->adminUser)->postJson("/api/ppmps/{$this->ppmpReady->uuid}/amendment/approve");
         $approveRes->assertStatus(200);
 
-        // Does NOT create a child PPMP in DRAFT
         $this->assertEquals(0, Ppmp::where('parent_id', $this->ppmpReady->id)->count());
 
-        // Reopens the current PPMP in DRAFT with ATTACHMENT_LIST scope
         $ppmp = $this->ppmpReady->fresh();
         $this->assertEquals('ATTACHMENT_LIST', $ppmp->amendment_scope);
         $this->assertEquals('DRAFT', $ppmp->status);
 
-        // Existing APP remains intact, generated, and NOT flagged for regeneration
         $this->assertTrue($ppmp->hasAppGenerated());
         $this->assertFalse($ppmp->app_data['needs_regeneration'] ?? true);
         $this->assertEquals('Existing Approved APP', $ppmp->app_data['rows'][0]['projectTitle']);
 
-        // Attempting to modify or regenerate the APP should be blocked
         $oppmoUser = User::create([
             'name' => 'OPPMO User',
             'email' => 'oppmo.test@example.test',
@@ -175,7 +168,6 @@ class AmendmentScopeTest extends TestCase
             'message' => 'The Annual Procurement Plan (APP) cannot be modified or regenerated for this revision. The approved request scope is restricted to the Detailed Specifications only.'
         ]);
 
-        // Attempting to update PPMP items on the reopened PPMP should be forbidden by scope lock
         $itemUpdateRes = $this->actingAs($this->endUser)->putJson("/api/ppmps/{$ppmp->uuid}", [
             'title' => 'Altered Title',
             'fiscal_year' => '2026',
@@ -189,7 +181,6 @@ class AmendmentScopeTest extends TestCase
             'message' => 'PPMP items and plan details cannot be modified for this revision. The approved request scope is restricted to the Detailed Specifications only.'
         ]);
 
-        // Updating attachment list should succeed
         $attSaveRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmp->uuid}/attachment-list", [
             'rows' => [
                 ['itemNo' => 1, 'unit' => 'lot', 'description' => 'Valid Attachment Update', 'qty' => 1, 'unitCost' => 5000, 'totalCost' => 5000]
@@ -197,19 +188,16 @@ class AmendmentScopeTest extends TestCase
         ]);
         $attSaveRes->assertStatus(200);
 
-        // Attach fake market scoping pdf to allow submission
         $scopingFile = $this->createFakePdf('scoping.pdf');
         $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmp->uuid}/attachments", [
             'file' => $scopingFile,
             'attachment_type' => 'MARKET_SCOPING',
         ])->assertStatus(201);
 
-        // Submitting for review routes directly to TWG_REVIEW
         $submitRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmp->uuid}/submit-for-review");
         $submitRes->assertStatus(200);
         $this->assertEquals('TWG_REVIEW', $ppmp->fresh()->status);
 
-        // Create TWG User and approve
         $twgUser = User::create([
             'name' => 'TWG Reviewer Eng',
             'email' => 'twg.eng@example.test',
@@ -222,7 +210,6 @@ class AmendmentScopeTest extends TestCase
         $twgApproveRes = $this->actingAs($twgUser)->postJson("/api/ppmps/{$ppmp->uuid}/twg/approve");
         $twgApproveRes->assertStatus(200);
 
-        // TWG approval moves ATTACHMENT_LIST scope directly to READY_TO_PRINT
         $this->assertEquals('READY_TO_PRINT', $ppmp->fresh()->status);
         $this->assertNotNull($ppmp->fresh()->ready_to_print_at);
     }
@@ -231,7 +218,6 @@ class AmendmentScopeTest extends TestCase
     {
         $file = $this->createFakePdf();
 
-        // End user requests PPMP_APP only
         $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmpReady->uuid}/request-amendment-or-supplemental", [
             'request_scope' => 'PPMP_APP',
             'request_type' => 'SUPPLEMENTAL',
@@ -239,7 +225,6 @@ class AmendmentScopeTest extends TestCase
             'letter_file' => $file,
         ]);
 
-        // Admin approves
         $approveRes = $this->actingAs($this->adminUser)->postJson("/api/ppmps/{$this->ppmpReady->uuid}/amendment/approve");
         $approveRes->assertStatus(200);
 
@@ -247,7 +232,6 @@ class AmendmentScopeTest extends TestCase
         $this->assertNotNull($child);
         $this->assertEquals('PPMP_APP', $child->amendment_scope);
 
-        // Updating attachment list should be forbidden by scope lock
         $attSaveRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$child->uuid}/attachment-list", [
             'rows' => [
                 ['itemNo' => 1, 'description' => 'Should fail']
@@ -261,7 +245,7 @@ class AmendmentScopeTest extends TestCase
 
     public function test_rejects_non_pdf_and_disguised_request_letter_files()
     {
-        // 1. .url file is rejected
+
         $urlFile = UploadedFile::fake()->create('Counter Staff Panel.url', 1, 'application/octet-stream');
         $res1 = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmpReady->uuid}/request-amendment-or-supplemental", [
             'request_scope' => 'PPMP_APP',
@@ -271,7 +255,6 @@ class AmendmentScopeTest extends TestCase
         ]);
         $res1->assertStatus(422);
 
-        // 2. Multi-extension disguised file (.exe.pdf) is rejected
         $disguisedFile = UploadedFile::fake()->createWithContent('malware.exe.pdf', "%PDF-1.4\nMalicious code");
         $res2 = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmpReady->uuid}/request-amendment-or-supplemental", [
             'request_scope' => 'PPMP_APP',
@@ -282,7 +265,6 @@ class AmendmentScopeTest extends TestCase
         $res2->assertStatus(422)
             ->assertJsonPath('message', 'Security Error: Suspicious disguised multi-extension filename detected.');
 
-        // 3. Fake PDF without %PDF- header is rejected
         $fakePdf = UploadedFile::fake()->createWithContent('letter.pdf', "This is not a pdf file");
         $res3 = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmpReady->uuid}/request-amendment-or-supplemental", [
             'request_scope' => 'PPMP_APP',
@@ -293,7 +275,6 @@ class AmendmentScopeTest extends TestCase
         $res3->assertStatus(422)
             ->assertJsonPath('message', 'Security Error: Invalid file content. The uploaded document does not have a genuine PDF header.');
 
-        // 4. PDF exceeding 5MB (5120 KB) is rejected
         $oversizedPdf = UploadedFile::fake()->create('large_letter.pdf', 6000, 'application/pdf');
         $res4 = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmpReady->uuid}/request-amendment-or-supplemental", [
             'request_scope' => 'PPMP_APP',

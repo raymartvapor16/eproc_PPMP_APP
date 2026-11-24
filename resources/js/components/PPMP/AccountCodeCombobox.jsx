@@ -3,11 +3,6 @@ import { createPortal } from 'react-dom';
 import { Search, ChevronDown, Check, X, BookOpen, Layers, Edit3, Sparkles } from 'lucide-react';
 import { accountCodeService } from '../../services/api';
 
-/**
- * AccountCodeCombobox:
- * High-performance search dropdown option for Philippine LGU Chart of Accounts.
- * Allows quick searching by code (e.g. "5-02-03-220") or title (e.g. "Semi-Expendable").
- */
 export const AccountCodeCombobox = ({
     value = '',
     onChange,
@@ -19,7 +14,7 @@ export const AccountCodeCombobox = ({
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [classFilter, setClassFilter] = useState('ALL'); // 'ALL' | 'Expenses' | 'Assets' | 'Liabilities'
+    const [classFilter, setClassFilter] = useState('ALL');
     const [isCustomMode, setIsCustomMode] = useState(false);
     const [customText, setCustomText] = useState(value || '');
 
@@ -34,7 +29,6 @@ export const AccountCodeCombobox = ({
     const menuRef = useRef(null);
     const searchInputRef = useRef(null);
 
-    // Calculate fixed viewport position for portal dropdown
     const updatePosition = useCallback(() => {
         if (!triggerRef.current) return;
         const rect = triggerRef.current.getBoundingClientRect();
@@ -43,7 +37,6 @@ export const AccountCodeCombobox = ({
         const estimatedHeight = 380;
         const openUpward = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
 
-        // Desired width matches trigger or at least 380px, bounded by viewport
         const targetWidth = Math.min(Math.max(rect.width, 380), window.innerWidth - 24);
         let left = rect.left;
         if (left + targetWidth > window.innerWidth - 12) {
@@ -65,7 +58,6 @@ export const AccountCodeCombobox = ({
         });
     }, []);
 
-    // Load account codes if not passed via props
     useEffect(() => {
         if (Array.isArray(accountCodes) && accountCodes.length > 0) {
             setCodesList(accountCodes);
@@ -101,12 +93,10 @@ export const AccountCodeCombobox = ({
         };
     }, [accountCodes]);
 
-    // Keep custom text in sync with value
     useEffect(() => {
         setCustomText(value || '');
     }, [value]);
 
-    // Manage dropdown open state, position, and close events
     useEffect(() => {
         if (!isOpen) return;
 
@@ -150,7 +140,6 @@ export const AccountCodeCombobox = ({
         };
     }, [isOpen, updatePosition]);
 
-    // Fast in-memory filtering (optimized with max slice to avoid lag)
     const filteredCodes = useMemo(() => {
         const q = searchQuery.trim().toLowerCase();
         return codesList.filter(item => {
@@ -169,14 +158,12 @@ export const AccountCodeCombobox = ({
         });
     }, [codesList, searchQuery, classFilter]);
 
-    // Extract code and name from current value if available
     const parsedCurrentValue = useMemo(() => {
         if (!value) return null;
         const trimmed = String(value).trim();
         const codeMatch = trimmed.match(/[0-9]-[0-9]{2}-[0-9]{2}-[0-9]{3}/);
         const code = codeMatch ? codeMatch[0] : null;
 
-        // Try to match in codesList
         if (code) {
             const matched = codesList.find(c => c.code === code);
             if (matched) return matched;
@@ -190,7 +177,7 @@ export const AccountCodeCombobox = ({
     }, [value, codesList]);
 
     const handleSelect = (record) => {
-        // Format for standard PPMP display: Name on line 1, Code on line 2 (e.g. user screenshot)
+
         let formattedValue = '';
         if (record.parent_name && record.parent_name !== record.name) {
             formattedValue = `${record.parent_name} - ${record.name}\n${record.code || ''}`.trim();
@@ -226,7 +213,6 @@ export const AccountCodeCombobox = ({
         setIsCustomMode(false);
     };
 
-    // Class badge color helper
     const getClassColor = (cls) => {
         switch (cls) {
             case 'Expenses':
@@ -244,7 +230,7 @@ export const AccountCodeCombobox = ({
 
     return (
         <div ref={containerRef} className={`relative w-full ${className}`}>
-            {/* Custom Edit Mode if user toggles manual textarea input */}
+
             {isCustomMode ? (
                 <div className="space-y-1.5 p-2 bg-slate-50 border border-slate-300 rounded-lg shadow-2xs">
                     <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
@@ -275,7 +261,7 @@ export const AccountCodeCombobox = ({
                     </div>
                 </div>
             ) : (
-                /* Standard Search Dropdown Trigger */
+
                 <div
                     ref={triggerRef}
                     onClick={() => setIsOpen(prev => !prev)}
@@ -305,7 +291,6 @@ export const AccountCodeCombobox = ({
                         </div>
                     )}
 
-                    {/* Quick action buttons on hover / selected */}
                     <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
                         {value && (
                             <button
@@ -322,7 +307,6 @@ export const AccountCodeCombobox = ({
                 </div>
             )}
 
-            {/* Dropdown Popover rendered via Portal into document.body to avoid table overflow clipping and z-index issues */}
             {isOpen && coords && createPortal(
                 <div
                     ref={menuRef}
@@ -337,7 +321,7 @@ export const AccountCodeCombobox = ({
                     }}
                     className="bg-white border border-slate-300 rounded-xl shadow-2xl flex flex-col text-xs overflow-hidden animate-in fade-in zoom-in-95 duration-100"
                 >
-                    {/* Popover Header with Search Bar */}
+
                     <div className="p-2.5 bg-slate-50 border-b border-slate-200 space-y-2 shrink-0">
                         <div className="relative">
                             <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -360,7 +344,6 @@ export const AccountCodeCombobox = ({
                             )}
                         </div>
 
-                        {/* Class Filter Tabs with scrollbar hidden */}
                         <div
                             className="flex items-center gap-1 overflow-x-auto text-[10px] font-bold py-0.5"
                             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
@@ -382,7 +365,6 @@ export const AccountCodeCombobox = ({
                         </div>
                     </div>
 
-                    {/* Results Count Bar */}
                     <div className="px-3 py-1 bg-slate-100/60 border-b border-slate-200 flex items-center justify-between text-[10px] text-slate-500 shrink-0">
                         <span>
                             {filteredCodes.length} account{filteredCodes.length !== 1 ? 's' : ''} found
@@ -391,7 +373,6 @@ export const AccountCodeCombobox = ({
                         <span className="font-semibold text-slate-600">Chart of Accounts</span>
                     </div>
 
-                    {/* Results List without horizontal scrollbars */}
                     <div className="flex-1 overflow-y-auto overflow-x-hidden divide-y divide-slate-100 min-h-0">
                         {loading ? (
                             <div className="p-6 text-center text-xs text-slate-500">
@@ -475,7 +456,6 @@ export const AccountCodeCombobox = ({
                         )}
                     </div>
 
-                    {/* Popover Footer: Option to switch to manual text entry */}
                     <div className="p-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-[11px] shrink-0">
                         <button
                             type="button"
@@ -503,4 +483,3 @@ export const AccountCodeCombobox = ({
         </div>
     );
 };
-

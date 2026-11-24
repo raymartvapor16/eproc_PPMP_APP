@@ -10,10 +10,7 @@ use Illuminate\Http\Request;
 
 class ProcurementConditionController extends Controller
 {
-    /**
-     * List procurement conditions.
-     * End-users receive active conditions only. Admins can view all.
-     */
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -45,9 +42,6 @@ class ProcurementConditionController extends Controller
         return response()->json($conditions);
     }
 
-    /**
-     * Create a new procurement condition (Admin only).
-     */
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -83,9 +77,6 @@ class ProcurementConditionController extends Controller
         ], 201);
     }
 
-    /**
-     * Update an existing procurement condition (Admin only).
-     */
     public function update(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -125,9 +116,6 @@ class ProcurementConditionController extends Controller
         ]);
     }
 
-    /**
-     * Delete a procurement condition (Admin only).
-     */
     public function destroy(Request $request, int $id): JsonResponse
     {
         $user = $request->user();

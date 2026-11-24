@@ -25,9 +25,8 @@ export const ProcurementModesManagement = () => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
+    const [statusFilter, setStatusFilter] = useState('ALL');
 
-    // Form Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingMode, setEditingMode] = useState(null);
     const [formData, setFormData] = useState({
@@ -40,15 +39,12 @@ export const ProcurementModesManagement = () => {
     const [saving, setSaving] = useState(false);
     const [modalError, setModalError] = useState('');
 
-    // Delete Modal state
     const [deleteModalMode, setDeleteModalMode] = useState(null);
     const [deleting, setDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState('');
 
-    // Toggle status state
     const [togglingId, setTogglingId] = useState(null);
 
-    // Feedback notification
     const [feedback, setFeedback] = useState({ type: '', text: '' });
 
     const showFeedback = (type, text) => {
@@ -75,7 +71,6 @@ export const ProcurementModesManagement = () => {
         fetchModes();
     }, []);
 
-    // Filtered list
     const filteredModes = useMemo(() => {
         return modes.filter((m) => {
             const matchesSearch =
@@ -93,13 +88,11 @@ export const ProcurementModesManagement = () => {
         });
     }, [modes, searchQuery, statusFilter]);
 
-    // Statistics
     const totalModes = modes.length;
     const activeModes = modes.filter((m) => m.is_active).length;
     const inactiveModes = totalModes - activeModes;
     const totalUsage = modes.reduce((acc, m) => acc + (m.usage_count || 0), 0);
 
-    // Open Modal for Add
     const handleOpenAddModal = () => {
         setEditingMode(null);
         setFormData({
@@ -113,7 +106,6 @@ export const ProcurementModesManagement = () => {
         setIsModalOpen(true);
     };
 
-    // Open Modal for Edit
     const handleOpenEditModal = (mode) => {
         setEditingMode(mode);
         setFormData({
@@ -127,7 +119,6 @@ export const ProcurementModesManagement = () => {
         setIsModalOpen(true);
     };
 
-    // Save (Create or Update)
     const handleSave = async (e) => {
         e.preventDefault();
         if (!formData.name.trim()) {
@@ -156,7 +147,6 @@ export const ProcurementModesManagement = () => {
         }
     };
 
-    // Toggle active status
     const handleToggleStatus = async (mode) => {
         setTogglingId(mode.id);
         try {
@@ -170,7 +160,6 @@ export const ProcurementModesManagement = () => {
         }
     };
 
-    // Delete
     const handleDelete = async () => {
         if (!deleteModalMode) return;
         setDeleting(true);
@@ -190,7 +179,7 @@ export const ProcurementModesManagement = () => {
 
     return (
         <div className="space-y-6">
-            {/* Feedback Alert */}
+
             {feedback.text && (
                 <div
                     className={`p-4 rounded-xl border flex items-center justify-between shadow-xs transition-all ${
@@ -217,7 +206,6 @@ export const ProcurementModesManagement = () => {
                 </div>
             )}
 
-            {/* Header & Action Banner */}
             <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-2xl p-6 text-white shadow-md border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-500/20 text-indigo-300 rounded-full text-xs font-bold border border-indigo-400/30">
@@ -253,7 +241,6 @@ export const ProcurementModesManagement = () => {
                 </div>
             </div>
 
-            {/* Metrics Row */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
                     <div className="text-xs font-semibold text-slate-500">Total Modes</div>
@@ -277,7 +264,6 @@ export const ProcurementModesManagement = () => {
                 </div>
             </div>
 
-            {/* Filter and Search Bar */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between">
                 <div className="relative w-full sm:w-96">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
@@ -313,7 +299,6 @@ export const ProcurementModesManagement = () => {
                 </div>
             </div>
 
-            {/* Table */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -440,7 +425,6 @@ export const ProcurementModesManagement = () => {
                 </div>
             </div>
 
-            {/* Modal: Create / Edit Mode */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
                     <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
@@ -560,7 +544,6 @@ export const ProcurementModesManagement = () => {
                 </div>
             )}
 
-            {/* Modal: Delete Confirmation */}
             {deleteModalMode && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
                     <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">

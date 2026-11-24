@@ -141,7 +141,6 @@ class PpmpAttachmentListTest extends TestCase
             'source_of_fund' => 'General Fund',
         ]);
 
-        // Keyed by string numeric ids
         $attachmentLists = [
             (string) $item1->id => [
                 'office_name' => 'Provincial Governor\'s Office',
@@ -175,7 +174,6 @@ class PpmpAttachmentListTest extends TestCase
         $ppmp->refresh();
         $savedAttachmentLists = $ppmp->attachment_list_data['attachment_lists'];
 
-        // Ensure keys were NOT converted to 0, 1 but kept as (string)$item1->id and (string)$item2->id
         $this->assertArrayHasKey((string) $item1->id, $savedAttachmentLists);
         $this->assertArrayHasKey((string) $item2->id, $savedAttachmentLists);
         $this->assertEquals(100000.00, $savedAttachmentLists[(string) $item1->id]['total_budget']);
@@ -195,7 +193,7 @@ class PpmpAttachmentListTest extends TestCase
             'title' => 'Scope Locked PPMP',
             'total_budget' => 20000.00,
             'status' => 'DRAFT',
-            'amendment_scope' => 'PPMP_APP', // Restricted to PPMP/APP items only
+            'amendment_scope' => 'PPMP_APP',
             'current_stage' => 'END_USER',
         ]);
 
@@ -237,7 +235,7 @@ class PpmpAttachmentListTest extends TestCase
             'description' => 'Food and Catering Services (buffet & packed meals)',
             'estimated_budget' => 60000.00,
             'source_of_fund' => 'General Fund',
-            'delivery_period' => '10/2026', // Item schedule month
+            'delivery_period' => '10/2026',
         ]);
 
         $response = $this->actingAs($this->creator)->postJson("/api/ppmps/{$ppmp->uuid}/attachment-list", [
@@ -258,7 +256,7 @@ class PpmpAttachmentListTest extends TestCase
         $ppmp->refresh();
         $this->assertEquals('Date of Activity', $ppmp->delivery_period);
         $this->assertEquals('Date of Activity', $ppmp->attachment_list_data['delivery_period']);
-        $this->assertEquals('10/2026', $item->delivery_period); // Item monthly schedule unchanged
+        $this->assertEquals('10/2026', $item->delivery_period);
     }
 
     public function test_attachment_list_approved_by_fetches_approving_twg_reviewer(): void
@@ -296,17 +294,14 @@ class PpmpAttachmentListTest extends TestCase
             ],
         ]);
 
-        // When TWG approves the PPMP in workflow
         $response = $this->actingAs($twgUser)->postJson("/api/ppmps/{$ppmp->uuid}/twg/approve");
         $response->assertStatus(200);
 
         $ppmp->refresh();
 
-        // Verify attachment_list_data now has the TWG reviewer's exact name and designation
         $this->assertEquals('Engr. Juan Dela Cruz', $ppmp->attachment_list_data['approved_by_name']);
         $this->assertEquals('BAC TWG Technical Evaluator', $ppmp->attachment_list_data['approved_by_position']);
 
-        // Verify that saving an attachment list as end-user strips any legacy Governor name
         $this->actingAs($this->creator)->postJson("/api/ppmps/{$ppmp->uuid}/attachment-list", [
             'approved_by_name' => 'HON. YVONNE R. CAGAS',
             'approved_by_position' => 'PROVINCIAL GOVERNOR',
@@ -316,7 +311,7 @@ class PpmpAttachmentListTest extends TestCase
         ]);
 
         $ppmp->refresh();
-        // Since TWG already approved, it retains the TWG signer's name
+
         $this->assertEquals('Engr. Juan Dela Cruz', $ppmp->attachment_list_data['approved_by_name']);
     }
 
@@ -379,7 +374,6 @@ class PpmpAttachmentListTest extends TestCase
         $response = $this->actingAs($this->creator)->postJson("/api/ppmps/{$ppmp->uuid}/attachment-list", $payload);
         $response->assertStatus(200);
 
-        // Verify records in normalized ppmp_attachment_lists table
         $this->assertDatabaseHas('ppmp_attachment_lists', [
             'ppmp_id' => $ppmp->id,
             'item_id' => $item1->id,
@@ -392,11 +386,9 @@ class PpmpAttachmentListTest extends TestCase
             'total_budget' => 50000.00,
         ]);
 
-        // Verify Eloquent relationships work
         $freshPpmp = Ppmp::with(['attachmentLists', 'items.attachmentList'])->find($ppmp->id);
         $this->assertCount(2, $freshPpmp->attachmentLists);
         $this->assertNotNull($freshPpmp->items->first()->attachmentList);
         $this->assertEquals('Heavy Duty Switch List', $freshPpmp->items->first()->attachmentList->project_title);
     }
 }
-

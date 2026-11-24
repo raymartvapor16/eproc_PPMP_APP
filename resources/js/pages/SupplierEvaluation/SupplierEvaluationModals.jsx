@@ -32,12 +32,9 @@ import {
 } from './SupplierEvaluationPrintTemplates';
 import { PaginationControl } from '../../components/UI/PaginationControl';
 
-/**
- * 1. View / Evaluate / Update / Approve Evaluation Modal
- */
 export function EvaluateOrViewModal({
     evaluation,
-    mode = 'view', // 'view' | 'evaluate' | 'edit'
+    mode = 'view',
     effectiveRole,
     user,
     offices = [],
@@ -80,7 +77,6 @@ export function EvaluateOrViewModal({
         }
     }, [evaluation, approvedPdfs]);
 
-    // Live Asia/Manila (Philippines timezone) clock during active evaluation / signing
     const [livePhTime, setLivePhTime] = useState(() => getNowPhDateTime());
     useEffect(() => {
         if (!evaluation) return;
@@ -118,7 +114,6 @@ export function EvaluateOrViewModal({
         )
     );
 
-    // Formatted timestamps in Asia/Manila (PHT) timezone
     const preparedDateStr = formatPhDateTime(preparedBy?.updated_at || preparedBy?.created_at);
     const headDateStr = formatPhDateTime(
         headApproval?.updated_at ||
@@ -131,7 +126,6 @@ export function EvaluateOrViewModal({
         e.preventDefault();
         setError('');
 
-        // Require all 4 criteria ratings when evaluating
         if (!isHeadReviewApproval) {
             const missing = [1, 2, 3, 4].filter((cId) => !ratings[cId]);
             if (missing.length > 0) {
@@ -166,7 +160,7 @@ export function EvaluateOrViewModal({
     return (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200">
-                {/* Header */}
+
                 <div className="bg-gradient-to-r from-orange-500 to-amber-600 px-6 py-4 text-white flex items-center justify-between shrink-0">
                     <div>
                         <h2 className="text-lg font-black tracking-tight flex items-center gap-2">
@@ -206,7 +200,6 @@ export function EvaluateOrViewModal({
                     </div>
                 </div>
 
-                {/* Form / Body */}
                 <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
                     {error && (
                         <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
@@ -215,7 +208,6 @@ export function EvaluateOrViewModal({
                         </div>
                     )}
 
-                    {/* Section 1: Evaluation Details */}
                     <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
                         <div className="flex items-center justify-between mb-3">
                             <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">
@@ -320,7 +312,6 @@ export function EvaluateOrViewModal({
                         </div>
                     </div>
 
-                    {/* Section 2: 4 Evaluation Criteria Matrix */}
                     <div className="space-y-4">
                         <div className="flex items-center justify-between">
                             <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">
@@ -361,7 +352,7 @@ export function EvaluateOrViewModal({
                                     </div>
 
                                     <div className="p-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
-                                        {/* Rating Options (4 to 1) */}
+
                                         <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                                             {[4, 3, 2, 1].map((rVal) => {
                                                 const isSelected = Number(ratings[cId]) === rVal;
@@ -408,7 +399,6 @@ export function EvaluateOrViewModal({
                                             })}
                                         </div>
 
-                                        {/* Remarks / Specific Comments */}
                                         <div className="lg:col-span-4 flex flex-col">
                                             <label className="text-xs font-bold text-slate-600 mb-1.5">
                                                 Remarks / Specific Comments
@@ -437,7 +427,6 @@ export function EvaluateOrViewModal({
                         })}
                     </div>
 
-                    {/* Representative Staff Authorization PDF selector when approving */}
                     {!isReadOnly && effectiveRole === 'presentative_staff' && evaluation.status === 'head review' && (
                         <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-xs">
                             <h4 className="font-bold text-emerald-900 mb-2">
@@ -463,7 +452,6 @@ export function EvaluateOrViewModal({
                         </div>
                     )}
 
-                    {/* Admin option to immediately mark as Approved/Submitted */}
                     {!isReadOnly &&
                         effectiveRole === 'administrator' &&
                         evaluation.status !== 'submitted' && (
@@ -480,10 +468,9 @@ export function EvaluateOrViewModal({
                             </label>
                         )}
 
-                    {/* Section 3: Digital Authorization Signatories */}
                     <div className="bg-white border border-slate-200/90 rounded-3xl p-5 shadow-xs">
                         <div className={`grid gap-5 ${repApproval ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-1 md:grid-cols-2'}`}>
-                            {/* Prepared By (END-USER) */}
+
                             <div className="rounded-2xl overflow-hidden shadow-xs border border-slate-200 flex flex-col justify-between bg-white">
                                 <div className="bg-[#059669] text-white px-4 py-3 flex items-center gap-3">
                                     <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center shrink-0">
@@ -538,7 +525,6 @@ export function EvaluateOrViewModal({
                                 </div>
                             </div>
 
-                            {/* Head Authorization */}
                             <div className="rounded-2xl overflow-hidden shadow-xs border border-slate-200 flex flex-col justify-between bg-white">
                                 <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-3 flex items-center gap-3">
                                     <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center shrink-0">
@@ -599,7 +585,6 @@ export function EvaluateOrViewModal({
                                 </div>
                             </div>
 
-                            {/* Representative Staff */}
                             {repApproval && (
                                 <div className="rounded-2xl overflow-hidden shadow-xs border border-slate-200 flex flex-col justify-between bg-white">
                                     <div className="bg-gradient-to-r from-teal-600 to-emerald-700 text-white px-4 py-3 flex items-center gap-3">
@@ -658,7 +643,6 @@ export function EvaluateOrViewModal({
                         </div>
                     </div>
 
-                    {/* Footer Buttons */}
                     <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-200">
                         <button
                             type="button"
@@ -692,9 +676,6 @@ export function EvaluateOrViewModal({
     );
 }
 
-/**
- * 2. Add New Evaluation Modal (+ Evaluation button for Admin / PGSO)
- */
 export function AddEvaluationModal({ offices = [], suppliers = [], onClose, onSuccess }) {
     const [poNo, setPoNo] = useState('');
     const [supplierName, setSupplierName] = useState('');
@@ -843,9 +824,6 @@ export function AddEvaluationModal({ offices = [], suppliers = [], onClose, onSu
     );
 }
 
-/**
- * 3. Purchase Order List & Bulk PO Add Modal (polist.blade.php + editPo.blade.php + pobulk.blade.php)
- */
 export function PurchaseOrdersModal({
     effectiveRole,
     userOffice = null,
@@ -855,7 +833,7 @@ export function PurchaseOrdersModal({
     onClose,
     onEvaluationAdded,
 }) {
-    const [tab, setTab] = useState('list'); // 'list' | 'bulk_add' | 'create_po'
+    const [tab, setTab] = useState('list');
     const [pos, setPos] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -864,7 +842,6 @@ export function PurchaseOrdersModal({
     const [lastPage, setLastPage] = useState(1);
     const [total, setTotal] = useState(0);
 
-    // Edit PO state
     const [editingPo, setEditingPo] = useState(null);
     const [editForm, setEditForm] = useState({
         po_no: '',
@@ -878,7 +855,6 @@ export function PurchaseOrdersModal({
     });
     const [savingPo, setSavingPo] = useState(false);
 
-    // Bulk Add PO state
     const [bulkEndUser, setBulkEndUser] = useState('');
     const [bulkSupplier, setBulkSupplier] = useState('');
     const [bulkPos, setBulkPos] = useState([]);
@@ -899,7 +875,6 @@ export function PurchaseOrdersModal({
         }
     }, [endUsers]);
 
-    // Create PO state
     const [newPo, setNewPo] = useState({
         po_no: '',
         pr_no: '',
@@ -1108,7 +1083,7 @@ export function PurchaseOrdersModal({
     return (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200">
-                {/* Header */}
+
                 <div className="bg-gradient-to-r from-orange-500 to-amber-600 px-6 py-4 text-white flex items-center justify-between shrink-0">
                     <div>
                         <h2 className="text-lg font-black">📦 Purchase Orders Management</h2>
@@ -1160,10 +1135,9 @@ export function PurchaseOrdersModal({
                     </div>
                 </div>
 
-                {/* TAB 1: PO LIST */}
                 {tab === 'list' && (
                     <div className="flex-1 flex flex-col overflow-hidden p-5">
-                        {/* Search & Sort Bar */}
+
                         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                             <div className="relative flex-1 min-w-[260px]">
                                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -1194,7 +1168,6 @@ export function PurchaseOrdersModal({
                             </div>
                         </div>
 
-                        {/* Table */}
                         <div className="flex-1 overflow-auto border border-slate-200 rounded-2xl">
                             <table className="w-full text-xs text-left">
                                 <thead className="bg-slate-100 text-slate-600 uppercase text-[11px] sticky top-0 z-10">
@@ -1313,7 +1286,6 @@ export function PurchaseOrdersModal({
                             </table>
                         </div>
 
-                        {/* Pagination Footer */}
                         <div className="pt-4 border-t border-slate-200">
                             <PaginationControl
                                 currentPage={page}
@@ -1334,10 +1306,9 @@ export function PurchaseOrdersModal({
                     </div>
                 )}
 
-                {/* TAB 2: BULK ADD EVALUATION FROM POs (pobulk.blade.php) */}
                 {tab === 'bulk_add' && (
                     <div className="flex-1 flex flex-col overflow-hidden p-6">
-                        {/* Respective Office Scope Notification for End Users */}
+
                         {!isAdminOrPgso && userOffice && (
                             <div className="mb-3.5 px-4 py-2.5 bg-blue-50/90 border border-blue-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-blue-900 shadow-2xs">
                                 <span className="flex items-center gap-2">
@@ -1483,7 +1454,6 @@ export function PurchaseOrdersModal({
                             </table>
                         </div>
 
-                        {/* Bulk POs Pagination */}
                         {bulkPos.length > 0 && (
                             <div className="pt-3 border-t border-slate-200">
                                 <PaginationControl
@@ -1523,7 +1493,6 @@ export function PurchaseOrdersModal({
                     </div>
                 )}
 
-                {/* TAB 3: CREATE NEW PO */}
                 {tab === 'create_po' && (
                     <form onSubmit={handleCreatePo} className="p-6 space-y-4 text-xs max-w-xl mx-auto w-full">
                         <h3 className="text-sm font-black text-slate-800">Create New Purchase Order</h3>
@@ -1610,7 +1579,6 @@ export function PurchaseOrdersModal({
                     </form>
                 )}
 
-                {/* EDIT PO SUB-MODAL (editPo.blade.php) */}
                 {editingPo && (
                     <div className="fixed inset-0 z-60 bg-black/50 flex items-center justify-center p-4">
                         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
@@ -1737,9 +1705,6 @@ export function PurchaseOrdersModal({
     );
 }
 
-/**
- * 4. Evaluation Update / Delete Requests Modal (request.blade.php)
- */
 export function RequestsModal({ effectiveRole, onClose, onUpdated }) {
     const [requests, setRequests] = useState([]);
     const [evalDropdown, setEvalDropdown] = useState([]);
@@ -1831,7 +1796,7 @@ export function RequestsModal({ effectiveRole, onClose, onUpdated }) {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 space-y-6 text-xs">
-                    {/* Create Request Form (for End Users / Staff) */}
+
                     {!isAdminOrPgso && (
                         <form
                             onSubmit={handleSubmitRequest}
@@ -1892,7 +1857,6 @@ export function RequestsModal({ effectiveRole, onClose, onUpdated }) {
                         </form>
                     )}
 
-                    {/* Requests Table */}
                     <div className="border border-slate-200 rounded-2xl overflow-hidden">
                         <table className="w-full text-left text-xs">
                             <thead className="bg-slate-100 text-slate-600 uppercase text-[11px]">
@@ -1997,7 +1961,6 @@ export function RequestsModal({ effectiveRole, onClose, onUpdated }) {
                         </table>
                     </div>
 
-                    {/* Requests Pagination */}
                     {requests.length > 0 && (
                         <div className="pt-2 border-t border-slate-200">
                             <PaginationControl
@@ -2023,9 +1986,6 @@ export function RequestsModal({ effectiveRole, onClose, onUpdated }) {
     );
 }
 
-/**
- * 5. Import Files & Authorize Personnel PDF Modal (import.blade.php + autorize.blade.php)
- */
 export function ImportAndAuthorizeModal({ effectiveRole, onClose, onSuccess }) {
     const isAdminOrPgso = effectiveRole === 'administrator' || effectiveRole === 'pgso';
     const [poFile, setPoFile] = useState(null);
@@ -2120,7 +2080,7 @@ export function ImportAndAuthorizeModal({ effectiveRole, onClose, onSuccess }) {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 space-y-6 text-xs">
-                    {/* Import PO Excel/CSV (Admin/PGSO) */}
+
                     {isAdminOrPgso && (
                         <form
                             onSubmit={handleImportPos}
@@ -2163,7 +2123,6 @@ export function ImportAndAuthorizeModal({ effectiveRole, onClose, onSuccess }) {
                         </form>
                     )}
 
-                    {/* Upload Authorize Personnel PDF */}
                     <form
                         onSubmit={handleUploadAuthPdf}
                         className="bg-orange-50/60 border border-orange-200 rounded-2xl p-5 space-y-3"
@@ -2193,7 +2152,6 @@ export function ImportAndAuthorizeModal({ effectiveRole, onClose, onSuccess }) {
                         </div>
                     </form>
 
-                    {/* List of Uploaded Authorize PDFs */}
                     <div className="border border-slate-200 rounded-2xl overflow-hidden">
                         <table className="w-full text-left text-xs">
                             <thead className="bg-slate-100 text-slate-600 uppercase text-[11px]">
@@ -2272,9 +2230,6 @@ export function ImportAndAuthorizeModal({ effectiveRole, onClose, onSuccess }) {
     );
 }
 
-/**
- * 6. Recycle Bin Modal (delete.blade.php)
- */
 export function RecycleBinModal({ onClose, onRestored }) {
     const [deletedList, setDeletedList] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -2394,9 +2349,6 @@ export function RecycleBinModal({ onClose, onRestored }) {
     );
 }
 
-/**
- * 7. Audit & Activity Logs Modal (activitylog.blade.php)
- */
 export function ActivityLogsModal({ onClose }) {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -2477,7 +2429,6 @@ export function ActivityLogsModal({ onClose }) {
                     </div>
                 </div>
 
-                {/* Filters */}
                 <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
                     <div className="flex flex-wrap items-center gap-2.5">
                         <select
@@ -2524,7 +2475,6 @@ export function ActivityLogsModal({ onClose }) {
                     />
                 </div>
 
-                {/* Table */}
                 <div className="flex-1 overflow-auto">
                     <table className="w-full text-xs text-left">
                         <thead className="bg-slate-100 text-slate-600 uppercase text-[11px] sticky top-0">
@@ -2586,7 +2536,6 @@ export function ActivityLogsModal({ onClose }) {
                     </table>
                 </div>
 
-                {/* Pagination */}
                 <div className="px-6 py-3 bg-slate-50 border-t border-slate-200">
                     <PaginationControl
                         currentPage={page}
@@ -2602,4 +2551,3 @@ export function ActivityLogsModal({ onClose }) {
         </div>
     );
 }
-

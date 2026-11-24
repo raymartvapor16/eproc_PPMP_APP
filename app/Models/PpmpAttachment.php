@@ -29,20 +29,14 @@ class PpmpAttachment extends Model
 
     protected static array $encryptedUuidCache = [];
 
-    /**
-     * Encrypt a UUID to a safe URL token
-     */
     public static function encryptUuid(string $uuid): string
     {
         return static::$encryptedUuidCache[$uuid] ??= rtrim(strtr(\Illuminate\Support\Facades\Crypt::encryptString($uuid), '+/', '-_'), '=');
     }
 
-    /**
-     * Decrypt a URL token back to a raw UUID (or returns input if already a plain UUID)
-     */
     public static function decryptUuid(string $encrypted): string
     {
-        // If it's already a plain UUID format (8-4-4-4-12 hex)
+
         if (preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $encrypted)) {
             return $encrypted;
         }
@@ -56,9 +50,6 @@ class PpmpAttachment extends Model
         }
     }
 
-    /**
-     * URL-safe encrypted UUID accessor
-     */
     public function getEncryptedUuidAttribute(): string
     {
         return self::encryptUuid($this->uuid);

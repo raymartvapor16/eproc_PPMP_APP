@@ -43,10 +43,18 @@ export const CreateUserModal = ({
         { id: 4, name: 'Supplier Evaluation System', link_url: '/supplierevaluation', badge: 'Supplier Rating', description: 'Province-wide Supplier Performance Evaluation and Purchase Order Management.' },
     ]);
     const [accessibleSystems, setAccessibleSystems] = useState(['/eprocrementppmpapp', '/pims']);
+    const [selectedRoles, setSelectedRoles] = useState(['end_user']);
     const [assignedAccountCodeIds, setAssignedAccountCodeIds] = useState([]);
 
     const [showPassword, setShowPassword] = useState(false);
     const [signaturePreview, setSignaturePreview] = useState(null);
+    const [signatureMeta, setSignatureMeta] = useState({
+        signatureType: 'optional',
+        expirationDate: '',
+        pnpkiProofFile: null,
+        existingProofName: '',
+        captureMethod: 'drawn',
+    });
     const [isDrawPadOpen, setIsDrawPadOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
@@ -111,15 +119,31 @@ export const CreateUserModal = ({
         reader.readAsDataURL(file);
     };
 
-    const handleDrawSignatureSave = (dataUrl) => {
+    const handleDrawSignatureSave = (dataUrl, meta = null) => {
         setSignaturePreview(dataUrl);
         setFormData(prev => ({ ...prev, signature: dataUrl }));
+        if (meta) {
+            setSignatureMeta({
+                signatureType: meta.signatureType || 'optional',
+                expirationDate: meta.expirationDate || '',
+                pnpkiProofFile: meta.pnpkiProofFile || null,
+                existingProofName: meta.existingProofName || meta.pnpkiProofFile?.name || '',
+                captureMethod: meta.captureMethod || 'drawn',
+            });
+        }
         setIsDrawPadOpen(false);
     };
 
     const clearSignature = () => {
         setSignaturePreview(null);
         setFormData(prev => ({ ...prev, signature: '' }));
+        setSignatureMeta({
+            signatureType: 'optional',
+            expirationDate: '',
+            pnpkiProofFile: null,
+            existingProofName: '',
+            captureMethod: 'drawn',
+        });
     };
 
     const toggleSystem = (url) => {
@@ -130,6 +154,21 @@ export const CreateUserModal = ({
             } else {
                 return [...prev, url];
             }
+        });
+    };
+
+    const toggleRole = (roleValue) => {
+        setSelectedRoles((prev) => {
+            const exists = prev.includes(roleValue);
+            let next;
+            if (exists) {
+                if (prev.length === 1) return prev;
+                next = prev.filter((r) => r !== roleValue);
+            } else {
+                next = [...prev, roleValue];
+            }
+            setFormData((fd) => ({ ...fd, role: next[0] || 'end_user' }));
+            return next;
         });
     };
 
@@ -156,12 +195,39 @@ export const CreateUserModal = ({
 
         setLoading(true);
         try {
-            const payload = {
-                ...formData,
-                office_id: formData.office_id ? Number(formData.office_id) : null,
-                accessible_systems: accessibleSystems,
-                account_code_ids: formData.role === 'twg' ? assignedAccountCodeIds : [],
-            };
+            let payload;
+            if (signatureMeta.pnpkiProofFile) {
+                payload = new FormData();
+                Object.keys(formData).forEach((key) => {
+                    if (formData[key] !== null && formData[key] !== undefined && formData[key] !== '') {
+                        payload.append(key, formData[key]);
+                    }
+                });
+                payload.append('signature_type', signatureMeta.signatureType || 'optional');
+                payload.append('signature_capture_method', signatureMeta.captureMethod || 'drawn');
+                if (signatureMeta.signatureType === 'pnpki') {
+                    payload.append('pnpki_expiration_date', signatureMeta.expirationDate || '');
+                    payload.append('pnpki_proof_pdf', signatureMeta.pnpkiProofFile);
+                }
+                payload.append('roles', JSON.stringify(selectedRoles));
+                payload.append('accessible_systems', JSON.stringify(accessibleSystems));
+                if (selectedRoles.includes('twg') && assignedAccountCodeIds.length > 0) {
+                    assignedAccountCodeIds.forEach((id) => payload.append('account_code_ids[]', id));
+                }
+            } else {
+                payload = {
+                    ...formData,
+                    role: selectedRoles[0] || formData.role,
+                    roles: selectedRoles,
+                    office_id: formData.office_id ? Number(formData.office_id) : null,
+                    signature_type: signatureMeta.signatureType || 'optional',
+                    signature_capture_method: signatureMeta.captureMethod || 'drawn',
+                    pnpki_expiration_date:
+                        signatureMeta.signatureType === 'pnpki' ? signatureMeta.expirationDate : null,
+                    accessible_systems: accessibleSystems,
+                    account_code_ids: selectedRoles.includes('twg') ? assignedAccountCodeIds : [],
+                };
+            }
 
             const res = await userService.create(payload);
             const newUser = res.data?.user || res.data;
@@ -191,7 +257,7 @@ export const CreateUserModal = ({
                     className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150"
                     onClick={(e) => e.stopPropagation()}
                 >
-                    {/* Modal Header */}
+
                     <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
                         <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-blue-400">
@@ -215,7 +281,6 @@ export const CreateUserModal = ({
                         </button>
                     </div>
 
-                    {/* Modal Form Body */}
                     <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 p-6 space-y-4">
                         {errorMessage && (
                             <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg font-medium flex items-center justify-between">
@@ -227,7 +292,7 @@ export const CreateUserModal = ({
                         )}
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {/* Full Name */}
+
                             <div className="sm:col-span-2">
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
                                     Full Name <span className="text-rose-500">*</span>
@@ -245,7 +310,6 @@ export const CreateUserModal = ({
                                 </div>
                             </div>
 
-                            {/* Email */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
                                     Email Address <span className="text-rose-500">*</span>
@@ -263,7 +327,6 @@ export const CreateUserModal = ({
                                 </div>
                             </div>
 
-                            {/* Password */}
                             <div>
                                 <div className="flex items-center justify-between mb-1">
                                     <label className="text-xs font-bold text-slate-700">
@@ -297,32 +360,53 @@ export const CreateUserModal = ({
                                 </div>
                             </div>
 
-                            {/* Role Selection */}
-                            <div className="sm:col-span-2">
-                                <label className="block text-xs font-bold text-slate-700 mb-1">
-                                    System Role & Permissions <span className="text-rose-500">*</span>
-                                </label>
-                                <div className="relative">
-                                    <Shield className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                                    <select
-                                        value={formData.role}
-                                        onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                                        className="w-full text-xs pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white font-medium"
-                                    >
-                                        {availableRoles.map(r => (
-                                            <option key={r.value} value={r.value}>
-                                                {r.label}
-                                            </option>
-                                        ))}
-                                    </select>
+                            <div className="sm:col-span-2 bg-slate-50/80 border border-slate-200 rounded-xl p-3">
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                        <Shield className="w-3.5 h-3.5 text-blue-600" />
+                                        System Role(s) &amp; Permissions <span className="text-rose-500">*</span>
+                                    </label>
+                                    <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                                        {selectedRoles.length} {selectedRoles.length === 1 ? 'Role' : 'Roles'} Selected
+                                    </span>
                                 </div>
-                                <p className="text-[11px] text-slate-500 mt-1 italic">
-                                    {ROLES_LIST.find(r => r.value === formData.role)?.desc}
+                                <p className="text-[11px] text-slate-500 mb-2">
+                                    Select one or more roles for this account. Multi-role users will be prompted to choose their active role upon login.
                                 </p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto pr-1">
+                                    {availableRoles.map((r) => {
+                                        const isChecked = selectedRoles.includes(r.value);
+                                        return (
+                                            <button
+                                                key={r.value}
+                                                type="button"
+                                                onClick={() => toggleRole(r.value)}
+                                                className={`flex items-start gap-2 p-2 rounded-lg border text-left transition cursor-pointer ${
+                                                    isChecked
+                                                        ? 'bg-blue-50 border-blue-400 text-blue-950'
+                                                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                <span
+                                                    className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center shrink-0 border ${
+                                                        isChecked
+                                                            ? 'bg-blue-600 border-blue-600 text-white'
+                                                            : 'bg-white border-slate-300'
+                                                    }`}
+                                                >
+                                                    {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                                                </span>
+                                                <span className="min-w-0">
+                                                    <span className="block text-[11px] font-bold leading-tight">{r.label}</span>
+                                                    <span className="block text-[10px] text-slate-500 leading-snug">{r.desc}</span>
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
                             </div>
 
-                            {/* TWG Assigned Account Codes Selection */}
-                            {formData.role === 'twg' && (
+                            {selectedRoles.includes('twg') && (
                                 <div className="sm:col-span-2 bg-amber-50/70 border-2 border-amber-300 rounded-xl p-3.5 space-y-2 animate-fade-in-up">
                                     <AccountCodeMultiSelect
                                         selectedIds={assignedAccountCodeIds}
@@ -332,7 +416,6 @@ export const CreateUserModal = ({
                                 </div>
                             )}
 
-                            {/* Permitted Digital Systems Access */}
                             <div className="sm:col-span-2 bg-slate-50/80 border border-slate-200 rounded-xl p-3">
                                 <div className="flex items-center justify-between mb-1.5">
                                     <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
@@ -384,7 +467,6 @@ export const CreateUserModal = ({
                                 </div>
                             </div>
 
-                            {/* Assigned Department / Office */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
                                     Department / Implementing Office
@@ -406,7 +488,6 @@ export const CreateUserModal = ({
                                 </div>
                             </div>
 
-                            {/* Position / Designation */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
                                     Position / Designation
@@ -423,7 +504,6 @@ export const CreateUserModal = ({
                                 </div>
                             </div>
 
-                            {/* Contact Phone */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
                                     Phone / Contact Number
@@ -440,7 +520,6 @@ export const CreateUserModal = ({
                                 </div>
                             </div>
 
-                            {/* User Address */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
                                     User Address
@@ -454,7 +533,6 @@ export const CreateUserModal = ({
                                 />
                             </div>
 
-                            {/* Specimen Signature Section */}
                             <div className="sm:col-span-2 pt-2 border-t border-slate-200">
                                 <div className="flex items-center justify-between mb-2">
                                     <div>
@@ -510,7 +588,6 @@ export const CreateUserModal = ({
                             </div>
                         </div>
 
-                        {/* Modal Footer Actions */}
                         <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-2.5">
                             <button
                                 type="button"
@@ -542,15 +619,15 @@ export const CreateUserModal = ({
                 </div>
             </div>
 
-            {/* Embedded Draw Signature Pad Modal */}
             {isDrawPadOpen && (
                 <SignaturePadModal
                     isOpen={isDrawPadOpen}
                     onClose={() => setIsDrawPadOpen(false)}
                     onSave={handleDrawSignatureSave}
                     initialDataUrl={signaturePreview}
-                    title="Draw Personnel Official Specimen Signature"
-                    description="Draw the official government specimen signature using mouse, stylus, or touch screen."
+                    initialMeta={signatureMeta}
+                    title="Personnel Official Specimen Signature Studio"
+                    description="Choose PNPKI Digital E-Signature or Optional Digital Signature, then draw or attach the official signature."
                 />
             )}
         </>

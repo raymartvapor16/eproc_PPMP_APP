@@ -67,7 +67,6 @@ class SuperAdminAndAdminRoleTest extends TestCase
     {
         $this->actingAs($this->superAdmin);
 
-        // Can access offices management
         $response = $this->postJson('/api/offices', [
             'office_name' => 'Provincial Health Office',
             'abbreviation' => 'PHO',
@@ -76,7 +75,6 @@ class SuperAdminAndAdminRoleTest extends TestCase
         ]);
         $response->assertStatus(201);
 
-        // Can access signatories management
         $response = $this->postJson('/api/signatories', [
             'signatory_type' => 'approved_by',
             'name' => 'Hon. Governor',
@@ -84,11 +82,9 @@ class SuperAdminAndAdminRoleTest extends TestCase
         ]);
         $response->assertStatus(201);
 
-        // Can view users
         $response = $this->getJson('/api/users');
         $response->assertOk();
 
-        // Can view activity logs
         $response = $this->getJson('/api/activity-logs');
         $response->assertOk();
     }
@@ -97,14 +93,12 @@ class SuperAdminAndAdminRoleTest extends TestCase
     {
         $this->actingAs($this->adminUser);
 
-        // Forbidden to create office (Super Admin only)
         $response = $this->postJson('/api/offices', [
             'office_name' => 'Provincial Legal Office',
             'abbreviation' => 'PLO',
         ]);
         $response->assertStatus(403);
 
-        // Admin can configure official signatories (PPMP & APP)
         $response = $this->postJson('/api/signatories', [
             'signatory_type' => 'app_prepared_by',
             'name' => 'GINA MAE B. CARBAQUEL',
@@ -112,7 +106,6 @@ class SuperAdminAndAdminRoleTest extends TestCase
         ]);
         $response->assertStatus(201);
 
-        // Non-admin (end_user) is forbidden to configure signatories
         $this->actingAs($this->endUser);
         $unauth = $this->postJson('/api/signatories', [
             'signatory_type' => 'app_prepared_by',
@@ -126,7 +119,6 @@ class SuperAdminAndAdminRoleTest extends TestCase
     {
         $this->actingAs($this->adminUser);
 
-        // Create pending user
         $pendingUser = User::create([
             'name' => 'Pending Staff',
             'email' => 'pending@example.test',
@@ -137,35 +129,29 @@ class SuperAdminAndAdminRoleTest extends TestCase
             'approval_status' => 'pending',
         ]);
 
-        // Admin can approve user
         $response = $this->postJson("/api/users/{$pendingUser->id}/approve");
         $response->assertOk();
         $this->assertTrue($pendingUser->fresh()->is_active);
 
-        // Admin can change password of regular user
         $response = $this->postJson("/api/users/{$pendingUser->id}/change-password", [
             'password' => 'newpassword123',
         ]);
         $response->assertOk();
 
-        // Admin can change role of regular user
         $response = $this->putJson("/api/users/{$pendingUser->id}/role", [
             'role' => 'head',
         ]);
         $response->assertOk();
         $this->assertEquals('head', $pendingUser->fresh()->role);
 
-        // Admin CANNOT change password of Super Admin
         $response = $this->postJson("/api/users/{$this->superAdmin->id}/change-password", [
             'password' => 'hacksuperadmin',
         ]);
         $response->assertStatus(403);
 
-        // Admin CANNOT deactivate Super Admin
         $response = $this->postJson("/api/users/{$this->superAdmin->id}/toggle-status");
         $response->assertStatus(403);
 
-        // Admin CANNOT delete Super Admin
         $response = $this->deleteJson("/api/users/{$this->superAdmin->id}");
         $response->assertStatus(403);
     }
@@ -174,16 +160,13 @@ class SuperAdminAndAdminRoleTest extends TestCase
     {
         $this->actingAs($this->adminUser);
 
-        // Can view activity logs
         $response = $this->getJson('/api/activity-logs');
         $response->assertOk();
         $response->assertJsonStructure(['logs', 'available_actions']);
 
-        // Can view all PPMPs
         $response = $this->getJson('/api/ppmps');
         $response->assertOk();
 
-        // Can access dashboard
         $response = $this->getJson('/api/dashboard');
         $response->assertOk();
         $response->assertJsonPath('role', 'admin');
@@ -191,7 +174,7 @@ class SuperAdminAndAdminRoleTest extends TestCase
 
     public function test_super_admin_and_admin_can_add_new_user(): void
     {
-        // 1. Super admin can create a user
+
         $this->actingAs($this->superAdmin);
         $response = $this->postJson('/api/users', [
             'name' => 'Newly Created Staff',
@@ -207,7 +190,6 @@ class SuperAdminAndAdminRoleTest extends TestCase
         $response->assertJsonPath('user.is_active', true);
         $response->assertJsonPath('user.approval_status', 'approved');
 
-        // 2. Admin can create an end_user
         $this->actingAs($this->adminUser);
         $responseAdmin = $this->postJson('/api/users', [
             'name' => 'Admin Created EndUser',
@@ -219,7 +201,6 @@ class SuperAdminAndAdminRoleTest extends TestCase
         $responseAdmin->assertStatus(201);
         $responseAdmin->assertJsonPath('user.email', 'enduser2@example.test');
 
-        // 3. Admin CANNOT escalate and create a super_admin
         $responseForbidden = $this->postJson('/api/users', [
             'name' => 'Fake Super Admin',
             'email' => 'fakesuper@example.test',
@@ -228,7 +209,6 @@ class SuperAdminAndAdminRoleTest extends TestCase
         ]);
         $responseForbidden->assertStatus(403);
 
-        // 4. End user cannot create users
         $this->actingAs($this->endUser);
         $responseUnauth = $this->postJson('/api/users', [
             'name' => 'Hacker User',
@@ -243,7 +223,6 @@ class SuperAdminAndAdminRoleTest extends TestCase
     {
         $this->actingAs($this->superAdmin);
 
-        // 1x1 transparent png data url
         $fakePngDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
         $response = $this->postJson("/api/users/{$this->endUser->id}/signature", [
@@ -252,12 +231,10 @@ class SuperAdminAndAdminRoleTest extends TestCase
         $response->assertOk();
         $this->assertStringStartsWith('signatures/', $response->json('user.signature_path'));
 
-        // Verify signature is fetchable via signature endpoint
         $sigResponse = $this->getJson("/api/users/{$this->endUser->id}/signature");
         $sigResponse->assertOk();
         $this->assertEquals('image/png', $sigResponse->headers->get('content-type'));
 
-        // Admin can also update signature
         $this->actingAs($this->adminUser);
         $response2 = $this->postJson("/api/users/{$this->endUser->id}/signature", [
             'signature_data' => $fakePngDataUrl,
@@ -267,7 +244,7 @@ class SuperAdminAndAdminRoleTest extends TestCase
 
     public function test_super_admin_can_toggle_signature_insertion_settings(): void
     {
-        // 1. Initial state defaults to all true
+
         $res = $this->getJson('/api/system-settings/signatures');
         $res->assertOk();
         $res->assertJson([
@@ -278,7 +255,6 @@ class SuperAdminAndAdminRoleTest extends TestCase
             ],
         ]);
 
-        // 2. Super Admin toggles PPMP to false, APP to false
         $this->actingAs($this->superAdmin);
         $updateRes = $this->putJson('/api/system-settings/signatures', [
             'ppmp' => false,
@@ -298,7 +274,6 @@ class SuperAdminAndAdminRoleTest extends TestCase
         $this->assertFalse(\App\Models\SystemSetting::isSignatureInsertionEnabled('app'));
         $this->assertTrue(\App\Models\SystemSetting::isSignatureInsertionEnabled('attachment_list'));
 
-        // Verify audit log
         $this->assertDatabaseHas('audit_logs', [
             'action' => 'SIGNATURE_CONTROLLER_UPDATED',
             'user_id' => $this->superAdmin->id,
@@ -307,7 +282,7 @@ class SuperAdminAndAdminRoleTest extends TestCase
 
     public function test_admin_and_end_user_cannot_update_signature_insertion_settings(): void
     {
-        // Admin gets 403
+
         $this->actingAs($this->adminUser);
         $resAdmin = $this->putJson('/api/system-settings/signatures', [
             'ppmp' => false,
@@ -316,7 +291,6 @@ class SuperAdminAndAdminRoleTest extends TestCase
         ]);
         $resAdmin->assertStatus(403);
 
-        // End user gets 403
         $this->actingAs($this->endUser);
         $resEndUser = $this->putJson('/api/system-settings/signatures', [
             'ppmp' => false,
@@ -325,7 +299,6 @@ class SuperAdminAndAdminRoleTest extends TestCase
         ]);
         $resEndUser->assertStatus(403);
 
-        // Unauthenticated gets 401
         auth()->logout();
         $resGuest = $this->putJson('/api/system-settings/signatures', [
             'ppmp' => false,

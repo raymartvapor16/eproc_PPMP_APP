@@ -111,7 +111,6 @@ export const AdminActivityLog = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
-    // Filters
     const [search, setSearch] = useState("");
     const [actionFilter, setActionFilter] = useState("");
     const [categoryFilter, setCategoryFilter] = useState("");
@@ -120,7 +119,6 @@ export const AdminActivityLog = () => {
     const [perPage, setPerPage] = useState(50);
     const [currentPage, setCurrentPage] = useState(1);
 
-    // Detail drawer
     const [selectedLog, setSelectedLog] = useState(null);
 
     const fetchLogs = useCallback(async () => {
@@ -141,7 +139,6 @@ export const AdminActivityLog = () => {
             if (!res.ok) throw new Error("Failed to load activity logs");
             const data = await res.json();
 
-            // Apply category filter client-side (since backend doesn't know category)
             let filtered = data.logs.data;
             if (categoryFilter) {
                 filtered = filtered.filter((l) => l.category === categoryFilter);
@@ -194,7 +191,7 @@ export const AdminActivityLog = () => {
 
     return (
         <div className="space-y-4">
-            {/* Header */}
+
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                     <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide flex items-center gap-2">
@@ -225,10 +222,9 @@ export const AdminActivityLog = () => {
                 </div>
             </div>
 
-            {/* Filter Bar */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4">
                 <div className="flex flex-wrap gap-3 items-end">
-                    {/* Search */}
+
                     <div className="flex-1 min-w-[200px]">
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Search</label>
                         <div className="relative">
@@ -243,7 +239,6 @@ export const AdminActivityLog = () => {
                         </div>
                     </div>
 
-                    {/* Category */}
                     <div className="min-w-[140px]">
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Category</label>
                         <select
@@ -258,7 +253,6 @@ export const AdminActivityLog = () => {
                         </select>
                     </div>
 
-                    {/* Action */}
                     <div className="min-w-[180px]">
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Action Code</label>
                         <select
@@ -273,7 +267,6 @@ export const AdminActivityLog = () => {
                         </select>
                     </div>
 
-                    {/* Date From */}
                     <div className="min-w-[140px]">
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Date From</label>
                         <input
@@ -284,7 +277,6 @@ export const AdminActivityLog = () => {
                         />
                     </div>
 
-                    {/* Date To */}
                     <div className="min-w-[140px]">
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Date To</label>
                         <input
@@ -295,7 +287,6 @@ export const AdminActivityLog = () => {
                         />
                     </div>
 
-                    {/* Per page */}
                     <div className="min-w-[80px]">
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Per Page</label>
                         <select
@@ -309,7 +300,6 @@ export const AdminActivityLog = () => {
                         </select>
                     </div>
 
-                    {/* Reset */}
                     {hasFilters && (
                         <button
                             onClick={resetFilters}
@@ -322,7 +312,6 @@ export const AdminActivityLog = () => {
                 </div>
             </div>
 
-            {/* Summary Stats Strip */}
             {pagination && !loading && (
                 <div className="flex flex-wrap gap-2">
                     {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => {
@@ -347,7 +336,6 @@ export const AdminActivityLog = () => {
                 </div>
             )}
 
-            {/* Main Log Table */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                 {error && (
                     <div className="p-4 bg-rose-50 border-b border-rose-200 text-rose-700 text-xs flex items-center gap-2">
@@ -388,7 +376,7 @@ export const AdminActivityLog = () => {
                                     const Icon = cfg.icon;
                                     return (
                                         <tr key={log.id} className="hover:bg-slate-50 transition group">
-                                            {/* DateTime */}
+
                                             <td className="px-4 py-3 whitespace-nowrap">
                                                 <div className="flex items-center gap-1.5 text-slate-700">
                                                     <Clock className="w-3 h-3 text-slate-400 shrink-0" />
@@ -396,7 +384,6 @@ export const AdminActivityLog = () => {
                                                 </div>
                                             </td>
 
-                                            {/* Category Badge */}
                                             <td className="px-4 py-3">
                                                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${cfg.badge}`}>
                                                     <Icon className="w-2.5 h-2.5" />
@@ -404,7 +391,6 @@ export const AdminActivityLog = () => {
                                                 </span>
                                             </td>
 
-                                            {/* Description */}
                                             <td className="px-4 py-3 max-w-xs">
                                                 <div className="font-medium text-slate-800 truncate" title={log.description}>
                                                     {log.description}
@@ -412,7 +398,6 @@ export const AdminActivityLog = () => {
                                                 <div className="font-mono text-[10px] text-slate-400 mt-0.5">{log.action}</div>
                                             </td>
 
-                                            {/* User */}
                                             <td className="px-4 py-3">
                                                 {log.user ? (
                                                     <div>
@@ -424,12 +409,10 @@ export const AdminActivityLog = () => {
                                                 )}
                                             </td>
 
-                                            {/* IP */}
                                             <td className="px-4 py-3">
                                                 <span className="font-mono text-slate-500 text-[11px]">{log.ip_address || "—"}</span>
                                             </td>
 
-                                            {/* Details */}
                                             <td className="px-4 py-3 text-right">
                                                 {(log.old_values || log.new_values) ? (
                                                     <button
@@ -451,7 +434,6 @@ export const AdminActivityLog = () => {
                     </div>
                 )}
 
-                {/* Pagination */}
                 {pagination && pagination.last_page > 1 && (
                     <div className="px-5 py-3 border-t border-slate-200 bg-slate-50/70 flex items-center justify-between text-xs text-slate-600">
                         <span>
@@ -504,7 +486,6 @@ export const AdminActivityLog = () => {
                 )}
             </div>
 
-            {/* Detail Drawer / Modal */}
             {selectedLog && (
                 <div
                     className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"

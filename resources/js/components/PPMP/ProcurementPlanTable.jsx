@@ -8,13 +8,9 @@ import { AccountCodeCombobox } from './AccountCodeCombobox';
 import { ProgramNameCombobox } from './ProgramNameCombobox';
 import { SourceOfFundCombobox } from './SourceOfFundCombobox';
 
-/**
- * Automatically wraps long text so each line has at most 6 words,
- * matching government PPMP presentation standards.
- */
 export const formatDescription6Words = (text) => {
     if (!text) return '';
-    // If the user already added manual line breaks, preserve user's line structure but ensure each line respects max 6 words
+
     const lines = text.split('\n');
     return lines.map(line => {
         const words = line.trim().split(/\s+/).filter(Boolean);
@@ -27,20 +23,17 @@ export const formatDescription6Words = (text) => {
     }).join('\n');
 };
 
-/**
- * Formats a month or date string (e.g. "2026-01", "2026-01 - 2026-02", "1/2026", "1/2026 - 2/2026") into "M/YYYY" or "M/YYYY - M/YYYY" format.
- */
 export const formatSingleMonthYear = (val) => {
     if (!val) return '';
     const str = String(val).trim();
     if (!str) return '';
-    // Match YYYY-MM or YYYY-MM-DD
+
     const isoMatch = str.match(/^(\d{4})-(\d{1,2})/);
     if (isoMatch) {
         const [, year, month] = isoMatch;
         return `${parseInt(month, 10)}/${year}`;
     }
-    // Match MM/YYYY or M/YYYY
+
     const myMatch = str.match(/^(\d{1,2})\/(\d{4})/);
     if (myMatch) {
         const [, month, year] = myMatch;
@@ -54,7 +47,6 @@ export const formatMonthYear = (val) => {
     const str = String(val).trim();
     if (!str) return '—';
 
-    // Check if it's a range (separated by ' - ' or ' to ' or ',')
     if (str.includes(' - ') || str.includes(' to ')) {
         const parts = str.includes(' - ') ? str.split(' - ') : str.split(' to ');
         const start = formatSingleMonthYear(parts[0]);
@@ -69,9 +61,6 @@ export const formatMonthYear = (val) => {
     return formatted || str;
 };
 
-/**
- * Normalizes input value for single month <input type="month"> (YYYY-MM).
- */
 export const toSingleMonthInputValue = (val) => {
     if (!val) return '';
     const str = String(val).trim();
@@ -88,10 +77,6 @@ export const toSingleMonthInputValue = (val) => {
     return '';
 };
 
-/**
- * Splits a stored date value (which could be single "1/2026" or range "1/2026 - 2/2026")
- * into { startMonth: 'YYYY-MM', endMonth: 'YYYY-MM' } for inputs.
- */
 export const parseMonthRangeValue = (val) => {
     if (!val) return { start: '', end: '' };
     const str = String(val).trim();
@@ -115,9 +100,6 @@ export const parseMonthRangeValue = (val) => {
     };
 };
 
-/**
- * Combines startMonth (YYYY-MM) and optional endMonth (YYYY-MM) into standard string representation e.g. "1/2026" or "1/2026 - 2/2026".
- */
 export const combineMonthRangeValue = (startVal, endVal) => {
     const startFormatted = formatSingleMonthYear(startVal);
     const endFormatted = formatSingleMonthYear(endVal);
@@ -131,16 +113,10 @@ export const toMonthInputValue = (val) => {
     return parseMonthRangeValue(val).start;
 };
 
-/**
- * Compact, clean Month / Month Range input component:
- * Allows user to pick a primary month (e.g. 1/2026), with an optional secondary month (e.g. 2/2026)
- * to form a range like "1/2026 - 2/2026", or just keep single "1/2026".
- */
 export const MonthRangeInput = ({ value, onChange, className = "" }) => {
     const { start, end } = parseMonthRangeValue(value);
     const [hasRange, setHasRange] = React.useState(Boolean(end));
 
-    // Keep internal range toggle synced if value prop changes
     React.useEffect(() => {
         if (end) {
             setHasRange(true);
@@ -159,11 +135,11 @@ export const MonthRangeInput = ({ value, onChange, className = "" }) => {
 
     const toggleRange = () => {
         if (hasRange) {
-            // Remove range, keep only start
+
             setHasRange(false);
             onChange(combineMonthRangeValue(start, ''));
         } else {
-            // Enable range
+
             setHasRange(true);
         }
     };
@@ -177,7 +153,7 @@ export const MonthRangeInput = ({ value, onChange, className = "" }) => {
                 className="w-full text-[11px] p-1 border border-slate-300 rounded text-center bg-white shadow-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                 title="Select month"
             />
-            
+
             {hasRange ? (
                 <div className="w-full flex items-center gap-1">
                     <span className="text-[10px] font-bold text-slate-400 select-none">-</span>
@@ -217,6 +193,7 @@ export const ProcurementPlanTable = ({
     items = [],
     isEditable = false,
     onAddItem,
+    onAddRetention = null,
     onRemoveItem,
     onUpdateItem,
     onUpdateCellValue = null,
@@ -240,7 +217,7 @@ export const ProcurementPlanTable = ({
     warrantyAndOtherTerms = '',
     supportingDocuments = DEFAULT_DOCUMENTS,
     procurementModes = null,
-    // Google Sheets style Cell Comments props
+
     cellComments = [],
     changeLogs = [],
     canComment = false,
@@ -253,6 +230,9 @@ export const ProcurementPlanTable = ({
 }) => {
     const [activeCellKey, setActiveCellKey] = useState(null);
     const [showProgramInput, setShowProgramInput] = useState(Boolean(programName && String(programName).trim()));
+    const [showRetentionPanel, setShowRetentionPanel] = useState(false);
+    const [retentionPctInput, setRetentionPctInput] = useState('10');
+    const [autoDeductRetention, setAutoDeductRetention] = useState(true);
     const [docsList, setDocsList] = useState(supportingDocuments);
     const [modesList, setModesList] = useState(Array.isArray(procurementModes) && procurementModes.length > 0 ? procurementModes : []);
 
@@ -292,7 +272,6 @@ export const ProcurementPlanTable = ({
             return;
         }
 
-        // Only editable mode requires the list of supporting documents for dropdown selection
         if (!isEditable) {
             return;
         }
@@ -351,59 +330,62 @@ export const ProcurementPlanTable = ({
             <div className="overflow-x-auto border border-slate-900 shadow-sm bg-white rounded-t-lg">
                 <table className="w-full text-left text-xs border-collapse print-table">
                     <thead className="sticky top-0 z-10 bg-slate-100 shadow-2xs">
-                        <tr className="bg-slate-100 text-slate-900 border-b border-slate-900 font-bold divide-x divide-slate-400 text-center text-[11px] leading-tight">
-                            <th className="p-2 min-w-[320px]">
+                        <tr className="bg-slate-100 text-slate-900 border-b border-slate-900 font-bold divide-x divide-slate-400 text-center text-[11px] leading-snug">
+                            <th className="p-2.5 min-w-[300px]">
                                 General Description and Objective of the<br />
                                 Project to be Procured
                             </th>
-                            <th className="p-2 min-w-[100px] w-28">
+                            <th className="p-2.5 min-w-[140px]">
                                 Type of the Project to be<br />
-                                Procured (whether Goods, Infrastructure and<br />
+                                Procured (whether Goods,<br />
+                                Infrastructure and<br />
                                 Consulting Services)
                             </th>
-                            <th className="p-2 min-w-[110px]">
-                                Quantity and Size of the Project<br />
-                                to be Procured
+                            <th className="p-2.5 min-w-[130px]">
+                                Quantity and Size of the<br />
+                                Project to be Procured
                             </th>
-                            <th className="p-2 min-w-[120px]">
+                            <th className="p-2.5 min-w-[175px]">
                                 Recommended Mode of<br />
                                 Procurement
                             </th>
-                            <th className="p-2 w-28">
-                                Pre-Procurement Conference, if<br />
-                                applicable (Yes/No)
+                            <th className="p-2.5 min-w-[115px]">
+                                Pre-Procurement<br />
+                                Conference, if applicable<br />
+                                (Yes/No)
                             </th>
-                            <th className="p-2 min-w-[100px]">
+                            <th className="p-2.5 min-w-[145px]">
                                 Start of Procurement<br />
                                 Activity
                             </th>
-                            <th className="p-2 min-w-[100px]">
+                            <th className="p-2.5 min-w-[145px]">
                                 End of Procurement<br />
                                 Activity
                             </th>
-                            <th className="p-2 min-w-[110px]">
+                            <th className="p-2.5 min-w-[145px]">
                                 Expected Delivery/<br />
                                 Implementation Period
                             </th>
-                            <th className="p-2 min-w-[90px]">
+                            <th className="p-2.5 min-w-[185px]">
                                 Source of Funds
                             </th>
-                            <th className="p-2 min-w-[130px] text-right">
-                                Estimated Budget / Authorized<br />
-                                Budgetary Allocation (PhP)
+                            <th className="p-2.5 min-w-[145px] text-right">
+                                Estimated Budget /<br />
+                                Authorized Budgetary<br />
+                                Allocation (PhP)
                             </th>
-                            <th className="p-2 min-w-[170px]">
+                            <th className="p-2.5 min-w-[200px]">
                                 ATTACHED SUPPORTING<br />
                                 DOCUMENTS
                             </th>
-                            <th className="p-2 min-w-[90px]">
+                            <th className="p-2.5 min-w-[150px]">
                                 REMARKS
                             </th>
-                            {isEditable && <th className="p-2 w-12 no-print">Action</th>}
+                            {isEditable && <th className="p-2.5 min-w-[68px] w-16 no-print">Action</th>}
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-300">
-                        {/* 2nd Row after the header row: Category / Account Title (e.g. Representation Expenses (5-02-99-030)) */}
+
                         <tr className="bg-slate-50 font-bold border-b border-slate-300 divide-x divide-slate-300">
                             <CommentableCell
                                 itemId={null}
@@ -439,7 +421,7 @@ export const ProcurementPlanTable = ({
                             >
                                 {isEditable ? (
                                     <div className="flex flex-col gap-2">
-                                        {/* Searchable Program Name Dropdown */}
+
                                         <ProgramNameCombobox
                                             value={programName || ''}
                                             selectedId={programNameId}
@@ -508,9 +490,10 @@ export const ProcurementPlanTable = ({
                         ) : (
                             items.filter(i => !i.is_header).map((item, index) => {
                                 const realIdx = items.findIndex(i => i === item);
+                                const isRetentionRow = Boolean(item.is_retention);
                                 return (
-                                <tr key={item.id || index} className="divide-x divide-slate-200 hover:bg-slate-50 transition-colors">
-                                    {/* Description & Objective */}
+                                <tr key={item.id || index} className={`divide-x divide-slate-200 transition-colors ${isRetentionRow ? 'bg-amber-50/70 hover:bg-amber-50' : 'hover:bg-slate-50'}`}>
+
                                     <CommentableCell
                                         itemId={item.id}
                                         itemNo={realIdx + 1}
@@ -528,9 +511,16 @@ export const ProcurementPlanTable = ({
                                         onDeleteCellComment={onDeleteCellComment}
                                         onComplyCellComment={onComplyCellComment}
                                         onUncomplyCellComment={onUncomplyCellComment}
-                                        className="align-top"
-                                    
+                                        className="p-2 align-top"
+
                                         onUpdateCellValue={getCellUpdateHandler('description', 'General Description and Objective', item, realIdx)}>
+                                        {isRetentionRow && (
+                                            <div className="mb-1.5 flex items-center justify-center">
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-amber-200/90 text-amber-950 border border-amber-400">
+                                                    Retention{item.retention_percentage ? ` (${parseFloat(item.retention_percentage)}%)` : ''} &bull; Optional Spec
+                                                </span>
+                                            </div>
+                                        )}
                                         {isEditable ? (
                                             <textarea
                                                 value={item.description || ''}
@@ -549,7 +539,7 @@ export const ProcurementPlanTable = ({
 
                                     {!item.is_header && (
                                         <>
-                                            {/* Type of Project */}
+
                                             <CommentableCell
                                                 itemId={item.id}
                                                 itemNo={realIdx + 1}
@@ -567,13 +557,14 @@ export const ProcurementPlanTable = ({
                                                 onDeleteCellComment={onDeleteCellComment}
                                                 onComplyCellComment={onComplyCellComment}
                                                 onUncomplyCellComment={onUncomplyCellComment}
-                                            
+                                                className="p-2 align-top"
+
                                         onUpdateCellValue={getCellUpdateHandler('project_type', 'Type of Project', item, realIdx)}>
                                                 {isEditable ? (
                                                     <select
                                                         value={item.project_type || 'Goods'}
                                                         onChange={(e) => onUpdateItem(realIdx, 'project_type', e.target.value)}
-                                                        className="w-full text-xs p-1 border border-slate-300 rounded bg-white"
+                                                        className="w-full text-xs p-1.5 border border-slate-300 rounded bg-white"
                                                     >
                                                         <option value="Goods">Goods</option>
                                                         <option value="Infrastructure Projects">Infrastructure Projects</option>
@@ -584,7 +575,6 @@ export const ProcurementPlanTable = ({
                                                 )}
                                             </CommentableCell>
 
-                                            {/* Quantity & Size */}
                                             <CommentableCell
                                                 itemId={item.id}
                                                 itemNo={realIdx + 1}
@@ -602,8 +592,8 @@ export const ProcurementPlanTable = ({
                                                 onDeleteCellComment={onDeleteCellComment}
                                                 onComplyCellComment={onComplyCellComment}
                                                 onUncomplyCellComment={onUncomplyCellComment}
-                                                className="align-top"
-                                            
+                                                className="p-2 align-top"
+
                                         onUpdateCellValue={getCellUpdateHandler('quantity_size', 'Quantity and Size', item, realIdx)}>
                                                 {isEditable ? (
                                                     <textarea
@@ -618,7 +608,6 @@ export const ProcurementPlanTable = ({
                                                 )}
                                             </CommentableCell>
 
-                                            {/* Mode of Procurement */}
                                             <CommentableCell
                                                 itemId={item.id}
                                                 itemNo={realIdx + 1}
@@ -636,15 +625,16 @@ export const ProcurementPlanTable = ({
                                                 onDeleteCellComment={onDeleteCellComment}
                                                 onComplyCellComment={onComplyCellComment}
                                                 onUncomplyCellComment={onUncomplyCellComment}
-                                            
+                                                className="p-2 align-top"
+
                                         onUpdateCellValue={getCellUpdateHandler('procurement_mode', 'Recommended Mode of Procurement', item, realIdx)}>
                                                 {isEditable ? (
                                                     <select
                                                         value={item.procurement_mode || (modesList[0]?.name || 'Competitive Bidding (RA 12009)')}
                                                         onChange={(e) => onUpdateItem(realIdx, 'procurement_mode', e.target.value)}
-                                                        className="w-full text-xs p-1 border border-slate-300 rounded bg-white font-medium text-slate-800"
+                                                        className="w-full text-xs p-1.5 border border-slate-300 rounded bg-white font-medium text-slate-800"
                                                     >
-                                                        {/* Preserve existing item value if inactive or not in current list */}
+
                                                         {item.procurement_mode && !modesList.some((m) => m.name === item.procurement_mode) && (
                                                             <option value={item.procurement_mode}>
                                                                 {item.procurement_mode} (Inactive)
@@ -661,7 +651,6 @@ export const ProcurementPlanTable = ({
                                                 )}
                                             </CommentableCell>
 
-                                            {/* Pre-Proc Conf */}
                                             <CommentableCell
                                                 itemId={item.id}
                                                 itemNo={realIdx + 1}
@@ -679,8 +668,8 @@ export const ProcurementPlanTable = ({
                                                 onDeleteCellComment={onDeleteCellComment}
                                                 onComplyCellComment={onComplyCellComment}
                                                 onUncomplyCellComment={onUncomplyCellComment}
-                                                className="text-center"
-                                            
+                                                className="p-2 text-center align-middle"
+
                                         onUpdateCellValue={getCellUpdateHandler('pre_proc_conference', 'Pre-Procurement Conference', item, realIdx)}>
                                                 {isEditable ? (
                                                     <div className="flex flex-col items-center justify-center gap-0.5">
@@ -704,7 +693,6 @@ export const ProcurementPlanTable = ({
                                                 )}
                                             </CommentableCell>
 
-                                            {/* Start Activity */}
                                             <CommentableCell
                                                 itemId={item.id}
                                                 itemNo={realIdx + 1}
@@ -722,8 +710,8 @@ export const ProcurementPlanTable = ({
                                                 onDeleteCellComment={onDeleteCellComment}
                                                 onComplyCellComment={onComplyCellComment}
                                                 onUncomplyCellComment={onUncomplyCellComment}
-                                                className="text-center align-top"
-                                            
+                                                className="p-2 text-center align-top"
+
                                         onUpdateCellValue={getCellUpdateHandler('start_date', 'Start of Procurement Activity', item, realIdx)}>
                                                 {isEditable ? (
                                                     <MonthRangeInput
@@ -735,7 +723,6 @@ export const ProcurementPlanTable = ({
                                                 )}
                                             </CommentableCell>
 
-                                            {/* End Activity */}
                                             <CommentableCell
                                                 itemId={item.id}
                                                 itemNo={realIdx + 1}
@@ -753,8 +740,8 @@ export const ProcurementPlanTable = ({
                                                 onDeleteCellComment={onDeleteCellComment}
                                                 onComplyCellComment={onComplyCellComment}
                                                 onUncomplyCellComment={onUncomplyCellComment}
-                                                className="text-center align-top"
-                                            
+                                                className="p-2 text-center align-top"
+
                                         onUpdateCellValue={getCellUpdateHandler('end_date', 'End of Procurement Activity', item, realIdx)}>
                                                 {isEditable ? (
                                                     <MonthRangeInput
@@ -766,7 +753,6 @@ export const ProcurementPlanTable = ({
                                                 )}
                                             </CommentableCell>
 
-                                            {/* Expected Delivery Period */}
                                             <CommentableCell
                                                 itemId={item.id}
                                                 itemNo={realIdx + 1}
@@ -784,8 +770,8 @@ export const ProcurementPlanTable = ({
                                                 onDeleteCellComment={onDeleteCellComment}
                                                 onComplyCellComment={onComplyCellComment}
                                                 onUncomplyCellComment={onUncomplyCellComment}
-                                                className="text-center align-top"
-                                            
+                                                className="p-2 text-center align-top"
+
                                         onUpdateCellValue={getCellUpdateHandler('delivery_period', 'Expected Delivery / Implementation Period', item, realIdx)}>
                                                 {isEditable ? (
                                                     <MonthRangeInput
@@ -797,7 +783,6 @@ export const ProcurementPlanTable = ({
                                                 )}
                                             </CommentableCell>
 
-                                            {/* Source of Funds */}
                                             <CommentableCell
                                                 itemId={item.id}
                                                 itemNo={realIdx + 1}
@@ -815,8 +800,8 @@ export const ProcurementPlanTable = ({
                                                 onDeleteCellComment={onDeleteCellComment}
                                                 onComplyCellComment={onComplyCellComment}
                                                 onUncomplyCellComment={onUncomplyCellComment}
-                                                className="align-top"
-                                            
+                                                className="p-2 align-top"
+
                                         onUpdateCellValue={getCellUpdateHandler('source_of_fund', 'Source of Funds', item, realIdx)}>
                                                 {isEditable ? (
                                                     <SourceOfFundCombobox
@@ -834,7 +819,6 @@ export const ProcurementPlanTable = ({
                                                 )}
                                             </CommentableCell>
 
-                                            {/* Estimated Budget */}
                                             <CommentableCell
                                                 itemId={item.id}
                                                 itemNo={realIdx + 1}
@@ -852,8 +836,8 @@ export const ProcurementPlanTable = ({
                                                 onDeleteCellComment={onDeleteCellComment}
                                                 onComplyCellComment={onComplyCellComment}
                                                 onUncomplyCellComment={onUncomplyCellComment}
-                                                className="text-right"
-                                            
+                                                className="p-2 text-right align-top"
+
                                         onUpdateCellValue={getCellUpdateHandler('estimated_budget', 'Estimated Budget / Authorized Allocation', item, realIdx)}>
                                                 {isEditable ? (
                                                     <input
@@ -866,7 +850,7 @@ export const ProcurementPlanTable = ({
                                                             onUpdateItem(realIdx, 'estimated_budget', raw === '' ? '' : (parseFloat(raw) || 0));
                                                         }}
                                                         placeholder="0.00"
-                                                        className="w-full text-xs p-1 border border-slate-300 rounded text-right font-mono font-bold text-blue-900"
+                                                        className="w-full text-xs p-1.5 border border-slate-300 rounded text-right font-mono font-bold text-blue-900"
                                                     />
                                                 ) : (
                                                     <span className="font-mono font-bold text-slate-900">
@@ -875,7 +859,6 @@ export const ProcurementPlanTable = ({
                                                 )}
                                             </CommentableCell>
 
-                                            {/* Attached Supporting Documents */}
                                             <CommentableCell
                                                 itemId={item.id}
                                                 itemNo={realIdx + 1}
@@ -893,8 +876,8 @@ export const ProcurementPlanTable = ({
                                                 onDeleteCellComment={onDeleteCellComment}
                                                 onComplyCellComment={onComplyCellComment}
                                                 onUncomplyCellComment={onUncomplyCellComment}
-                                                className="align-top min-w-[170px]"
-                                            
+                                                className="p-2 align-top min-w-[200px]"
+
                                         onUpdateCellValue={getCellUpdateHandler('supporting_docs_text', 'Attached Supporting Documents', item, realIdx)}>
                                                 {isEditable ? (
                                                     <SupportingDocsDropdown
@@ -926,7 +909,6 @@ export const ProcurementPlanTable = ({
                                                 )}
                                             </CommentableCell>
 
-                                            {/* Remarks */}
                                             <CommentableCell
                                                 itemId={item.id}
                                                 itemNo={realIdx + 1}
@@ -944,8 +926,8 @@ export const ProcurementPlanTable = ({
                                                 onDeleteCellComment={onDeleteCellComment}
                                                 onComplyCellComment={onComplyCellComment}
                                                 onUncomplyCellComment={onUncomplyCellComment}
-                                                className="align-top"
-                                            
+                                                className="p-2 align-top"
+
                                         onUpdateCellValue={getCellUpdateHandler('remarks', 'Remarks', item, realIdx)}>
                                                 {isEditable ? (
                                                     <textarea
@@ -979,32 +961,137 @@ export const ProcurementPlanTable = ({
                             })
                         )}
 
-                        {/* Bottom Summary Rows */}
-                        <tr className="border-t-2 border-slate-800 font-semibold text-xs bg-slate-50 divide-x divide-slate-300">
-                            <td colSpan={9} className="p-2.5 text-right font-bold text-slate-700 uppercase tracking-wider align-middle">
-                                Total Estimated Budget:
-                            </td>
-                            <td colSpan={4} className="p-3 text-center align-middle bg-blue-900 text-white font-bold">
-                                <div className="text-[11px] uppercase tracking-wider text-slate-200">TOTAL BUDGET:</div>
-                                <div className="font-mono text-base font-extrabold text-amber-300 mt-0.5">
-                                    {formatCurrency(totalBudget)}
-                                </div>
-                            </td>
-                        </tr>
+                        {(() => {
+                            const retentionTotal = items
+                                .filter(i => !i.is_header && i.is_retention)
+                                .reduce((sum, i) => sum + (parseFloat(i.estimated_budget) || 0), 0);
+                            const procuredTotal = Math.max(0, Math.round((totalBudget - retentionTotal) * 100) / 100);
+                            return (
+                                <tr className="border-t-2 border-slate-800 font-semibold text-xs bg-slate-50 divide-x divide-slate-300">
+                                    <td colSpan={9} className="p-2.5 text-right font-bold text-slate-700 uppercase tracking-wider align-middle">
+                                        <div>Total Estimated Budget:</div>
+                                        {retentionTotal > 0 && (
+                                            <div className="mt-1 space-y-0.5 text-[11px] font-semibold normal-case">
+                                                <div className="text-amber-700">Less Retention: -{formatCurrency(retentionTotal)}</div>
+                                                <div className="text-emerald-700 font-extrabold">Net Budget To Be Procured: {formatCurrency(procuredTotal)}</div>
+                                            </div>
+                                        )}
+                                    </td>
+                                    <td colSpan={isEditable ? 4 : 3} className="p-3 text-center align-middle bg-blue-900 text-white font-bold">
+                                        <div className="text-[11px] uppercase tracking-wider text-slate-200">TOTAL BUDGET:</div>
+                                        <div className="font-mono text-base font-extrabold text-amber-300 mt-0.5">
+                                            {formatCurrency(totalBudget)}
+                                        </div>
+                                        {retentionTotal > 0 && (
+                                            <div className="text-[10px] font-mono text-emerald-300 mt-0.5">
+                                                Procured: {formatCurrency(procuredTotal)}
+                                            </div>
+                                        )}
+                                    </td>
+                                </tr>
+                            );
+                        })()}
                     </tbody>
                 </table>
             </div>
 
             {isEditable && (
-                <div className="mt-3 flex items-center gap-3 no-print">
-                    <button
-                        type="button"
-                        onClick={onAddItem}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md text-xs font-bold uppercase tracking-wider shadow-xs transition cursor-pointer"
-                    >
-                        <Plus className="w-4 h-4" />
-                        Add Procurement Item Row
-                    </button>
+                <div className="mt-3 space-y-2.5 no-print">
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                        <button
+                            type="button"
+                            onClick={onAddItem}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md text-xs font-bold uppercase tracking-wider shadow-xs transition cursor-pointer"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Add Procurement Item Row
+                        </button>
+                        {onAddRetention && (
+                            <button
+                                type="button"
+                                onClick={() => setShowRetentionPanel(prev => !prev)}
+                                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 text-white hover:bg-amber-700 rounded-md text-xs font-bold uppercase tracking-wider shadow-xs transition cursor-pointer"
+                                title="Add a Retention row and optionally deduct the retention percentage from your total procurement budget"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Add Procurement Item Row (Retention)
+                            </button>
+                        )}
+                    </div>
+
+                    {onAddRetention && showRetentionPanel && (() => {
+                        const regularTotal = items
+                            .filter(i => !i.is_header && !i.is_retention)
+                            .reduce((sum, i) => sum + (parseFloat(i.estimated_budget) || 0), 0);
+                        const pctVal = Math.max(0, Math.min(100, parseFloat(retentionPctInput) || 0));
+                        const previewRetention = autoDeductRetention && regularTotal > 0
+                            ? Math.round(regularTotal * (pctVal / 100) * 100) / 100
+                            : 0;
+                        const previewProcured = Math.max(0, Math.round((regularTotal - previewRetention) * 100) / 100);
+
+                        return (
+                            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                                <div className="space-y-1.5 flex-1">
+                                    <div className="font-extrabold text-amber-950 uppercase tracking-wide text-[11px]">
+                                        Add Retention Row &amp; Automatic Budget Deduction
+                                    </div>
+                                    <div className="flex items-center gap-3 flex-wrap">
+                                        <label className="inline-flex items-center gap-1.5 font-semibold text-amber-900">
+                                            <span>Retention %:</span>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                step="0.01"
+                                                value={retentionPctInput}
+                                                onChange={(e) => setRetentionPctInput(e.target.value)}
+                                                className="w-20 px-2 py-1 bg-white border border-amber-400 rounded text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                                            />
+                                            <span>%</span>
+                                        </label>
+                                        <label className="inline-flex items-center gap-1.5 text-amber-900 font-medium cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={autoDeductRetention}
+                                                onChange={(e) => setAutoDeductRetention(e.target.checked)}
+                                                className="rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+                                            />
+                                            <span>Deduct {pctVal}% from current procurement items</span>
+                                        </label>
+                                    </div>
+                                    {regularTotal > 0 && autoDeductRetention && (
+                                        <div className="text-[11px] font-mono text-amber-950 bg-white/80 px-2.5 py-1.5 rounded-lg border border-amber-200 inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+                                            <span>Gross: <strong>{formatCurrency(regularTotal)}</strong></span>
+                                            <span className="text-amber-700">Retention ({pctVal}%): <strong>-{formatCurrency(previewRetention)}</strong></span>
+                                            <span className="text-emerald-700">To Be Procured: <strong>{formatCurrency(previewProcured)}</strong></span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowRetentionPanel(false)}
+                                        className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold cursor-pointer"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            onAddRetention({
+                                                percentage: pctVal,
+                                                deductFromItems: autoDeductRetention,
+                                            });
+                                            setShowRetentionPanel(false);
+                                        }}
+                                        className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold uppercase tracking-wider shadow-xs cursor-pointer"
+                                    >
+                                        Apply &amp; Add Retention Row
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </div>
             )}
         </div>

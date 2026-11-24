@@ -47,7 +47,6 @@ class SupplierEvaluationSchemaTest extends TestCase
             }
         }
 
-        // Verify the 4 default criteria from the SQL dump are seeded
         $criteria = SupplierEvaluationCriteria::orderBy('id')->pluck('criteria_name', 'id')->toArray();
         $this->assertSame([
             1 => 'PRICE',
@@ -211,7 +210,6 @@ class SupplierEvaluationSchemaTest extends TestCase
             'accessible_systems' => ['/supplierevaluation'],
         ]);
 
-        // 1. Admin creates a Purchase Order
         $poRes = $this->actingAs($admin)->postJson('/api/supplier-evaluation/purchase-orders', [
             'po_no' => '0555-AM-26',
             'pr_no' => 'PR-0555',
@@ -221,7 +219,6 @@ class SupplierEvaluationSchemaTest extends TestCase
         ]);
         $poRes->assertSuccessful();
 
-        // 2. End user creates a Supplier Evaluation from that PO
         $storeEvalRes = $this->actingAs($endUser)->postJson('/api/supplier-evaluation/evaluations', [
             'supplier_name' => 'DAVAO TECH SUPPLIERS',
             'po_no' => '0555-AM-26',
@@ -233,7 +230,6 @@ class SupplierEvaluationSchemaTest extends TestCase
         $evalId = $storeEvalRes->json('evaluation.id');
         $this->assertNotNull($evalId);
 
-        // 3. Stage 1: End user evaluates (4 criteria) -> status becomes 'head review'
         $stage1Res = $this->actingAs($endUser)->postJson("/api/supplier-evaluation/evaluations/{$evalId}/evaluate", [
             'rating' => [
                 1 => 4,
@@ -252,21 +248,18 @@ class SupplierEvaluationSchemaTest extends TestCase
         $stage1Res->assertStatus(200);
         $this->assertSame('head review', $stage1Res->json('evaluation.status'));
 
-        // 4. Stage 2: Office Head reviews & approves -> status becomes 'submitted'
         $stage2Res = $this->actingAs($headUser)->postJson("/api/supplier-evaluation/evaluations/{$evalId}/evaluate", [
             'approve' => true,
         ]);
         $stage2Res->assertStatus(200);
         $this->assertSame('submitted', $stage2Res->json('evaluation.status'));
 
-        // Verify both digital approvals ('Prepared by' and 'Head') are recorded
         $detailRes = $this->actingAs($pgsoUser)->getJson("/api/supplier-evaluation/evaluations/{$evalId}");
         $detailRes->assertStatus(200);
         $this->assertCount(2, $detailRes->json('evaluation.digital_approvals'));
         $this->assertSame(93.75, (float) $detailRes->json('evaluation.total_score'));
         $this->assertSame('Passed', $detailRes->json('evaluation.rating_status'));
 
-        // 6. Check Dashboard Init & Analytics endpoints
         $initRes = $this->actingAs($pgsoUser)->getJson('/api/supplier-evaluation/dashboard-init');
         $initRes->assertStatus(200)
             ->assertJsonPath('effective_role', 'pgso');
@@ -282,4 +275,3 @@ class SupplierEvaluationSchemaTest extends TestCase
             ]);
     }
 }
-

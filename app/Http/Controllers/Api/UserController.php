@@ -14,9 +14,7 @@ use Illuminate\Validation\Rules\Password;
 
 class UserController extends Controller
 {
-    /**
-     * List users with office information (Admin only)
-     */
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -24,14 +22,77 @@ class UserController extends Controller
             return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
         }
 
-        $users = User::with(['office', 'accountCodes'])->latest('id')->get();
+        $users = User::with(['office', 'accountCodes', 'pnpkiSignature'])->latest('id')->get();
 
         return response()->json($users);
     }
 
-    /**
-     * Create a new user (Admin & Super Admin)
-     */
+    protected function storePnpkiProofPdf(?\Illuminate\Http\UploadedFile $uploadedPdf): array
+    {
+        if (!$uploadedPdf) {
+            return ['path' => null, 'original_name' => null, 'error' => null];
+        }
+
+        $clientExt = strtolower($uploadedPdf->getClientOriginalExtension());
+        if ($clientExt !== 'pdf') {
+            return [
+                'path' => null,
+                'original_name' => null,
+                'error' => response()->json([
+                    'message' => 'Security Error: Only official PDF files (.pdf) are accepted for the PNPKI Proof of Registration.',
+                    'errors' => ['pnpki_proof_pdf' => ['Only official PDF files (.pdf) are allowed.']],
+                ], 422),
+            ];
+        }
+
+        $clientName = $uploadedPdf->getClientOriginalName();
+        if (preg_match('/\.(php|exe|bat|cmd|sh|vbs|js|jar|py|pl|url|lnk)\.pdf$/i', $clientName)) {
+            return [
+                'path' => null,
+                'original_name' => null,
+                'error' => response()->json([
+                    'message' => 'Security Error: Suspicious disguised multi-extension filename detected on PNPKI Proof PDF.',
+                    'errors' => ['pnpki_proof_pdf' => ['Suspicious disguised multi-extension filename detected.']],
+                ], 422),
+            ];
+        }
+
+        $handle = fopen($uploadedPdf->getRealPath(), 'rb');
+        $header = fread($handle, 5);
+        fclose($handle);
+        if ($header !== '%PDF-') {
+            return [
+                'path' => null,
+                'original_name' => null,
+                'error' => response()->json([
+                    'message' => 'Security Error: Invalid file content. The uploaded PNPKI Proof document does not have a genuine PDF header.',
+                    'errors' => ['pnpki_proof_pdf' => ['Invalid PDF file header.']],
+                ], 422),
+            ];
+        }
+
+        $sampleContent = file_get_contents($uploadedPdf->getRealPath(), false, null, 0, 50000);
+        if (preg_match('/\/Launch|\/EmbeddedFiles|\/JavaScript|\/JS\s*\(/i', $sampleContent)) {
+            return [
+                'path' => null,
+                'original_name' => null,
+                'error' => response()->json([
+                    'message' => 'Security Error: PNPKI Proof PDF contains active executable scripts or launch actions, which are restricted for security.',
+                    'errors' => ['pnpki_proof_pdf' => ['Active scripts or launch actions are not permitted.']],
+                ], 422),
+            ];
+        }
+
+        $proofFilename = 'pnpki_' . \Illuminate\Support\Str::uuid() . '.pdf';
+        $proofPath = $uploadedPdf->storeAs('pnpki_proofs', $proofFilename, 'local');
+
+        return [
+            'path' => $proofPath,
+            'original_name' => \Illuminate\Support\Str::limit($clientName, 180, ''),
+            'error' => null,
+        ];
+    }
+
     public function store(Request $request): JsonResponse
     {
         $admin = $request->user();
@@ -48,20 +109,55 @@ class UserController extends Controller
             $allowedRoles[] = 'super_admin';
         }
 
+        $rawRoles = $request->input('roles');
+        if (is_string($rawRoles)) {
+            $decodedRoles = json_decode($rawRoles, true);
+            $rawRoles = is_array($decodedRoles) ? $decodedRoles : array_filter(array_map('trim', explode(',', $rawRoles)));
+        }
+        if (!is_array($rawRoles) || empty($rawRoles)) {
+            $singleRole = trim((string) $request->input('role', ''));
+            $rawRoles = $singleRole !== '' ? [$singleRole] : [];
+        }
+        $normalizedRoles = array_values(array_unique(array_filter(array_map(fn ($r) => trim((string) $r), $rawRoles))));
+        if (in_array('super_admin', $normalizedRoles, true) && !$admin->isSuperAdmin()) {
+            return response()->json(['message' => 'Unauthorized. Only Super Admin can assign the Super Admin role.'], 403);
+        }
+        $request->merge([
+            'roles' => $normalizedRoles,
+            'role' => $normalizedRoles[0] ?? $request->input('role', ''),
+        ]);
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:6'],
             'role' => ['required', 'string', 'in:' . implode(',', $allowedRoles)],
+            'roles' => ['required', 'array', 'min:1'],
+            'roles.*' => ['required', 'string', 'in:' . implode(',', $allowedRoles)],
             'office_id' => ['nullable', 'integer', 'exists:offices,id'],
             'designation' => ['nullable', 'string', 'max:255'],
             'phone_number' => ['nullable', 'string', 'max:50'],
             'address' => ['nullable', 'string', 'max:255'],
             'signature' => ['nullable', 'string'],
             'signature_file' => ['nullable', 'file', 'mimes:png,jpg,jpeg', 'max:5120'],
+            'signature_type' => ['nullable', 'string', 'in:pnpki,optional'],
+            'pnpki_expiration_date' => ['nullable', 'date'],
+            'pnpki_proof_pdf' => ['nullable', 'file', 'mimes:pdf', 'max:5120'],
+            'signature_capture_method' => ['nullable', 'string', 'in:drawn,uploaded'],
             'account_code_ids' => ['nullable', 'array'],
             'account_code_ids.*' => ['integer', 'exists:account_codes,id'],
         ]);
+
+        $pnpkiProofPath = null;
+        $pnpkiProofOriginalName = null;
+        if ($request->hasFile('pnpki_proof_pdf')) {
+            $proofResult = $this->storePnpkiProofPdf($request->file('pnpki_proof_pdf'));
+            if ($proofResult['error']) {
+                return $proofResult['error'];
+            }
+            $pnpkiProofPath = $proofResult['path'];
+            $pnpkiProofOriginalName = $proofResult['original_name'];
+        }
 
         $signaturePath = null;
         if (!empty($validated['signature'])) {
@@ -84,8 +180,8 @@ class UserController extends Controller
                 : 'png';
             $rawHeader = file_get_contents($uploaded->getRealPath(), false, null, 0, 8);
             $isValidHeader = (
-                substr($rawHeader, 0, 3) === "\xFF\xD8\xFF" || // JPEG
-                substr($rawHeader, 0, 8) === "\x89PNG\r\n\x1a\n" // PNG
+                substr($rawHeader, 0, 3) === "\xFF\xD8\xFF" ||
+                substr($rawHeader, 0, 8) === "\x89PNG\r\n\x1a\n"
             );
             if (!$isValidHeader) {
                 return response()->json(['message' => 'Uploaded signature is not a valid PNG or JPEG image.'], 422);
@@ -117,7 +213,8 @@ class UserController extends Controller
             'phone_number' => $validated['phone_number'] ?? null,
             'address' => $validated['address'] ?? null,
             'password' => Hash::make($validated['password']),
-            'role' => $validated['role'],
+            'role' => $validated['roles'][0] ?? $validated['role'],
+            'roles' => array_values(array_unique($validated['roles'] ?? [$validated['role']])),
             'office_id' => $validated['office_id'] ?? null,
             'designation' => $validated['designation'] ?? null,
             'signature_path' => $signaturePath,
@@ -126,7 +223,29 @@ class UserController extends Controller
             'accessible_systems' => $accessibleSystems,
         ]);
 
-        if ($user->role === 'twg' && !empty($validated['account_code_ids'])) {
+        if ($signaturePath || $request->filled('signature_type')) {
+            $pnpkiSystemEnabled = \App\Models\SystemSetting::isPnpkiEnabled();
+            $sigType = ($pnpkiSystemEnabled && in_array($request->input('signature_type'), ['pnpki', 'optional'], true))
+                ? $request->input('signature_type')
+                : 'optional';
+            $captureMethod = in_array($request->input('signature_capture_method'), ['drawn', 'uploaded'], true)
+                ? $request->input('signature_capture_method')
+                : ($request->hasFile('signature_file') ? 'uploaded' : 'drawn');
+
+            $user->pnpkiSignature()->updateOrCreate(
+                ['user_id' => $user->id],
+                [
+                    'signature_type' => $sigType,
+                    'expiration_date' => $sigType === 'pnpki' ? ($request->input('pnpki_expiration_date') ?: null) : null,
+                    'proof_pdf_path' => $sigType === 'pnpki' ? $pnpkiProofPath : null,
+                    'proof_original_name' => $sigType === 'pnpki' ? $pnpkiProofOriginalName : null,
+                    'signature_image_path' => $signaturePath,
+                    'capture_method' => $captureMethod,
+                ]
+            );
+        }
+
+        if ($user->hasAssignedRole('twg') && !empty($validated['account_code_ids'])) {
             $user->accountCodes()->sync($validated['account_code_ids']);
         }
 
@@ -141,13 +260,10 @@ class UserController extends Controller
 
         return response()->json([
             'message' => "User account for {$user->name} created and activated successfully.",
-            'user' => $user->load(['office', 'accountCodes']),
+            'user' => $user->load(['office', 'accountCodes', 'pnpkiSignature']),
         ], 201);
     }
 
-    /**
-     * Upload or update a user's signature (Admin & Super Admin)
-     */
     public function updateSignature(Request $request, int $id): JsonResponse
     {
         $admin = $request->user();
@@ -155,16 +271,27 @@ class UserController extends Controller
             return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
         }
 
-        $targetUser = User::findOrFail($id);
+        $targetUser = User::with('pnpkiSignature')->findOrFail($id);
 
         if ($targetUser->isSuperAdmin() && !$admin->isSuperAdmin()) {
             return response()->json(['message' => 'Unauthorized. Only Super Administrators can manage Super Administrator accounts.'], 403);
+        }
+
+        $existingPnpki = $targetUser->pnpkiSignature;
+        if ($existingPnpki && $existingPnpki->signature_type === 'pnpki' && !$existingPnpki->is_expired && !$admin->isSuperAdmin()) {
+            return response()->json([
+                'message' => 'Unauthorized. Only the Super Administrator can edit an active PNPKI Digital E-Signature in User Management.',
+            ], 403);
         }
 
         $request->validate([
             'signature' => ['nullable', 'string'],
             'signature_data' => ['nullable', 'string'],
             'signature_file' => ['nullable', 'file', 'mimes:png,jpg,jpeg', 'max:5120'],
+            'signature_type' => ['nullable', 'string', 'in:pnpki,optional'],
+            'pnpki_expiration_date' => ['nullable', 'date'],
+            'pnpki_proof_pdf' => ['nullable', 'file', 'mimes:pdf', 'max:5120'],
+            'signature_capture_method' => ['nullable', 'string', 'in:drawn,uploaded'],
         ]);
 
         $signaturePath = null;
@@ -189,8 +316,8 @@ class UserController extends Controller
                 : 'png';
             $rawHeader = file_get_contents($uploaded->getRealPath(), false, null, 0, 8);
             $isValidHeader = (
-                substr($rawHeader, 0, 3) === "\xFF\xD8\xFF" || // JPEG
-                substr($rawHeader, 0, 8) === "\x89PNG\r\n\x1a\n" // PNG
+                substr($rawHeader, 0, 3) === "\xFF\xD8\xFF" ||
+                substr($rawHeader, 0, 8) === "\x89PNG\r\n\x1a\n"
             );
             if (!$isValidHeader) {
                 return response()->json(['message' => 'Uploaded signature is not a valid PNG or JPEG image.'], 422);
@@ -200,35 +327,123 @@ class UserController extends Controller
             \Illuminate\Support\Facades\Storage::disk('local')->put($signaturePath, file_get_contents($uploaded->getRealPath()));
         }
 
-        if (!$signaturePath) {
+        if (!$signaturePath && !$targetUser->signature_path) {
             return response()->json(['message' => 'Valid signature image is required.'], 422);
         }
 
-        // Delete previous signature if exists
-        if ($targetUser->signature_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($targetUser->signature_path)) {
-            \Illuminate\Support\Facades\Storage::disk('local')->delete($targetUser->signature_path);
+        if ($signaturePath) {
+
+            if ($targetUser->signature_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($targetUser->signature_path)) {
+                \Illuminate\Support\Facades\Storage::disk('local')->delete($targetUser->signature_path);
+            }
+
+            $targetUser->update(['signature_path' => $signaturePath]);
         }
 
-        $targetUser->update(['signature_path' => $signaturePath]);
+        $existingPnpki = $targetUser->pnpkiSignature;
+        $pnpkiSystemEnabled = \App\Models\SystemSetting::isPnpkiEnabled();
+        $sigType = $pnpkiSystemEnabled
+            ? (in_array($request->input('signature_type'), ['pnpki', 'optional'], true)
+                ? $request->input('signature_type')
+                : ($existingPnpki?->signature_type ?? 'optional'))
+            : 'optional';
+
+        $prevExpDate = $existingPnpki?->previous_expiration_date?->format('Y-m-d');
+        $prevProofPath = $existingPnpki?->previous_proof_pdf_path;
+        $prevProofName = $existingPnpki?->previous_proof_original_name;
+        $renewalHistory = is_array($existingPnpki?->renewal_history) ? $existingPnpki->renewal_history : [];
+        $renewedAt = $existingPnpki?->renewed_at;
+        $renewalCount = (int) ($existingPnpki?->renewal_count ?? 0);
+
+        $currentExpDate = $existingPnpki?->expiration_date?->format('Y-m-d');
+        $proofPath = $existingPnpki?->proof_pdf_path;
+        $proofOriginalName = $existingPnpki?->proof_original_name;
+
+        $newExpInput = $request->input('pnpki_expiration_date');
+        $isRenewing = $sigType === 'pnpki' && (
+            $request->boolean('is_renewal') ||
+            ($existingPnpki && $currentExpDate && $newExpInput && $newExpInput !== $currentExpDate)
+        );
+
+        if ($request->hasFile('pnpki_proof_pdf')) {
+            $proofResult = $this->storePnpkiProofPdf($request->file('pnpki_proof_pdf'));
+            if ($proofResult['error']) {
+                return $proofResult['error'];
+            }
+            if ($proofPath) {
+                $prevProofPath = $proofPath;
+                $prevProofName = $proofOriginalName;
+            }
+            $proofPath = $proofResult['path'];
+            $proofOriginalName = $proofResult['original_name'];
+        }
+
+        if ($isRenewing && $existingPnpki && $currentExpDate) {
+            $prevExpDate = $currentExpDate;
+            if ($existingPnpki->proof_pdf_path && !$prevProofPath) {
+                $prevProofPath = $existingPnpki->proof_pdf_path;
+                $prevProofName = $existingPnpki->proof_original_name;
+            }
+            $renewalHistory[] = [
+                'expiration_date' => $currentExpDate,
+                'proof_pdf_path' => $existingPnpki->proof_pdf_path,
+                'proof_original_name' => $existingPnpki->proof_original_name,
+                'archived_at' => now()->toIso8601String(),
+            ];
+            $renewedAt = now();
+            $renewalCount++;
+        }
+
+        $captureMethod = in_array($request->input('signature_capture_method'), ['drawn', 'uploaded'], true)
+            ? $request->input('signature_capture_method')
+            : ($request->hasFile('signature_file') ? 'uploaded' : ($existingPnpki?->capture_method ?? 'drawn'));
+
+        $finalExpDate = $sigType === 'pnpki'
+            ? ($newExpInput ?: $currentExpDate)
+            : $currentExpDate;
+
+        if ($sigType === 'pnpki') {
+            if (empty($finalExpDate)) {
+                return response()->json(['message' => 'Expiration date of using E-Sig is required for PNPKI Digital E-Signature.'], 422);
+            }
+            if (empty($proofPath)) {
+                return response()->json(['message' => 'Proof of Registration PDF (Max 5MB) is required for PNPKI Digital E-Signature.'], 422);
+            }
+        }
+
+        $targetUser->pnpkiSignature()->updateOrCreate(
+            ['user_id' => $targetUser->id],
+            [
+                'signature_type' => $sigType,
+                'expiration_date' => $finalExpDate,
+                'previous_expiration_date' => $prevExpDate,
+                'proof_pdf_path' => $proofPath,
+                'proof_original_name' => $proofOriginalName,
+                'previous_proof_pdf_path' => $prevProofPath,
+                'previous_proof_original_name' => $prevProofName,
+                'signature_image_path' => $signaturePath ?? $targetUser->signature_path,
+                'capture_method' => $captureMethod,
+                'renewal_history' => $renewalHistory,
+                'renewed_at' => $renewedAt,
+                'renewal_count' => $renewalCount,
+            ]
+        );
 
         AuditLog::log(
             'USER_SIGNATURE_UPDATED_BY_ADMIN',
             'users',
             $targetUser->id,
             null,
-            ['user_id' => $targetUser->id],
+            ['user_id' => $targetUser->id, 'signature_type' => $sigType],
             $admin->id
         );
 
         return response()->json([
             'message' => "Official signature for {$targetUser->name} has been updated successfully.",
-            'user' => $targetUser->fresh(['office']),
+            'user' => $targetUser->fresh(['office', 'accountCodes', 'pnpkiSignature']),
         ]);
     }
 
-    /**
-     * Change a user's password (Admin only)
-     */
     public function changePassword(Request $request, int $id): JsonResponse
     {
         $admin = $request->user();
@@ -266,9 +481,6 @@ class UserController extends Controller
         ]);
     }
 
-    /**
-     * Approve a pending user account (Admin only)
-     */
     public function approve(Request $request, int $id): JsonResponse
     {
         $admin = $request->user();
@@ -306,9 +518,6 @@ class UserController extends Controller
         ]);
     }
 
-    /**
-     * Reject a pending user registration (Admin only)
-     */
     public function reject(Request $request, int $id): JsonResponse
     {
         $admin = $request->user();
@@ -353,9 +562,6 @@ class UserController extends Controller
         ]);
     }
 
-    /**
-     * Toggle active/inactive status (Admin only)
-     */
     public function toggleStatus(Request $request, int $id): JsonResponse
     {
         $admin = $request->user();
@@ -391,9 +597,6 @@ class UserController extends Controller
         ]);
     }
 
-    /**
-     * Delete user (Admin only)
-     */
     public function destroy(Request $request, int $id): JsonResponse
     {
         $admin = $request->user();
@@ -433,9 +636,6 @@ class UserController extends Controller
         ]);
     }
 
-    /**
-     * Update a user's role (Admin & Super Admin)
-     */
     public function updateRole(Request $request, int $id): JsonResponse
     {
         $admin = $request->user();
@@ -454,19 +654,43 @@ class UserController extends Controller
             $allowedRoles[] = 'super_admin';
         }
 
+        $rawRoles = $request->input('roles');
+        if (is_string($rawRoles)) {
+            $decodedRoles = json_decode($rawRoles, true);
+            $rawRoles = is_array($decodedRoles) ? $decodedRoles : array_filter(array_map('trim', explode(',', $rawRoles)));
+        }
+        if (is_array($rawRoles) && !empty($rawRoles)) {
+            $normalizedRoles = array_values(array_unique(array_filter(array_map(fn ($r) => trim((string) $r), $rawRoles))));
+            $request->merge([
+                'roles' => $normalizedRoles,
+                'role' => $request->input('role') ?: ($normalizedRoles[0] ?? ''),
+            ]);
+        }
+
         $validated = $request->validate([
             'role' => ['required', 'string', 'in:' . implode(',', $allowedRoles)],
+            'roles' => ['nullable', 'array', 'min:1'],
+            'roles.*' => ['required', 'string', 'in:' . implode(',', $allowedRoles)],
         ]);
 
+        $newRoles = !empty($validated['roles'])
+            ? array_values(array_unique($validated['roles']))
+            : [$validated['role']];
+        $primaryRole = in_array($validated['role'], $newRoles, true) ? $validated['role'] : $newRoles[0];
+
         $oldRole = $targetUser->role;
-        $targetUser->update(['role' => $validated['role']]);
+        $oldRoles = $targetUser->available_roles;
+        $targetUser->update([
+            'role' => $primaryRole,
+            'roles' => $newRoles,
+        ]);
 
         AuditLog::log(
             'USER_ROLE_CHANGED',
             'users',
             $targetUser->id,
-            ['role' => $oldRole],
-            ['role' => $validated['role']],
+            ['role' => $oldRole, 'roles' => $oldRoles],
+            ['role' => $primaryRole, 'roles' => $newRoles],
             $admin->id
         );
 
@@ -476,9 +700,6 @@ class UserController extends Controller
         ]);
     }
 
-    /**
-     * Update assigned account codes for a user (TWG Reviewer) (Admin only).
-     */
     public function updateAccountCodes(Request $request, int $id): JsonResponse
     {
         $admin = $request->user();
@@ -511,9 +732,6 @@ class UserController extends Controller
         ]);
     }
 
-    /**
-     * Get assigned account codes for a specific user (Admin only).
-     */
     public function getAccountCodes(Request $request, int $id): JsonResponse
     {
         $currentUser = $request->user();
@@ -529,25 +747,27 @@ class UserController extends Controller
         ]);
     }
 
-    /**
-     * Serve a user's signature file securely for authorized users
-     */
     public function getSignature(Request $request, int $id): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
     {
         $currentUser = $request->user();
         $targetUser = User::findOrFail($id);
 
-        // Access Control: Allow self, admin, or official procurement/evaluation signatories/reviewers
         $isSelf = $currentUser->id === $targetUser->id;
         $isAdmin = $currentUser->isAdmin() || $currentUser->isPgso();
-        $isOfficialSignatory = in_array($targetUser->role, ['head', 'budget_officer', 'oppmo', 'twg', 'admin', 'super_admin', 'authorized_staff', 'presentative_staff', 'pacco', 'pgso'], true);
+        $isOfficialSignatory = $targetUser->hasAnyAssignedRole(['head', 'budget_officer', 'oppmo', 'twg', 'admin', 'super_admin', 'authorized_staff', 'presentative_staff', 'pacco', 'pgso']);
 
         if (!$isSelf && !$isAdmin && !$isOfficialSignatory) {
-            // Check if they signed a Supplier Digital Approval or prepared a PPMP
+
             $sharesEvaluation = \App\Models\SupplierDigitalApproval::where('signed_by', $targetUser->id)->exists();
+            $headStages = $currentUser->isHead() ? \App\Support\ReviewHeadResolver::userStagesForHead($currentUser) : [];
+            $appStages = \App\Support\ReviewHeadResolver::userAppSignatoryStages($currentUser);
+            $canViewCrossOfficeSignatures = !empty($headStages) || !empty($appStages);
+
             $sharesPpmp = $sharesEvaluation || \App\Models\PpmpSignature::where('user_id', $targetUser->id)
-                ->whereHas('ppmp', function ($q) use ($currentUser) {
-                    if ($currentUser->isHead()) {
+                ->whereHas('ppmp', function ($q) use ($currentUser, $canViewCrossOfficeSignatures) {
+                    if ($canViewCrossOfficeSignatures) {
+                        $q->where('status', '!=', 'DRAFT');
+                    } elseif ($currentUser->isHead()) {
                         $q->where('office_id', $currentUser->office_id);
                     } elseif ($currentUser->isBudgetOfficer() || $currentUser->isOppmo() || $currentUser->isTwg() || $currentUser->isPacco()) {
                         $q->where('status', '!=', 'DRAFT');
@@ -561,15 +781,20 @@ class UserController extends Controller
             }
         }
 
-        if (!$targetUser->signature_path) {
+        $requestedSigVersion = $request->query('version');
+        $targetSigPath = ($requestedSigVersion === 'pending' && $targetUser->pnpkiSignature?->pending_signature_image_path)
+            ? $targetUser->pnpkiSignature->pending_signature_image_path
+            : $targetUser->signature_path;
+
+        if (!$targetSigPath) {
             return response()->json(['message' => 'No signature on file.'], 404);
         }
 
         $fullPath = null;
-        if (\Illuminate\Support\Facades\Storage::disk('local')->exists($targetUser->signature_path)) {
-            $fullPath = \Illuminate\Support\Facades\Storage::disk('local')->path($targetUser->signature_path);
+        if (\Illuminate\Support\Facades\Storage::disk('local')->exists($targetSigPath)) {
+            $fullPath = \Illuminate\Support\Facades\Storage::disk('local')->path($targetSigPath);
         } else {
-            $legacyPath = 'C:/xampp/htdocs/finalize_system/Supplier_Evaluation/storage/app/private/' . ltrim($targetUser->signature_path, '/');
+            $legacyPath = 'C:/xampp/htdocs/finalize_system/Supplier_Evaluation/storage/app/private/' . ltrim($targetSigPath, '/');
             if (file_exists($legacyPath)) {
                 $fullPath = $legacyPath;
             }
@@ -586,9 +811,6 @@ class UserController extends Controller
         ]);
     }
 
-    /**
-     * Serve an authorized staff's official Authorization Letter PDF securely
-     */
     public function getAuthorizationLetter(Request $request, int $id): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
     {
         $currentUser = $request->user();
@@ -617,9 +839,6 @@ class UserController extends Controller
         ]);
     }
 
-    /**
-     * Update user's permitted digital systems (Admin & Super Admin)
-     */
     public function updateSystemAccess(Request $request, int $id): JsonResponse
     {
         $admin = $request->user();
@@ -636,13 +855,18 @@ class UserController extends Controller
         $validated = $request->validate([
             'accessible_systems' => ['required', 'array'],
             'accessible_systems.*' => ['string'],
+            'can_view_all_monitoring_ppmp' => ['sometimes', 'boolean'],
         ]);
 
         $oldSystems = $targetUser->accessible_systems;
         $cleanSystems = array_values(array_unique($validated['accessible_systems']));
-        $targetUser->update([
+        $updateData = [
             'accessible_systems' => $cleanSystems,
-        ]);
+        ];
+        if (array_key_exists('can_view_all_monitoring_ppmp', $validated)) {
+            $updateData['can_view_all_monitoring_ppmp'] = (bool) $validated['can_view_all_monitoring_ppmp'];
+        }
+        $targetUser->update($updateData);
 
         AuditLog::log(
             'USER_SYSTEM_ACCESS_UPDATED',
@@ -659,9 +883,6 @@ class UserController extends Controller
         ]);
     }
 
-    /**
-     * Serve a user's avatar image securely for authenticated users.
-     */
     public function getAvatar(Request $request, int $id): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
     {
         $targetUser = User::findOrFail($id);
@@ -678,6 +899,270 @@ class UserController extends Controller
             'Content-Type' => $mime,
             'Cache-Control' => 'private, max-age=86400',
             'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    public function getPnpkiProof(Request $request, int $id): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
+    {
+        $currentUser = $request->user();
+        $targetUser = User::with('pnpkiSignature')->findOrFail($id);
+
+        if (!$currentUser) {
+            return response()->json(['message' => 'Unauthorized.'], 401);
+        }
+
+        $isSelf = $currentUser->id === $targetUser->id;
+        $isAdmin = $currentUser->isAdmin();
+        if (!$isSelf && !$isAdmin) {
+            return response()->json(['message' => 'Unauthorized. You may only view your own confidential PNPKI Proof of Registration.'], 403);
+        }
+
+        $pnpki = $targetUser->pnpkiSignature;
+        $requestedVersion = $request->query('version');
+        if ($requestedVersion === 'pending') {
+            $targetPath = $pnpki?->pending_proof_pdf_path ?: $pnpki?->proof_pdf_path;
+        } elseif ($requestedVersion === 'history') {
+            $historyIdx = (int) $request->query('index', 0);
+            $history = is_array($pnpki?->renewal_history) ? $pnpki->renewal_history : [];
+            $targetPath = $history[$historyIdx]['proof_pdf_path'] ?? null;
+        } elseif ($requestedVersion === 'previous') {
+            $targetPath = $pnpki?->previous_proof_pdf_path ?: $pnpki?->proof_pdf_path;
+        } else {
+            $targetPath = $pnpki?->proof_pdf_path;
+        }
+
+        if (!$pnpki || !$targetPath || !Storage::disk('local')->exists($targetPath)) {
+            return response()->json(['message' => 'No PNPKI Proof of Registration PDF on file.'], 404);
+        }
+
+        $fullPath = Storage::disk('local')->path($targetPath);
+        $safeFilename = 'PNPKI_Proof_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $targetUser->name) . '.pdf';
+
+        return response()->file($fullPath, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="' . $safeFilename . '"',
+            'Cache-Control' => 'private, max-age=3600',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    public function approvePnpkiRenewal(Request $request, int $id): JsonResponse
+    {
+        $admin = $request->user();
+        if (!$admin || !$admin->isSuperAdmin()) {
+            return response()->json(['message' => 'Unauthorized. Only Super Administrators can approve PNPKI Digital E-Signature renewals.'], 403);
+        }
+
+        $targetUser = User::with('pnpkiSignature')->findOrFail($id);
+        $pnpki = $targetUser->pnpkiSignature;
+
+        if (!$pnpki || $pnpki->renewal_status !== 'pending' || !$pnpki->pending_expiration_date) {
+            return response()->json(['message' => 'This user does not have a pending PNPKI renewal request awaiting approval.'], 422);
+        }
+
+        $oldExpDate = $pnpki->expiration_date?->format('Y-m-d');
+        $oldProofPath = $pnpki->proof_pdf_path;
+        $oldProofName = $pnpki->proof_original_name;
+        $newExpDate = $pnpki->pending_expiration_date?->format('Y-m-d');
+        $newProofPath = $pnpki->pending_proof_pdf_path ?: $oldProofPath;
+        $newProofName = $pnpki->pending_proof_original_name ?: $oldProofName;
+
+        $history = is_array($pnpki->renewal_history) ? $pnpki->renewal_history : [];
+        if ($oldExpDate || $oldProofPath) {
+            $history[] = [
+                'expiration_date' => $oldExpDate,
+                'proof_pdf_path' => $oldProofPath,
+                'proof_original_name' => $oldProofName,
+                'archived_at' => now()->toIso8601String(),
+                'approved_by' => $admin->id,
+            ];
+        }
+
+        $activeSigPath = $targetUser->signature_path;
+        if (!empty($pnpki->pending_signature_image_path)) {
+            $activeSigPath = $pnpki->pending_signature_image_path;
+            $targetUser->update(['signature_path' => $activeSigPath]);
+        }
+
+        $pnpki->update([
+            'signature_type' => 'pnpki',
+            'expiration_date' => $newExpDate,
+            'previous_expiration_date' => $oldExpDate ?? $pnpki->previous_expiration_date?->format('Y-m-d'),
+            'proof_pdf_path' => $newProofPath,
+            'proof_original_name' => $newProofName,
+            'previous_proof_pdf_path' => $oldProofPath ?? $pnpki->previous_proof_pdf_path,
+            'previous_proof_original_name' => $oldProofName ?? $pnpki->previous_proof_original_name,
+            'signature_image_path' => $activeSigPath,
+            'renewal_history' => $history,
+            'renewed_at' => now(),
+            'renewal_count' => ((int) ($pnpki->renewal_count ?? 0)) + 1,
+            'renewal_status' => 'approved',
+            'pending_expiration_date' => null,
+            'pending_proof_pdf_path' => null,
+            'pending_proof_original_name' => null,
+            'pending_signature_image_path' => null,
+            'renewal_reviewed_at' => now(),
+            'renewal_reviewed_by' => $admin->id,
+            'renewal_rejection_reason' => null,
+        ]);
+
+        SystemNotification::where('user_id', $targetUser->id)
+            ->where('title', 'like', 'PNPKI Digital E-Signature Expir%')
+            ->whereNull('read_at')
+            ->update(['read_at' => now()]);
+
+        SystemNotification::notify(
+            $targetUser->id,
+            'PNPKI Digital E-Signature Renewal Approved',
+            "Your PNPKI Digital E-Signature renewal has been approved by the Super Administrator! Your new expiration date ({$newExpDate}) is now active, and your previous registration data ({$oldExpDate}) remains preserved on file.",
+            null,
+            'success'
+        );
+
+        AuditLog::log(
+            'USER_PNPKI_RENEWAL_APPROVED',
+            'pnpki_signatures',
+            $targetUser->id,
+            ['previous_expiration_date' => $oldExpDate, 'previous_proof_original_name' => $oldProofName],
+            ['new_expiration_date' => $newExpDate, 'new_proof_original_name' => $newProofName],
+            $admin->id
+        );
+
+        return response()->json([
+            'message' => "PNPKI Digital E-Signature renewal for {$targetUser->name} (New Expiration: {$newExpDate}) has been approved.",
+            'user' => $targetUser->fresh(['office', 'accountCodes', 'pnpkiSignature']),
+        ]);
+    }
+
+    public function rejectPnpkiRenewal(Request $request, int $id): JsonResponse
+    {
+        $admin = $request->user();
+        if (!$admin || !$admin->isSuperAdmin()) {
+            return response()->json(['message' => 'Unauthorized. Only Super Administrators can reject PNPKI Digital E-Signature renewals.'], 403);
+        }
+
+        $targetUser = User::with('pnpkiSignature')->findOrFail($id);
+        $pnpki = $targetUser->pnpkiSignature;
+
+        if (!$pnpki || $pnpki->renewal_status !== 'pending') {
+            return response()->json(['message' => 'This user does not have a pending PNPKI renewal request.'], 422);
+        }
+
+        $reason = trim((string) $request->input('reason', ''));
+        $rejectedExpDate = $pnpki->pending_expiration_date?->format('Y-m-d');
+
+        $pnpki->update([
+            'renewal_status' => 'rejected',
+            'pending_expiration_date' => null,
+            'pending_proof_pdf_path' => null,
+            'pending_proof_original_name' => null,
+            'pending_signature_image_path' => null,
+            'renewal_reviewed_at' => now(),
+            'renewal_reviewed_by' => $admin->id,
+            'renewal_rejection_reason' => $reason ?: 'Renewal proof or expiration date could not be verified by the Super Administrator.',
+        ]);
+
+        $reasonSuffix = $reason ? " Reason: {$reason}." : '';
+        SystemNotification::notify(
+            $targetUser->id,
+            'PNPKI Digital E-Signature Renewal Disapproved',
+            "Your PNPKI Digital E-Signature renewal request (Requested Expiration: {$rejectedExpDate}) was disapproved by the Super Administrator.{$reasonSuffix} Please submit a valid renewal request.",
+            null,
+            'danger'
+        );
+
+        AuditLog::log(
+            'USER_PNPKI_RENEWAL_REJECTED',
+            'pnpki_signatures',
+            $targetUser->id,
+            ['pending_expiration_date' => $rejectedExpDate],
+            ['reason' => $reason],
+            $admin->id
+        );
+
+        return response()->json([
+            'message' => "PNPKI Digital E-Signature renewal request for {$targetUser->name} has been disapproved.",
+            'user' => $targetUser->fresh(['office', 'accountCodes', 'pnpkiSignature']),
+        ]);
+    }
+
+    public function pnpkiRegistry(Request $request): JsonResponse
+    {
+        $currentUser = $request->user();
+
+        $query = \App\Models\PnpkiSignature::with(['user.office:id,name,code'])
+            ->where(function ($q) {
+                $q->where('signature_type', 'pnpki')
+                    ->orWhereNotNull('expiration_date')
+                    ->orWhereNotNull('previous_expiration_date')
+                    ->orWhere('renewal_status', 'pending')
+                    ->orWhere('renewal_count', '>', 0);
+            })
+            ->whereHas('user');
+
+        if (!$currentUser->isAdmin()) {
+            $query->where('user_id', $currentUser->id);
+        }
+
+        $records = $query->latest('updated_at')
+            ->get()
+            ->map(function ($sig) {
+                $user = $sig->user;
+                $rawHistory = is_array($sig->renewal_history) ? $sig->renewal_history : [];
+                $formattedHistory = [];
+                foreach ($rawHistory as $idx => $entry) {
+                    $hasFile = !empty($entry['proof_pdf_path']);
+                    $formattedHistory[] = [
+                        'index' => $idx,
+                        'expiration_date' => $entry['expiration_date'] ?? null,
+                        'proof_original_name' => $entry['proof_original_name'] ?? null,
+                        'archived_at' => $entry['archived_at'] ?? null,
+                        'proof_pdf_url' => $hasFile ? "/api/users/{$sig->user_id}/pnpki-proof?version=history&index={$idx}" : null,
+                    ];
+                }
+
+                return [
+                    'id' => $sig->id,
+                    'user_id' => $sig->user_id,
+                    'user' => [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'designation' => $user->designation,
+                        'role' => $user->role,
+                        'office' => $user->office,
+                        'signature_path' => $user->signature_path,
+                        'pnpki_signature' => $sig,
+                    ],
+                    'signature_type' => $sig->signature_type,
+                    'effective_signature_type' => $sig->effective_signature_type,
+                    'expiration_date' => $sig->expiration_date?->format('Y-m-d'),
+                    'is_expired' => $sig->is_expired,
+                    'is_expiring_soon' => $sig->is_expiring_soon,
+                    'days_until_expiration' => $sig->days_until_expiration,
+                    'is_forced_optional' => $sig->is_forced_optional,
+                    'proof_original_name' => $sig->proof_original_name,
+                    'proof_pdf_url' => $sig->proof_pdf_url,
+                    'previous_expiration_date' => $sig->previous_expiration_date?->format('Y-m-d'),
+                    'previous_proof_original_name' => $sig->previous_proof_original_name,
+                    'previous_proof_pdf_url' => $sig->previous_proof_pdf_url,
+                    'renewal_status' => $sig->renewal_status ?? 'none',
+                    'is_renewal_pending' => $sig->is_renewal_pending,
+                    'pending_expiration_date' => $sig->pending_expiration_date?->format('Y-m-d'),
+                    'pending_proof_original_name' => $sig->pending_proof_original_name,
+                    'pending_proof_pdf_url' => $sig->pending_proof_pdf_url,
+                    'renewal_submitted_at' => $sig->renewal_submitted_at?->toIso8601String(),
+                    'renewal_rejection_reason' => $sig->renewal_rejection_reason,
+                    'renewed_at' => $sig->renewed_at?->toIso8601String(),
+                    'renewal_count' => (int) ($sig->renewal_count ?? 0),
+                    'renewal_history' => array_reverse($formattedHistory),
+                    'updated_at' => $sig->updated_at?->toIso8601String(),
+                ];
+            })
+            ->values();
+
+        return response()->json([
+            'pnpki_signatures' => $records,
         ]);
     }
 }

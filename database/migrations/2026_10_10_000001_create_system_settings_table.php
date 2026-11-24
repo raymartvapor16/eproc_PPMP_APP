@@ -7,9 +7,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         Schema::create('system_settings', function (Blueprint $table) {
@@ -19,7 +17,6 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // Seed default developer_mode as disabled (false)
         DB::table('system_settings')->insert([
             'key' => 'developer_mode',
             'value' => 'false',
@@ -28,9 +25,6 @@ return new class extends Migration
         ]);
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('system_settings');

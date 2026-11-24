@@ -8,12 +8,10 @@ use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
-    /**
-     * Seed the application's database.
-     */
+
     public function run(): void
     {
-        // Create or update the Super Administrator account
+
         User::updateOrCreate(
             ['email' => 'admin@system16.com'],
             [
@@ -26,7 +24,6 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Create or update the Administrator account
         User::updateOrCreate(
             ['email' => 'administrator@system16.com'],
             [
@@ -39,8 +36,6 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-
-        // Create or update default official PPMP signatories
         \App\Models\PpmpSignatory::updateOrCreate(
             ['signatory_type' => 'pacco_requirement'],
             [
@@ -77,7 +72,6 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Official APP (Annual Procurement Plan) Signatories
         \App\Models\PpmpSignatory::updateOrCreate(
             ['signatory_type' => 'app_prepared_by'],
             [

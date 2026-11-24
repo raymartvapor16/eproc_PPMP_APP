@@ -21,43 +21,25 @@ class SupplierDigitalApproval extends Model
         'image',
     ];
 
-    /**
-     * Append computed attributes.
-     */
     protected $appends = [
         'image_url',
         'signature_url',
     ];
 
-    /**
-     * ===============================
-     * RELATIONSHIPS
-     * ===============================
-     */
-
-    // Approval belongs to an evaluation
     public function evaluation()
     {
         return $this->belongsTo(SupplierEvaluation::class, 'evaluation_id');
     }
 
-    // Approval belongs to an authorize record
     public function authorize()
     {
         return $this->belongsTo(SupplierAuthorize::class, 'authorize_id');
     }
 
-    // User who signed the approval
     public function signer()
     {
         return $this->belongsTo(User::class, 'signed_by');
     }
-
-    /**
-     * ===============================
-     * ACCESSORS
-     * ===============================
-     */
 
     public function getSignatureUrlAttribute()
     {
@@ -85,4 +67,3 @@ class SupplierDigitalApproval extends Model
         return asset(ltrim($this->image, '/'));
     }
 }
-

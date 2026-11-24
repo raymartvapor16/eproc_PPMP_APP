@@ -17,9 +17,6 @@ class SupplierPdf extends Model
         'status',
     ];
 
-    /**
-     * A PDF belongs to a user
-     */
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');
@@ -30,4 +27,3 @@ class SupplierPdf extends Model
         return $this->hasMany(SupplierAuthorize::class, 'pdf_id');
     }
 }
-

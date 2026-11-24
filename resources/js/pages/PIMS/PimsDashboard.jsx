@@ -45,16 +45,14 @@ export const PimsDashboard = ({
     const [data, setData] = useState(null);
     const [error, setError] = useState('');
 
-    // Filter states
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
-    const [selectedSource, setSelectedSource] = useState('ALL'); // 'ALL' | 'PPMP' | 'APP'
-    const [selectedCategory, setSelectedCategory] = useState('ALL'); // 'ALL' | 'GOODS_CONSULTING' | 'INFRA'
+    const [selectedSource, setSelectedSource] = useState('ALL');
+    const [selectedCategory, setSelectedCategory] = useState('ALL');
     const [selectedStatus, setSelectedStatus] = useState('ALL');
     const [searchQuery, setSearchQuery] = useState('');
 
-    // Modals state
     const [selectedPpmpForMonitoring, setSelectedPpmpForMonitoring] = useState(null);
     const [isMonitoringModalOpen, setIsMonitoringModalOpen] = useState(false);
 
@@ -70,7 +68,6 @@ export const PimsDashboard = ({
 
     const [selectedPrForPrint, setSelectedPrForPrint] = useState(null);
 
-    // Active status filter toggle from clicking summary cards
     const [activeFilterCard, setActiveFilterCard] = useState(null);
 
     const loadDashboardData = async (isManual = false) => {
@@ -103,7 +100,6 @@ export const PimsDashboard = ({
         loadDashboardData();
     }, [selectedYear, startDate, endDate, selectedSource, selectedCategory, selectedStatus]);
 
-    // Listen to real-time events across the system
     useEffect(() => {
         const handleSync = () => {
             loadDashboardData(true);
@@ -120,7 +116,6 @@ export const PimsDashboard = ({
         };
     }, [selectedYear, selectedSource, selectedCategory, selectedStatus]);
 
-    // Handle Card Click Filter
     const handleCardClick = (filterType) => {
         if (activeFilterCard === filterType) {
             setActiveFilterCard(null);
@@ -137,7 +132,6 @@ export const PimsDashboard = ({
         }
     };
 
-    // Filtered Recent Activities Table
     const filteredActivities = useMemo(() => {
         const list = data?.recent_activities || [];
         if (!searchQuery.trim()) return list;
@@ -150,7 +144,6 @@ export const PimsDashboard = ({
         );
     }, [data?.recent_activities, searchQuery]);
 
-    // Full Print View Screen
     if (selectedPrForPrint) {
         return (
             <PurchaseRequestPrintView
@@ -181,10 +174,10 @@ export const PimsDashboard = ({
 
     return (
         <div className="min-h-screen bg-slate-100/80 text-slate-800 flex flex-col font-sans selection:bg-purple-600 selection:text-white">
-            {/* Top Navigation Bar */}
+
             <header className="sticky top-0 z-40 bg-gradient-to-r from-slate-900 via-slate-900 to-purple-950 text-white border-b border-purple-500/30 px-4 sm:px-6 py-3 shadow-md">
                 <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-4">
-                    {/* Brand / Logo */}
+
                     <div className="flex items-center gap-3">
                         <img
                             src="/images/logo.png"
@@ -210,7 +203,6 @@ export const PimsDashboard = ({
                         </div>
                     </div>
 
-                    {/* Navigation Actions */}
                     <div className="flex items-center gap-2.5">
                         <SystemSwitcherDropdown
                             user={user}
@@ -231,7 +223,6 @@ export const PimsDashboard = ({
                             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-purple-400' : ''}`} />
                         </button>
 
-                        {/* User Badge */}
                         <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
                             <div className="text-right hidden md:block">
                                 <div className="text-xs font-bold text-white leading-tight">{user?.name}</div>
@@ -254,9 +245,8 @@ export const PimsDashboard = ({
                 </div>
             </header>
 
-            {/* Main Content Area */}
             <main className="flex-1 max-w-[1600px] w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-                {/* Top Section */}
+
                 <div className="bg-white rounded-2xl shadow-xs border border-slate-200/80 p-5 sm:p-6">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     <div className="flex items-start gap-3.5">
@@ -291,9 +281,8 @@ export const PimsDashboard = ({
                     </div>
                 </div>
 
-                {/* Filters Row */}
                 <div className="mt-5 pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                    {/* Year */}
+
                     <div>
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fiscal Year</label>
                         <select
@@ -308,7 +297,6 @@ export const PimsDashboard = ({
                         </select>
                     </div>
 
-                    {/* Source */}
                     <div>
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Source</label>
                         <select
@@ -322,7 +310,6 @@ export const PimsDashboard = ({
                         </select>
                     </div>
 
-                    {/* Category */}
                     <div>
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Category</label>
                         <select
@@ -336,7 +323,6 @@ export const PimsDashboard = ({
                         </select>
                     </div>
 
-                    {/* Status */}
                     <div>
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">PR Status</label>
                         <select
@@ -353,7 +339,6 @@ export const PimsDashboard = ({
                         </select>
                     </div>
 
-                    {/* Date From */}
                     <div>
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Date From</label>
                         <input
@@ -364,7 +349,6 @@ export const PimsDashboard = ({
                         />
                     </div>
 
-                    {/* Date To */}
                     <div>
                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Date To</label>
                         <input
@@ -377,9 +361,8 @@ export const PimsDashboard = ({
                 </div>
             </div>
 
-            {/* Second Section: 8 Summary Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-                {/* 1. Total Requirements */}
+
                 <div
                     onClick={() => handleCardClick('total')}
                     className="p-4 bg-white rounded-2xl shadow-xs border border-slate-200/80 hover:border-blue-400 hover:shadow-md transition cursor-pointer group"
@@ -391,7 +374,6 @@ export const PimsDashboard = ({
                     <div className="text-[10px] text-slate-400 mt-1">PPMP & APP</div>
                 </div>
 
-                {/* 2. Total Published */}
                 <div
                     onClick={() => handleCardClick('published')}
                     className="p-4 bg-white rounded-2xl shadow-xs border border-slate-200/80 hover:border-blue-400 hover:shadow-md transition cursor-pointer group"
@@ -403,7 +385,6 @@ export const PimsDashboard = ({
                     <div className="text-[10px] text-slate-400 mt-1">On PIMS System</div>
                 </div>
 
-                {/* 3. Pending Monitoring */}
                 <div
                     onClick={() => handleCardClick('pending_monitoring')}
                     className="p-4 bg-white rounded-2xl shadow-xs border border-slate-200/80 hover:border-amber-400 hover:shadow-md transition cursor-pointer group"
@@ -415,7 +396,6 @@ export const PimsDashboard = ({
                     <div className="text-[10px] text-slate-400 mt-1">Needs Form</div>
                 </div>
 
-                {/* 4. Monitoring Completed */}
                 <div
                     onClick={() => handleCardClick('monitoring_completed')}
                     className="p-4 bg-white rounded-2xl shadow-xs border border-slate-200/80 hover:border-emerald-400 hover:shadow-md transition cursor-pointer group"
@@ -427,7 +407,6 @@ export const PimsDashboard = ({
                     <div className="text-[10px] text-slate-400 mt-1">Completed Steps</div>
                 </div>
 
-                {/* 5. Pending PR Generation */}
                 <div
                     onClick={() => handleCardClick('pending_pr')}
                     className="p-4 bg-white rounded-2xl shadow-xs border border-slate-200/80 hover:border-purple-400 hover:shadow-md transition cursor-pointer group"
@@ -439,7 +418,6 @@ export const PimsDashboard = ({
                     <div className="text-[10px] text-slate-400 mt-1">Awaiting PR</div>
                 </div>
 
-                {/* 6. Generated Purchase Requests */}
                 <div
                     onClick={() => handleCardClick('generated_prs')}
                     className="p-4 bg-white rounded-2xl shadow-xs border border-slate-200/80 hover:border-indigo-400 hover:shadow-md transition cursor-pointer group"
@@ -451,7 +429,6 @@ export const PimsDashboard = ({
                     <div className="text-[10px] text-slate-400 mt-1">PR Documents</div>
                 </div>
 
-                {/* 7. Total Attachments */}
                 <div
                     onClick={() => handleCardClick('attachments')}
                     className="p-4 bg-white rounded-2xl shadow-xs border border-slate-200/80 hover:border-slate-400 hover:shadow-md transition cursor-pointer group"
@@ -463,7 +440,6 @@ export const PimsDashboard = ({
                     <div className="text-[10px] text-slate-400 mt-1">Supporting Files</div>
                 </div>
 
-                {/* 8. Pending Actions */}
                 <div
                     onClick={() => handleCardClick('pending_actions')}
                     className="p-4 bg-rose-50/70 rounded-2xl shadow-xs border border-rose-200 hover:border-rose-400 hover:shadow-md transition cursor-pointer group"
@@ -476,9 +452,8 @@ export const PimsDashboard = ({
                 </div>
             </div>
 
-            {/* Middle Section: Dashboard Charts and Analytics */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Chart 1: Status Distribution */}
+
                 <div className="bg-white rounded-2xl shadow-xs border border-slate-200/80 p-5 space-y-4">
                     <div className="flex items-center justify-between">
                         <div className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
@@ -510,7 +485,6 @@ export const PimsDashboard = ({
                     </div>
                 </div>
 
-                {/* Chart 2: Source Distribution (PPMP vs APP) & Category */}
                 <div className="bg-white rounded-2xl shadow-xs border border-slate-200/80 p-5 space-y-4">
                     <div className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
                         <FileSpreadsheet className="w-4 h-4 text-indigo-600" />
@@ -545,7 +519,6 @@ export const PimsDashboard = ({
                     </div>
                 </div>
 
-                {/* Chart 3: Monthly Procurement Activity */}
                 <div className="bg-white rounded-2xl shadow-xs border border-slate-200/80 p-5 space-y-4">
                     <div className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-emerald-600" />
@@ -592,7 +565,6 @@ export const PimsDashboard = ({
                 </div>
             </div>
 
-            {/* Pending Actions Section */}
             {pendingActionsList.length > 0 && (
                 <div className="bg-gradient-to-r from-rose-500/10 via-amber-500/5 to-white rounded-2xl shadow-xs border border-rose-200/80 p-5 space-y-3">
                     <div className="flex items-center justify-between">
@@ -645,7 +617,6 @@ export const PimsDashboard = ({
                 </div>
             )}
 
-            {/* Bottom Section: Recent Procurement Activities Table */}
             <div className="bg-white rounded-2xl shadow-xs border border-slate-200/80 p-5 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
@@ -767,8 +738,6 @@ export const PimsDashboard = ({
                 </div>
             </div>
 
-            {/* Modals */}
-            {/* 1. Monitoring Publish Modal */}
             <PimsPublishModal
                 isOpen={isMonitoringModalOpen}
                 onClose={() => {
@@ -778,7 +747,7 @@ export const PimsDashboard = ({
                 ppmp={selectedPpmpForMonitoring}
                 onSuccess={(project) => {
                     loadDashboardData(true);
-                    // Automatically transition to Generate PR popup as required by Step 4!
+
                     if (selectedPpmpForMonitoring?.uuid) {
                         setSelectedPpmpUuidForPr(selectedPpmpForMonitoring.uuid);
                         setSelectedMonitoringProjectIdForPr(project?.id);
@@ -787,7 +756,6 @@ export const PimsDashboard = ({
                 }}
             />
 
-            {/* 2. Generate PR Modal */}
             <GeneratePurchaseRequestModal
                 isOpen={isGeneratePrModalOpen}
                 onClose={() => {
@@ -799,12 +767,11 @@ export const PimsDashboard = ({
                 monitoringProjectId={selectedMonitoringProjectIdForPr}
                 onSuccess={(pr) => {
                     loadDashboardData(true);
-                    // Offer direct print preview
+
                     setSelectedPrForPrint(pr);
                 }}
             />
 
-            {/* 3. PR Detail Modal */}
             <PurchaseRequestDetailModal
                 isOpen={isPrDetailModalOpen}
                 onClose={() => {
@@ -824,7 +791,6 @@ export const PimsDashboard = ({
                 }}
             />
 
-            {/* 4. PR Review Modal */}
             <PurchaseRequestReviewModal
                 isOpen={isPrReviewModalOpen}
                 onClose={() => {
@@ -840,4 +806,3 @@ export const PimsDashboard = ({
         </div>
     );
 };
-

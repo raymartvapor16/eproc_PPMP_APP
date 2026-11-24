@@ -21,10 +21,9 @@ export const OtherTermsManagement = () => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [categoryFilter, setCategoryFilter] = useState('ALL'); // 'ALL' | 'CSE' | 'NON-CSE' | 'GENERAL'
-    const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
+    const [categoryFilter, setCategoryFilter] = useState('ALL');
+    const [statusFilter, setStatusFilter] = useState('ALL');
 
-    // Form Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingTerm, setEditingTerm] = useState(null);
     const [formData, setFormData] = useState({
@@ -37,12 +36,10 @@ export const OtherTermsManagement = () => {
     const [saving, setSaving] = useState(false);
     const [modalError, setModalError] = useState('');
 
-    // Delete Modal state
     const [deleteModalTerm, setDeleteModalTerm] = useState(null);
     const [deleting, setDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState('');
 
-    // Feedback notification
     const [feedback, setFeedback] = useState({ type: '', text: '' });
 
     const showFeedback = (type, text) => {
@@ -69,7 +66,6 @@ export const OtherTermsManagement = () => {
         fetchTerms();
     }, []);
 
-    // Filtered list
     const filteredTerms = useMemo(() => {
         return terms.filter((t) => {
             const matchesSearch =
@@ -91,7 +87,6 @@ export const OtherTermsManagement = () => {
         });
     }, [terms, searchQuery, categoryFilter, statusFilter]);
 
-    // Open Modal for Add
     const handleOpenAddModal = () => {
         setEditingTerm(null);
         setFormData({
@@ -105,7 +100,6 @@ export const OtherTermsManagement = () => {
         setIsModalOpen(true);
     };
 
-    // Open Modal for Edit
     const handleOpenEditModal = (term) => {
         setEditingTerm(term);
         setFormData({
@@ -119,7 +113,6 @@ export const OtherTermsManagement = () => {
         setIsModalOpen(true);
     };
 
-    // Save Form (Create or Update)
     const handleSave = async (e) => {
         e.preventDefault();
         if (!formData.name.trim()) {
@@ -155,7 +148,6 @@ export const OtherTermsManagement = () => {
         }
     };
 
-    // Quick toggle active status
     const handleToggleActive = async (term) => {
         try {
             await otherTermService.update(term.id, {
@@ -169,7 +161,6 @@ export const OtherTermsManagement = () => {
         }
     };
 
-    // Execute Delete
     const handleConfirmDelete = async () => {
         if (!deleteModalTerm) return;
 
@@ -213,7 +204,7 @@ export const OtherTermsManagement = () => {
 
     return (
         <div className="space-y-6">
-            {/* Feedback Alert */}
+
             {feedback.text && (
                 <div
                     className={`p-4 rounded-xl border flex items-center justify-between shadow-xs transition-all ${
@@ -240,7 +231,6 @@ export const OtherTermsManagement = () => {
                 </div>
             )}
 
-            {/* Header Banner */}
             <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 rounded-2xl p-6 text-white shadow-md border border-emerald-900 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/20 text-emerald-300 rounded-full text-xs font-bold border border-emerald-400/30">
@@ -276,7 +266,6 @@ export const OtherTermsManagement = () => {
                 </div>
             </div>
 
-            {/* Filter and Search Bar */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="relative w-full sm:w-80">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -317,7 +306,6 @@ export const OtherTermsManagement = () => {
                 </div>
             </div>
 
-            {/* Terms Table */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -412,7 +400,6 @@ export const OtherTermsManagement = () => {
                 </div>
             </div>
 
-            {/* ADD / EDIT MODAL */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
                     <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
@@ -535,7 +522,6 @@ export const OtherTermsManagement = () => {
                 </div>
             )}
 
-            {/* DELETE CONFIRMATION MODAL */}
             {deleteModalTerm && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
                     <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">

@@ -7,15 +7,11 @@ use Illuminate\Database\Seeder;
 
 class FundSourceSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
+
     public function run(): void
     {
         $fundSources = [
-            // ==========================================
-            // GENERAL FUNDS & SPECIAL BUDGET FUNDS (ROUTE: BUDGET)
-            // ==========================================
+
             [
                 'name' => 'General Fund and etc..',
                 'code' => 'GF-ETC',
@@ -97,9 +93,6 @@ class FundSourceSeeder extends Seeder
                 'display_order' => 10,
             ],
 
-            // ==========================================
-            // TRUST FUNDS (ROUTE: PACCO)
-            // ==========================================
             [
                 'name' => 'Trust Fund',
                 'code' => 'TF',
@@ -437,4 +430,3 @@ class FundSourceSeeder extends Seeder
         }
     }
 }
-

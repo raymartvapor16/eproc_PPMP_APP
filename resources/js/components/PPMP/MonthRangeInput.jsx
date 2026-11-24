@@ -1,19 +1,16 @@
 import React from 'react';
 
-/**
- * Formats a month or date string (e.g. "2026-01", "2026-01 - 2026-02", "1/2026", "1/2026 - 2/2026") into "M/YYYY" or "M/YYYY - M/YYYY" format.
- */
 export const formatSingleMonthYear = (val) => {
     if (!val) return '';
     const str = String(val).trim();
     if (!str) return '';
-    // Match YYYY-MM or YYYY-MM-DD
+
     const isoMatch = str.match(/^(\d{4})-(\d{1,2})/);
     if (isoMatch) {
         const [, year, month] = isoMatch;
         return `${parseInt(month, 10)}/${year}`;
     }
-    // Match MM/YYYY or M/YYYY
+
     const myMatch = str.match(/^(\d{1,2})\/(\d{4})/);
     if (myMatch) {
         const [, month, year] = myMatch;
@@ -27,7 +24,6 @@ export const formatMonthYear = (val) => {
     const str = String(val).trim();
     if (!str) return '—';
 
-    // Check if it's a range (separated by ' - ' or ' to ' or ',')
     if (str.includes(' - ') || str.includes(' to ')) {
         const parts = str.includes(' - ') ? str.split(' - ') : str.split(' to ');
         const start = formatSingleMonthYear(parts[0]);
@@ -42,9 +38,6 @@ export const formatMonthYear = (val) => {
     return formatted || str;
 };
 
-/**
- * Normalizes input value for single month <input type="month"> (YYYY-MM).
- */
 export const toSingleMonthInputValue = (val) => {
     if (!val) return '';
     const str = String(val).trim();
@@ -61,10 +54,6 @@ export const toSingleMonthInputValue = (val) => {
     return '';
 };
 
-/**
- * Splits a stored date value (which could be single "1/2026" or range "1/2026 - 2/2026")
- * into { start: 'YYYY-MM', end: 'YYYY-MM' } for inputs.
- */
 export const parseMonthRangeValue = (val) => {
     if (!val) return { start: '', end: '' };
     const str = String(val).trim();
@@ -88,9 +77,6 @@ export const parseMonthRangeValue = (val) => {
     };
 };
 
-/**
- * Combines startMonth (YYYY-MM) and optional endMonth (YYYY-MM) into standard string representation e.g. "1/2026" or "1/2026 - 2/2026".
- */
 export const combineMonthRangeValue = (startVal, endVal) => {
     const startFormatted = formatSingleMonthYear(startVal);
     const endFormatted = formatSingleMonthYear(endVal);
@@ -104,16 +90,10 @@ export const toMonthInputValue = (val) => {
     return parseMonthRangeValue(val).start;
 };
 
-/**
- * Compact, clean Month / Month Range input component:
- * Allows user to pick a primary month (e.g. 1/2026), with an optional secondary month (e.g. 2/2026)
- * to form a range like "1/2026 - 2/2026", or just keep single "1/2026".
- */
 export const MonthRangeInput = ({ value, onChange, className = "" }) => {
     const { start, end } = parseMonthRangeValue(value);
     const [hasRange, setHasRange] = React.useState(Boolean(end));
 
-    // Keep internal range toggle synced if value prop changes
     React.useEffect(() => {
         if (end) {
             setHasRange(true);
@@ -132,11 +112,11 @@ export const MonthRangeInput = ({ value, onChange, className = "" }) => {
 
     const toggleRange = () => {
         if (hasRange) {
-            // Remove range, keep only start
+
             setHasRange(false);
             onChange(combineMonthRangeValue(start, ''));
         } else {
-            // Enable range
+
             setHasRange(true);
         }
     };
@@ -150,7 +130,7 @@ export const MonthRangeInput = ({ value, onChange, className = "" }) => {
                 className="w-full text-[11px] p-1 border border-slate-300 rounded text-center bg-white shadow-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                 title="Select month"
             />
-            
+
             {hasRange ? (
                 <div className="w-full flex items-center gap-1">
                     <span className="text-[10px] font-bold text-slate-400 select-none">-</span>
@@ -183,4 +163,3 @@ export const MonthRangeInput = ({ value, onChange, className = "" }) => {
         </div>
     );
 };
-

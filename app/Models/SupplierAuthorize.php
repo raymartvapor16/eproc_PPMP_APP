@@ -38,10 +38,8 @@ class SupplierAuthorize extends Model
         return $this->belongsTo(SupplierPdf::class, 'pdf_id');
     }
 
-    // Accessor for PDF status
     public function getStatusAttribute()
     {
         return $this->pdf ? $this->pdf->status : null;
     }
 }
-

@@ -10,27 +10,19 @@ use Illuminate\Support\Facades\Storage;
 
 class OppmoTeamController extends Controller
 {
-    /**
-     * Public list of active team members for the landing page
-     */
+
     public function publicIndex(): JsonResponse
     {
         $members = OppmoTeamMember::active()->get();
         return response()->json($members);
     }
 
-    /**
-     * Super Admin list of all team members
-     */
     public function index(Request $request): JsonResponse
     {
         $members = OppmoTeamMember::orderBy('sort_order', 'asc')->orderBy('id', 'asc')->get();
         return response()->json($members);
     }
 
-    /**
-     * Super Admin create team member
-     */
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -42,7 +34,7 @@ class OppmoTeamController extends Controller
             'email' => 'nullable|string|email|max:255',
             'sort_order' => 'nullable|integer',
             'status' => 'required|in:active,inactive',
-            'photo' => 'nullable|file|mimes:jpg,jpeg,png,webp|max:5120', // Strictly allowed image types only
+            'photo' => 'nullable|file|mimes:jpg,jpeg,png,webp|max:5120',
         ]);
 
         $photoUrl = $validated['photo_url'] ?? null;
@@ -55,9 +47,9 @@ class OppmoTeamController extends Controller
             }
             $rawHeader = file_get_contents($photoFile->getRealPath(), false, null, 0, 12);
             $isValidImage = (
-                substr($rawHeader, 0, 3) === "\xFF\xD8\xFF" || // JPEG
-                substr($rawHeader, 0, 8) === "\x89PNG\r\n\x1a\n" || // PNG
-                (substr($rawHeader, 0, 4) === "RIFF" && substr($rawHeader, 8, 4) === "WEBP") // WebP
+                substr($rawHeader, 0, 3) === "\xFF\xD8\xFF" ||
+                substr($rawHeader, 0, 8) === "\x89PNG\r\n\x1a\n" ||
+                (substr($rawHeader, 0, 4) === "RIFF" && substr($rawHeader, 8, 4) === "WEBP")
             );
             if (!$isValidImage) {
                 return response()->json(['message' => 'Uploaded file is not a valid image.'], 422);
@@ -84,9 +76,6 @@ class OppmoTeamController extends Controller
         ], 201);
     }
 
-    /**
-     * Super Admin update team member
-     */
     public function update(Request $request, int $id): JsonResponse
     {
         $member = OppmoTeamMember::findOrFail($id);
@@ -113,15 +102,14 @@ class OppmoTeamController extends Controller
             }
             $rawHeader = file_get_contents($photoFile->getRealPath(), false, null, 0, 12);
             $isValidImage = (
-                substr($rawHeader, 0, 3) === "\xFF\xD8\xFF" || // JPEG
-                substr($rawHeader, 0, 8) === "\x89PNG\r\n\x1a\n" || // PNG
-                (substr($rawHeader, 0, 4) === "RIFF" && substr($rawHeader, 8, 4) === "WEBP") // WebP
+                substr($rawHeader, 0, 3) === "\xFF\xD8\xFF" ||
+                substr($rawHeader, 0, 8) === "\x89PNG\r\n\x1a\n" ||
+                (substr($rawHeader, 0, 4) === "RIFF" && substr($rawHeader, 8, 4) === "WEBP")
             );
             if (!$isValidImage) {
                 return response()->json(['message' => 'Uploaded file is not a valid image.'], 422);
             }
 
-            // Remove old photo from storage if exists
             if ($member->photo_url) {
                 $oldFilename = basename($member->photo_url);
                 if (Storage::disk('local')->exists('oppmo_team/' . $oldFilename)) {
@@ -151,9 +139,6 @@ class OppmoTeamController extends Controller
         ]);
     }
 
-    /**
-     * Super Admin delete team member
-     */
     public function destroy(int $id): JsonResponse
     {
         $member = OppmoTeamMember::findOrFail($id);
@@ -172,9 +157,6 @@ class OppmoTeamController extends Controller
         ]);
     }
 
-    /**
-     * Super Admin toggle active status
-     */
     public function toggleStatus(int $id): JsonResponse
     {
         $member = OppmoTeamMember::findOrFail($id);
@@ -187,9 +169,6 @@ class OppmoTeamController extends Controller
         ]);
     }
 
-    /**
-     * Serve team member photo securely from storage/app/private/oppmo_team/
-     */
     public function getPhoto(string $filename)
     {
         $safeName = basename($filename);

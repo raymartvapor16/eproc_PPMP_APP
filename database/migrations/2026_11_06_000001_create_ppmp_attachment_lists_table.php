@@ -8,9 +8,7 @@ use Illuminate\Support\Str;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         Schema::create('ppmp_attachment_lists', function (Blueprint $table) {
@@ -42,7 +40,6 @@ return new class extends Migration
             $table->index('item_id');
         });
 
-        // Migrate existing attachment_list_data from ppmps into ppmp_attachment_lists
         $existingPpmps = DB::table('ppmps')->whereNotNull('attachment_list_data')->get(['id', 'attachment_list_data', 'created_at', 'updated_at']);
 
         foreach ($existingPpmps as $ppmp) {
@@ -111,12 +108,8 @@ return new class extends Migration
         }
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('ppmp_attachment_lists');
     }
 };
-

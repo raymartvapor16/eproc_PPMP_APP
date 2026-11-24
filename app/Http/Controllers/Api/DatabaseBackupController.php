@@ -19,10 +19,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DatabaseBackupController extends Controller
 {
-    /**
-     * Tables whose schema is preserved, but data records are stripped
-     * to prevent session hijacking, bearer token theft, and credential exfiltration.
-     */
+
     protected array $dataOmittedTables = [
         'personal_access_tokens',
         'sessions',
@@ -33,9 +30,6 @@ class DatabaseBackupController extends Controller
         'cache_locks',
     ];
 
-    /**
-     * Require active super_admin access for all database backup operations.
-     */
     protected function authorizeSuperAdmin(Request $request): User
     {
         $user = $request->user();
@@ -46,17 +40,11 @@ class DatabaseBackupController extends Controller
         return $user;
     }
 
-    /**
-     * Get throttle key for anti-brute-force defense.
-     */
     protected function getThrottleKey(Request $request, int $userId): string
     {
         return 'db_backup_auth_limit:' . $request->ip() . ':' . $userId;
     }
 
-    /**
-     * Check if the current client is locked out due to brute force attempts.
-     */
     protected function checkRateLimit(Request $request, User $user): void
     {
         $throttleKey = $this->getThrottleKey($request, $user->id);
@@ -78,8 +66,7 @@ class DatabaseBackupController extends Controller
                 $user->id
             );
 
-            // Emit high-priority security alert to all active super administrators
-            $superAdmins = User::where('role', 'super_admin')->where('is_active', true)->get();
+            $superAdmins = User::withRole('super_admin')->where('is_active', true)->get();
             foreach ($superAdmins as $admin) {
                 SystemNotification::notify(
                     $admin->id,
@@ -97,13 +84,10 @@ class DatabaseBackupController extends Controller
         }
     }
 
-    /**
-     * Record a failed attempt towards rate limiting.
-     */
     protected function recordFailedAttempt(Request $request, User $user, string $reason): void
     {
         $throttleKey = $this->getThrottleKey($request, $user->id);
-        RateLimiter::hit($throttleKey, 900); // 15-minute lockout window
+        RateLimiter::hit($throttleKey, 900);
 
         $remaining = RateLimiter::remaining($throttleKey, 3);
 
@@ -122,9 +106,6 @@ class DatabaseBackupController extends Controller
         );
     }
 
-    /**
-     * Get database backup status and security telemetry.
-     */
     public function getStatus(Request $request): JsonResponse
     {
         $this->authorizeSuperAdmin($request);
@@ -141,10 +122,10 @@ class DatabaseBackupController extends Controller
             $connection = config('database.default', 'mysql');
             if ($connection === 'mysql') {
                 $stats = DB::selectOne("
-                    SELECT 
+                    SELECT
                         COUNT(table_name) AS total_tables,
                         ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS total_size_mb
-                    FROM information_schema.tables 
+                    FROM information_schema.tables
                     WHERE table_schema = ?
                 ", [$dbName]);
 
@@ -156,7 +137,7 @@ class DatabaseBackupController extends Controller
                 $tablesCount = count(DB::getSchemaBuilder()->getTableListing());
             }
         } catch (\Throwable $e) {
-            // Non-fatal telemetry fallback
+
         }
 
         $throttleKey = $this->getThrottleKey($request, $request->user()->id);
@@ -176,9 +157,6 @@ class DatabaseBackupController extends Controller
         ]);
     }
 
-    /**
-     * Create or rotate the manual database backup security password.
-     */
     public function setPassword(Request $request): JsonResponse
     {
         $user = $this->authorizeSuperAdmin($request);
@@ -224,7 +202,6 @@ class DatabaseBackupController extends Controller
             ]);
         }
 
-        // Setting initial password
         $validated = $request->validate([
             'password' => ['required', 'string', 'min:8', 'confirmed'],
         ], [
@@ -252,11 +229,6 @@ class DatabaseBackupController extends Controller
         ]);
     }
 
-    /**
-     * Request an ephemeral, single-use 60-second download token.
-     * Enforces dual-password verification (Account password + Backup password)
-     * and anti-brute-force rate limiting.
-     */
     public function requestDownloadToken(Request $request): JsonResponse
     {
         $user = $this->authorizeSuperAdmin($request);
@@ -277,7 +249,6 @@ class DatabaseBackupController extends Controller
 
         $backupPassword = $validated['password'];
 
-        // Dual factor verification: if account_password provided, verify it matches logged-in user
         if (!empty($validated['account_password'])) {
             if (!Hash::check($validated['account_password'], $user->password)) {
                 $this->recordFailedAttempt($request, $user, 'Invalid Super Admin account password');
@@ -289,7 +260,6 @@ class DatabaseBackupController extends Controller
             }
         }
 
-        // Verify backup security password
         if (!Hash::check($backupPassword, $backupHash)) {
             $this->recordFailedAttempt($request, $user, 'Invalid backup security password');
             $remaining = RateLimiter::remaining($this->getThrottleKey($request, $user->id), 3);
@@ -299,13 +269,11 @@ class DatabaseBackupController extends Controller
             ], 422);
         }
 
-        // Clear throttle on successful credentials
         RateLimiter::clear($this->getThrottleKey($request, $user->id));
 
         $token = Str::random(64);
         $shouldEncrypt = $request->boolean('encrypt', true);
 
-        // Store single-use token in cache for exactly 60 seconds
         Cache::put("db_download_token:{$token}", [
             'user_id' => $user->id,
             'ip' => $request->ip(),
@@ -322,10 +290,6 @@ class DatabaseBackupController extends Controller
         ]);
     }
 
-    /**
-     * Download database backup. Supports single-use ephemeral token (anti-replay)
-     * or direct password authentication with anti-brute-force protection.
-     */
     public function downloadBackup(Request $request): StreamedResponse|JsonResponse
     {
         $user = $this->authorizeSuperAdmin($request);
@@ -339,7 +303,6 @@ class DatabaseBackupController extends Controller
             $cacheKey = "db_download_token:{$token}";
             $tokenData = Cache::get($cacheKey);
 
-            // Strictly burn token immediately (Single-use token, zero replay attacks)
             Cache::forget($cacheKey);
 
             if (!$tokenData || $tokenData['user_id'] !== $user->id || $tokenData['ip'] !== $request->ip()) {
@@ -360,7 +323,7 @@ class DatabaseBackupController extends Controller
             $shouldEncrypt = (bool) ($tokenData['encrypt'] ?? true);
             $backupPassword = $tokenData['backup_password'];
         } else {
-            // Direct authentication fallback
+
             $backupHash = SystemSetting::get('database_backup_password_hash');
             if (empty($backupHash)) {
                 return response()->json([
@@ -441,23 +404,19 @@ class DatabaseBackupController extends Controller
         }, $filename, $securityHeaders);
     }
 
-    /**
-     * Decrypt an uploaded .sql.enc backup archive into pure SQL.
-     */
     public function decryptBackup(Request $request): StreamedResponse|JsonResponse
     {
         $user = $this->authorizeSuperAdmin($request);
         $this->checkRateLimit($request, $user);
 
         $request->validate([
-            'backup_file' => ['required', 'file', 'max:51200'], // max 50MB
+            'backup_file' => ['required', 'file', 'max:51200'],
             'password' => ['required', 'string'],
         ], [
             'backup_file.required' => 'Please upload an encrypted backup (.sql.enc) file.',
             'password.required' => 'Please enter the backup security password used during encryption.',
         ]);
 
-        /** @var UploadedFile $file */
         $file = $request->file('backup_file');
         $rawContent = file_get_contents($file->getRealPath());
 
@@ -508,9 +467,6 @@ class DatabaseBackupController extends Controller
         ]);
     }
 
-    /**
-     * Stream sanitized, plain SQL dump.
-     */
     protected function streamSanitizedDatabaseDump(string $dbName, string $userName): void
     {
         $out = fopen('php://output', 'w');
@@ -518,22 +474,18 @@ class DatabaseBackupController extends Controller
         fclose($out);
     }
 
-    /**
-     * Stream AES-256-GCM encrypted database dump.
-     */
     protected function streamEncryptedDatabaseDump(string $dbName, string $userName, string $backupPassword): void
     {
-        // Generate SQL in temporary memory stream
+
         $memStream = fopen('php://temp', 'w+');
         $this->generateSqlDump($dbName, $userName, $memStream);
         rewind($memStream);
         $plainSql = stream_get_contents($memStream);
         fclose($memStream);
 
-        // Derive strong 256-bit AES key via PBKDF2 (100,000 iterations)
         $salt = random_bytes(16);
         $derivedKey = hash_pbkdf2('sha256', $backupPassword, $salt, 100000, 32, true);
-        $iv = random_bytes(12); // Standard 96-bit IV for GCM
+        $iv = random_bytes(12);
         $tag = '';
 
         $ciphertext = openssl_encrypt($plainSql, 'aes-256-gcm', $derivedKey, OPENSSL_RAW_DATA, $iv, $tag, '', 16);
@@ -556,9 +508,6 @@ class DatabaseBackupController extends Controller
         fclose($out);
     }
 
-    /**
-     * Core SQL dump generation with table sanitization.
-     */
     protected function generateSqlDump(string $dbName, string $userName, $out): void
     {
         $header = <<<SQL
@@ -637,7 +586,6 @@ SQL;
                 continue;
             }
 
-            // OMIT DATA for sensitive session, token, and cache tables
             if (in_array(strtolower($table), $this->dataOmittedTables, true)) {
                 fwrite($out, "-- (Sensitive authentication tokens and session states sanitized to prevent hijacking)\n\n");
                 continue;
@@ -647,7 +595,6 @@ SQL;
 
             $query = DB::table($table);
 
-            // Redact backup password hash itself from system settings
             if ($table === 'system_settings') {
                 $query->where('key', '!=', 'database_backup_password_hash');
             }

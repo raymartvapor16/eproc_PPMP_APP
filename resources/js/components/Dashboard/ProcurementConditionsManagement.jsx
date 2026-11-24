@@ -23,9 +23,8 @@ export const ProcurementConditionsManagement = () => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
+    const [statusFilter, setStatusFilter] = useState('ALL');
 
-    // Form Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingCondition, setEditingCondition] = useState(null);
     const [formData, setFormData] = useState({
@@ -40,12 +39,10 @@ export const ProcurementConditionsManagement = () => {
     const [saving, setSaving] = useState(false);
     const [modalError, setModalError] = useState('');
 
-    // Delete Modal state
     const [deleteModalCondition, setDeleteModalCondition] = useState(null);
     const [deleting, setDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState('');
 
-    // Feedback notification
     const [feedback, setFeedback] = useState({ type: '', text: '' });
 
     const showFeedback = (type, text) => {
@@ -72,7 +69,6 @@ export const ProcurementConditionsManagement = () => {
         fetchConditions();
     }, []);
 
-    // Filtered list
     const filteredConditions = useMemo(() => {
         return conditions.filter((c) => {
             const matchesSearch =
@@ -92,7 +88,6 @@ export const ProcurementConditionsManagement = () => {
         });
     }, [conditions, searchQuery, statusFilter]);
 
-    // Open Modal for Add
     const handleOpenAddModal = () => {
         setEditingCondition(null);
         setFormData({
@@ -108,7 +103,6 @@ export const ProcurementConditionsManagement = () => {
         setIsModalOpen(true);
     };
 
-    // Open Modal for Edit
     const handleOpenEditModal = (condition) => {
         setEditingCondition(condition);
         setFormData({
@@ -124,7 +118,6 @@ export const ProcurementConditionsManagement = () => {
         setIsModalOpen(true);
     };
 
-    // Save Form (Create or Update)
     const handleSave = async (e) => {
         e.preventDefault();
         if (!formData.name.trim()) {
@@ -156,7 +149,6 @@ export const ProcurementConditionsManagement = () => {
         }
     };
 
-    // Quick toggle active status
     const handleToggleActive = async (condition) => {
         try {
             await procurementConditionService.update(condition.id, {
@@ -170,7 +162,6 @@ export const ProcurementConditionsManagement = () => {
         }
     };
 
-    // Execute Delete
     const handleConfirmDelete = async () => {
         if (!deleteModalCondition) return;
 
@@ -191,7 +182,7 @@ export const ProcurementConditionsManagement = () => {
 
     return (
         <div className="space-y-6">
-            {/* Feedback Alert */}
+
             {feedback.text && (
                 <div
                     className={`p-4 rounded-xl border flex items-center justify-between shadow-xs transition-all ${
@@ -218,7 +209,6 @@ export const ProcurementConditionsManagement = () => {
                 </div>
             )}
 
-            {/* Header Banner */}
             <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 rounded-2xl p-6 text-white shadow-md border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full text-xs font-bold border border-blue-400/30">
@@ -254,7 +244,6 @@ export const ProcurementConditionsManagement = () => {
                 </div>
             </div>
 
-            {/* Filter and Search Bar */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="relative w-full sm:w-80">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -280,7 +269,6 @@ export const ProcurementConditionsManagement = () => {
                 </div>
             </div>
 
-            {/* Conditions Table */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -318,12 +306,11 @@ export const ProcurementConditionsManagement = () => {
                             ) : (
                                 filteredConditions.map((condition) => (
                                     <tr key={condition.id} className="hover:bg-slate-50/70 transition">
-                                        {/* Display Order */}
+
                                         <td className="px-5 py-4 font-mono font-bold text-slate-400 text-center">
                                             {condition.display_order ?? 0}
                                         </td>
 
-                                        {/* Condition Name */}
                                         <td className="px-5 py-4 min-w-[200px]">
                                             <div className="font-bold text-slate-900 flex items-center gap-2">
                                                 <span>{condition.name}</span>
@@ -335,7 +322,6 @@ export const ProcurementConditionsManagement = () => {
                                             )}
                                         </td>
 
-                                        {/* Place of Delivery */}
                                         <td className="px-5 py-4 max-w-[220px]">
                                             <div className="flex items-start gap-1.5 text-slate-700">
                                                 <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
@@ -345,7 +331,6 @@ export const ProcurementConditionsManagement = () => {
                                             </div>
                                         </td>
 
-                                        {/* Delivery Period */}
                                         <td className="px-5 py-4 max-w-[240px]">
                                             <div className="flex items-start gap-1.5 text-slate-700">
                                                 <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
@@ -355,7 +340,6 @@ export const ProcurementConditionsManagement = () => {
                                             </div>
                                         </td>
 
-                                        {/* Payment Method */}
                                         <td className="px-5 py-4 max-w-[240px]">
                                             <div className="flex items-start gap-1.5 text-slate-700">
                                                 <CreditCard className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
@@ -365,7 +349,6 @@ export const ProcurementConditionsManagement = () => {
                                             </div>
                                         </td>
 
-                                        {/* Status */}
                                         <td className="px-5 py-4 text-center">
                                             <button
                                                 type="button"
@@ -391,7 +374,6 @@ export const ProcurementConditionsManagement = () => {
                                             </button>
                                         </td>
 
-                                        {/* Actions */}
                                         <td className="px-5 py-4 text-right">
                                             <div className="flex items-center justify-end gap-1.5">
                                                 <button
@@ -423,11 +405,10 @@ export const ProcurementConditionsManagement = () => {
                 </div>
             </div>
 
-            {/* Modal: Add / Edit Condition */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-xl w-full overflow-hidden max-h-[90vh] flex flex-col">
-                        {/* Modal Header */}
+
                         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                             <div className="flex items-center gap-2.5">
                                 <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
@@ -451,7 +432,6 @@ export const ProcurementConditionsManagement = () => {
                             </button>
                         </div>
 
-                        {/* Modal Body */}
                         <form onSubmit={handleSave} className="p-6 space-y-4 overflow-y-auto">
                             {modalError && (
                                 <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
@@ -460,7 +440,6 @@ export const ProcurementConditionsManagement = () => {
                                 </div>
                             )}
 
-                            {/* Condition Name */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
                                     Condition Name / Title <span className="text-rose-500">*</span>
@@ -478,7 +457,6 @@ export const ProcurementConditionsManagement = () => {
                                 </p>
                             </div>
 
-                            {/* Place of Delivery */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
                                     Place of Delivery
@@ -492,7 +470,6 @@ export const ProcurementConditionsManagement = () => {
                                 />
                             </div>
 
-                            {/* Delivery Period */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
                                     Delivery Period
@@ -506,7 +483,6 @@ export const ProcurementConditionsManagement = () => {
                                 />
                             </div>
 
-                            {/* Payment Method */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
                                     Payment Method
@@ -520,7 +496,6 @@ export const ProcurementConditionsManagement = () => {
                                 />
                             </div>
 
-                            {/* Other Terms / Notes */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
                                     Other Terms / Detailed Specifications <span className="text-slate-400 font-normal">(Optional)</span>
@@ -534,7 +509,6 @@ export const ProcurementConditionsManagement = () => {
                                 />
                             </div>
 
-                            {/* Display Order & Active Checkbox */}
                             <div className="grid grid-cols-2 gap-4 items-center pt-2">
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -562,7 +536,6 @@ export const ProcurementConditionsManagement = () => {
                                 </div>
                             </div>
 
-                            {/* Modal Actions */}
                             <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
                                 <button
                                     type="button"
@@ -585,7 +558,6 @@ export const ProcurementConditionsManagement = () => {
                 </div>
             )}
 
-            {/* Modal: Delete Confirmation */}
             {deleteModalCondition && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden p-6 space-y-4">

@@ -27,11 +27,11 @@ import { AfkLogoutManagement } from './AfkLogoutManagement';
 import { AdminActivityLog } from './AdminActivityLog';
 
 export const UnifiedSecurityControls = () => {
-    const [subTab, setSubTab] = useState('controls'); // 'controls' | 'policies' | 'audit_log'
+    const [subTab, setSubTab] = useState('controls');
 
     return (
         <div className="space-y-6 animate-in fade-in duration-150">
-            {/* Header Banner */}
+
             <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-6 border border-slate-800 shadow-lg relative overflow-hidden">
                 <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
@@ -54,7 +54,6 @@ export const UnifiedSecurityControls = () => {
                         </div>
                     </div>
 
-                    {/* Sub-tab selection */}
                     <div className="flex items-center gap-1.5 p-1 bg-slate-800/80 rounded-xl border border-slate-700/60 self-start md:self-auto">
                         <button
                             type="button"
@@ -96,10 +95,9 @@ export const UnifiedSecurityControls = () => {
                 </div>
             </div>
 
-            {/* TAB CONTENT */}
             {subTab === 'controls' && (
                 <div className="space-y-6">
-                    {/* Developer Mode & Session Hijack Controller */}
+
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
                         <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                             <div className="flex items-center gap-2">
@@ -117,7 +115,6 @@ export const UnifiedSecurityControls = () => {
                         </div>
                     </div>
 
-                    {/* Official E-Signature Gateway Controller */}
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
                         <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                             <div className="flex items-center gap-2">
@@ -135,7 +132,6 @@ export const UnifiedSecurityControls = () => {
                         </div>
                     </div>
 
-                    {/* File Upload Security Guard */}
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
                         <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                             <div className="flex items-center gap-2">
@@ -183,14 +179,13 @@ export const UnifiedSecurityControls = () => {
                         </div>
                     </div>
 
-                    {/* AFK / Inactivity Auto-Logout Controller */}
                     <AfkLogoutManagement />
                 </div>
             )}
 
             {subTab === 'policies' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {/* Phishing Protection */}
+
                     <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
                         <div className="flex items-center justify-between">
                             <span className="text-xs font-bold uppercase tracking-wider text-slate-600">Anti-Phishing Shield</span>
@@ -205,7 +200,6 @@ export const UnifiedSecurityControls = () => {
                         </div>
                     </div>
 
-                    {/* Brute Force & Credential Stuffing */}
                     <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
                         <div className="flex items-center justify-between">
                             <span className="text-xs font-bold uppercase tracking-wider text-slate-600">Credential Defense</span>
@@ -220,7 +214,6 @@ export const UnifiedSecurityControls = () => {
                         </div>
                     </div>
 
-                    {/* SQL Injection Protection */}
                     <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
                         <div className="flex items-center justify-between">
                             <span className="text-xs font-bold uppercase tracking-wider text-slate-600">Database Defense</span>
@@ -235,7 +228,6 @@ export const UnifiedSecurityControls = () => {
                         </div>
                     </div>
 
-                    {/* XSS & CSRF Defense */}
                     <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
                         <div className="flex items-center justify-between">
                             <span className="text-xs font-bold uppercase tracking-wider text-slate-600">Client-Side Shield</span>
@@ -250,7 +242,6 @@ export const UnifiedSecurityControls = () => {
                         </div>
                     </div>
 
-                    {/* Session Hijacking & MITM */}
                     <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
                         <div className="flex items-center justify-between">
                             <span className="text-xs font-bold uppercase tracking-wider text-slate-600">Transport Security</span>
@@ -265,7 +256,6 @@ export const UnifiedSecurityControls = () => {
                         </div>
                     </div>
 
-                    {/* DDoS & Anti-Ransomware */}
                     <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
                         <div className="flex items-center justify-between">
                             <span className="text-xs font-bold uppercase tracking-wider text-slate-600">Storage &amp; Availability</span>
@@ -290,4 +280,3 @@ export const UnifiedSecurityControls = () => {
         </div>
     );
 };
-

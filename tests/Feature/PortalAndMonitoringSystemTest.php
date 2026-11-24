@@ -94,13 +94,11 @@ class PortalAndMonitoringSystemTest extends TestCase
             $pims->update(['status' => 'active']);
         }
 
-        // When active
         $res = $this->getJson('/api/portal-systems/pims-status');
         $res->assertOk();
         $this->assertTrue($res->json('is_active'));
         $this->assertEquals('active', $res->json('status'));
 
-        // When updated to inactive
         $pims->update(['status' => 'inactive']);
         $resInactive = $this->getJson('/api/portal-systems/pims-status');
         $resInactive->assertOk();
@@ -112,7 +110,6 @@ class PortalAndMonitoringSystemTest extends TestCase
     {
         $this->actingAs($this->superAdmin);
 
-        // Create
         $res = $this->postJson('/api/portal-systems', [
             'name' => 'OPPMO Monitoring System',
             'description' => 'Procurement progress tracking and monitoring',
@@ -128,7 +125,6 @@ class PortalAndMonitoringSystemTest extends TestCase
 
         $systemId = $res->json('system.id');
 
-        // Update
         $updateRes = $this->putJson("/api/portal-systems/{$systemId}", [
             'name' => 'OPPMO Monitoring System Updated',
             'description' => 'Updated description',
@@ -137,7 +133,6 @@ class PortalAndMonitoringSystemTest extends TestCase
         $updateRes->assertOk();
         $this->assertDatabaseHas('portal_systems', ['name' => 'OPPMO Monitoring System Updated']);
 
-        // Delete
         $delRes = $this->deleteJson("/api/portal-systems/{$systemId}");
         $delRes->assertOk();
         $this->assertDatabaseMissing('portal_systems', ['id' => $systemId]);
@@ -204,6 +199,125 @@ class PortalAndMonitoringSystemTest extends TestCase
         $this->assertNotNull($user);
         $this->assertContains('/eprocrementppmpapp', $user->accessible_systems);
         $this->assertContains('/monitoringsystem', $user->accessible_systems);
+        $this->assertNotNull($user->pnpkiSignature);
+        $this->assertEquals('optional', $user->pnpkiSignature->signature_type);
+    }
+
+    public function test_registration_with_pnpki_digital_signature_creates_normalized_record(): void
+    {
+        Storage::fake('local');
+        $signature = 'data:image/png;base64,' . base64_encode('fake-signature-bytes');
+        $pdfContent = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF";
+        $proofPdf = UploadedFile::fake()->createWithContent('PNPKI_Certificate_Proof.pdf', $pdfContent);
+
+        $res = $this->post('/api/register', [
+            'name' => 'PNPKI Officer',
+            'email' => 'pnpki.officer@example.com',
+            'phone_number' => '09123456789',
+            'address' => 'Capitol Compound, Digos City',
+            'designation' => 'Administrative Officer IV',
+            'signature' => $signature,
+            'signature_type' => 'pnpki',
+            'pnpki_expiration_date' => '2028-12-31',
+            'pnpki_proof_pdf' => $proofPdf,
+            'signature_capture_method' => 'uploaded',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'role' => 'end_user',
+            'office_id' => $this->office->id,
+            'accessible_systems' => json_encode(['/eprocrementppmpapp']),
+        ]);
+
+        $res->assertCreated();
+        $user = User::with('pnpkiSignature')->where('email', 'pnpki.officer@example.com')->first();
+        $this->assertNotNull($user);
+        $this->assertNotNull($user->pnpkiSignature);
+        $this->assertEquals('pnpki', $user->pnpkiSignature->signature_type);
+        $this->assertEquals('2028-12-31', $user->pnpkiSignature->expiration_date->format('Y-m-d'));
+        $this->assertEquals('uploaded', $user->pnpkiSignature->capture_method);
+        $this->assertNotNull($user->pnpkiSignature->proof_pdf_path);
+        $this->assertTrue(Storage::disk('local')->exists($user->pnpkiSignature->proof_pdf_path));
+
+        $this->actingAs($this->superAdmin);
+        $pdfRes = $this->get("/api/users/{$user->id}/pnpki-proof");
+        $pdfRes->assertOk();
+
+        $this->actingAs($this->endUser);
+        $newProofPdf = UploadedFile::fake()->createWithContent('Updated_PNPKI_Proof.pdf', $pdfContent);
+        $profileRes = $this->post('/api/profile', [
+            'name' => 'Updated End User',
+            'phone_number' => '09998887777',
+            'address' => 'Matti, Digos City',
+            'designation' => 'Admin Officer II',
+            'signature' => $signature,
+            'signature_type' => 'pnpki',
+            'pnpki_expiration_date' => '2029-06-30',
+            'pnpki_proof_pdf' => $newProofPdf,
+            'signature_capture_method' => 'drawn',
+        ]);
+        $profileRes->assertOk();
+        $this->endUser->refresh();
+        $this->assertNotNull($this->endUser->pnpkiSignature);
+        $this->assertEquals('pnpki', $this->endUser->pnpkiSignature->signature_type);
+        $this->assertEquals('2029-06-30', $this->endUser->pnpkiSignature->expiration_date->format('Y-m-d'));
+
+        $this->endUser->pnpkiSignature->update(['expiration_date' => '2020-01-15']);
+        $this->endUser->refresh();
+        $this->assertTrue($this->endUser->pnpkiSignature->is_expired);
+        $this->assertTrue($this->endUser->pnpkiSignature->is_forced_optional);
+        $this->assertEquals('optional', $this->endUser->pnpkiSignature->effective_signature_type);
+        $this->assertEquals('2020-01-15', $this->endUser->pnpkiSignature->expiration_date->format('Y-m-d'));
+
+        $optRes = $this->postJson('/api/profile/use-optional-signature');
+        $optRes->assertOk();
+        $this->endUser->refresh();
+        $this->assertEquals('optional', $this->endUser->pnpkiSignature->signature_type);
+        $this->assertEquals('2020-01-15', $this->endUser->pnpkiSignature->expiration_date->format('Y-m-d'));
+        $this->assertNotNull($this->endUser->pnpkiSignature->proof_pdf_path);
+
+        $renewedPdf = UploadedFile::fake()->createWithContent('Renewed_PNPKI_2030.pdf', $pdfContent);
+        $renewRes = $this->post('/api/profile/renew-pnpki', [
+            'pnpki_expiration_date' => '2030-12-31',
+            'pnpki_proof_pdf' => $renewedPdf,
+        ]);
+        $renewRes->assertOk();
+        $this->endUser->refresh();
+        $this->assertEquals('pending', $this->endUser->pnpkiSignature->renewal_status);
+        $this->assertEquals('2030-12-31', $this->endUser->pnpkiSignature->pending_expiration_date->format('Y-m-d'));
+        $this->assertEquals('optional', $this->endUser->pnpkiSignature->effective_signature_type);
+
+        $this->actingAs($this->admin);
+        $this->postJson("/api/users/{$this->endUser->id}/pnpki-renewal/approve")->assertStatus(403);
+
+        $this->actingAs($this->superAdmin);
+        $approveRes = $this->postJson("/api/users/{$this->endUser->id}/pnpki-renewal/approve");
+        $approveRes->assertOk();
+        $this->endUser->refresh();
+        $this->assertEquals('approved', $this->endUser->pnpkiSignature->renewal_status);
+        $this->assertEquals('pnpki', $this->endUser->pnpkiSignature->signature_type);
+        $this->assertFalse($this->endUser->pnpkiSignature->is_expired);
+        $this->assertEquals('2030-12-31', $this->endUser->pnpkiSignature->expiration_date->format('Y-m-d'));
+        $this->assertEquals('2020-01-15', $this->endUser->pnpkiSignature->previous_expiration_date->format('Y-m-d'));
+        $this->assertNotNull($this->endUser->pnpkiSignature->previous_proof_pdf_path);
+        $this->assertEquals(1, $this->endUser->pnpkiSignature->renewal_count);
+
+        $otherUser = User::factory()->create(['role' => 'twg', 'office_id' => $this->office->id, 'is_active' => true]);
+        $otherUser->pnpkiSignature()->create([
+            'signature_type' => 'pnpki',
+            'expiration_date' => '2031-05-01',
+            'proof_pdf_path' => 'pnpki_proofs/other.pdf',
+            'proof_original_name' => 'other.pdf',
+        ]);
+
+        $this->actingAs($this->endUser);
+        $ownListRes = $this->getJson('/api/pnpki-signatures')->assertOk();
+        $this->assertCount(1, $ownListRes->json('pnpki_signatures'));
+        $this->assertEquals($this->endUser->id, $ownListRes->json('pnpki_signatures.0.user_id'));
+        $this->get("/api/users/{$otherUser->id}/pnpki-proof")->assertStatus(403);
+
+        $this->actingAs($this->superAdmin);
+        $adminListRes = $this->getJson('/api/pnpki-signatures')->assertOk();
+        $this->assertGreaterThanOrEqual(2, count($adminListRes->json('pnpki_signatures')));
     }
 
     public function test_admin_can_update_user_system_access(): void
@@ -221,17 +335,15 @@ class PortalAndMonitoringSystemTest extends TestCase
 
     public function test_monitoring_access_control(): void
     {
-        // 1. User without /monitoringsystem receives 403
+
         $this->actingAs($this->endUser);
         $res = $this->getJson('/api/monitoring/stats');
         $res->assertForbidden();
 
-        // 2. Grant access
         $this->endUser->update(['accessible_systems' => ['/eprocrementppmpapp', '/monitoringsystem']]);
         $resAllowed = $this->getJson('/api/monitoring/stats');
         $resAllowed->assertOk();
 
-        // 3. Super admin and admin always allowed
         $this->actingAs($this->superAdmin);
         $this->getJson('/api/monitoring/stats')->assertOk();
 
@@ -241,7 +353,7 @@ class PortalAndMonitoringSystemTest extends TestCase
 
     public function test_user_without_checked_system_access_is_forbidden(): void
     {
-        // 1. User with only PPMP access cannot access PIMS
+
         $this->endUser->update(['accessible_systems' => ['/eprocrementppmpapp']]);
         $this->actingAs($this->endUser);
         $this->getJson('/api/pims/dashboard')->assertForbidden();
@@ -250,12 +362,10 @@ class PortalAndMonitoringSystemTest extends TestCase
         $this->assertFalse($this->endUser->canAccessSystem('/monitoringsystem'));
         $this->assertTrue($this->endUser->canAccessSystem('/eprocrementppmpapp'));
 
-        // 2. Granting /pims access enables PIMS
         $this->endUser->update(['accessible_systems' => ['/eprocrementppmpapp', '/pims']]);
         $this->assertTrue($this->endUser->canAccessSystem('/pims'));
         $this->getJson('/api/pims/dashboard')->assertOk();
 
-        // Still forbidden from monitoring because it is not checked
         $this->assertFalse($this->endUser->canAccessSystem('/monitoringsystem'));
         $this->getJson('/api/monitoring/stats')->assertForbidden();
     }
@@ -276,54 +386,50 @@ class PortalAndMonitoringSystemTest extends TestCase
         $project->initializeDefaultSteps();
         $step = $project->steps()->first();
 
-        // End user with /monitoringsystem access
-        $this->endUser->update(['accessible_systems' => ['/monitoringsystem']]);
+        $this->endUser->update(['accessible_systems' => ['/monitoringsystem'], 'can_view_all_monitoring_ppmp' => true]);
         $this->actingAs($this->endUser);
 
-        // 1. Can view project details
         $this->getJson("/api/monitoring/projects/{$project->id}")->assertOk();
 
-        // 2. Cannot add step
         $this->postJson("/api/monitoring/projects/{$project->id}/steps", [
             'division' => 'pr_division',
             'step_name' => 'Unauthorized custom step',
         ])->assertForbidden();
 
-        // 3. Cannot update step
         $this->putJson("/api/monitoring/steps/{$step->id}", [
             'status' => 'COMPLETED',
         ])->assertForbidden();
 
-        // 4. Cannot update PIMS PR ID
         $this->patchJson("/api/monitoring/projects/{$project->id}/pr-id", [
             'pims_pr_id' => 'PR-UNAUTHORIZED-01',
         ])->assertForbidden();
 
-        // 5. Cannot delete step
         $this->deleteJson("/api/monitoring/steps/{$step->id}")->assertForbidden();
 
-        // 6. Cannot delete project
         $this->deleteJson("/api/monitoring/projects/{$project->id}")->assertForbidden();
 
-        // 7. Admin CAN perform manage actions
         $this->actingAs($this->admin);
         $this->putJson("/api/monitoring/steps/{$step->id}", [
             'status' => 'COMPLETED',
+        ])->assertStatus(422);
+
+        $this->putJson("/api/monitoring/steps/{$step->id}", [
+            'status' => 'COMPLETED',
+            'completed_at' => '2026-11-23',
         ])->assertOk();
 
-        // 8. Head and all reviewers (budget_officer, twg, pacco) cannot manage (view-only)
         foreach (['head', 'budget_officer', 'twg', 'pacco'] as $restrictedRole) {
+
             $restrictedUser = User::factory()->create([
                 'role' => $restrictedRole,
                 'office_id' => $this->office->id,
                 'accessible_systems' => ['/monitoringsystem'],
+                'can_view_all_monitoring_ppmp' => true,
             ]);
             $this->actingAs($restrictedUser);
 
-            // Can view project
             $this->getJson("/api/monitoring/projects/{$project->id}")->assertOk();
 
-            // Cannot add, edit, or delete step
             $this->postJson("/api/monitoring/projects/{$project->id}/steps", [
                 'division' => 'pr_division',
                 'step_name' => 'Restricted step',
@@ -341,7 +447,6 @@ class PortalAndMonitoringSystemTest extends TestCase
     {
         $this->actingAs($this->superAdmin);
 
-        // 1. Create baseline PPMP
         $baseline = Ppmp::create([
             'uuid' => (string) \Illuminate\Support\Str::uuid(),
             'ppmp_number' => '1',
@@ -355,11 +460,9 @@ class PortalAndMonitoringSystemTest extends TestCase
             'is_annual' => true,
         ]);
 
-        // Sync to monitoring
         MonitoringProject::syncFromPpmp($baseline, true);
         $this->assertEquals(1, MonitoringProject::count());
 
-        // 2. Create child amended PPMP with same tracking number
         $amended = Ppmp::create([
             'uuid' => (string) \Illuminate\Support\Str::uuid(),
             'ppmp_number' => '1',
@@ -375,10 +478,8 @@ class PortalAndMonitoringSystemTest extends TestCase
             'amendment_type' => 'AMENDMENT',
         ]);
 
-        // Sync again
         MonitoringProject::syncFromPpmp($amended);
 
-        // Must still be EXACTLY 1 monitored project card (no duplicate)
         $this->assertEquals(1, MonitoringProject::count());
 
         $project = MonitoringProject::first();
@@ -392,7 +493,7 @@ class PortalAndMonitoringSystemTest extends TestCase
 
     public function test_app_data_end_user_resolution(): void
     {
-        // 1. With program: Implementing Office / Unit - Program
+
         $ppmpWithProgram = new Ppmp([
             'implementing_unit' => 'OPPMO',
             'program_name' => 'SDFGSDGF',
@@ -410,7 +511,6 @@ class PortalAndMonitoringSystemTest extends TestCase
         $this->assertEquals('OPPMO - SDFGSDGF', $rowsWithProgram[1]['endUser']);
         $this->assertEquals('OPPMO - SDFGSDGF', $rowsWithProgram[2]['endUser']);
 
-        // 2. Without program: Implementing Office / Unit only
         $ppmpWithoutProgram = new Ppmp([
             'implementing_unit' => 'OPPMO',
             'program_name' => null,
@@ -449,7 +549,6 @@ class PortalAndMonitoringSystemTest extends TestCase
             'is_header' => false,
         ]);
 
-        // 1. Exceeds budget (₱555,500 > ₱500,000) -> 422 rejected
         $overBudgetResponse = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmp->uuid}/attachment-list", [
             'office_name' => 'OPPMO',
             'project_title' => 'Procurement of Laptops',
@@ -465,7 +564,6 @@ class PortalAndMonitoringSystemTest extends TestCase
             'message' => 'Cannot save: The Total Cost (₱555,500.00) of the Detailed Specifications exceeds the Allocated Budget (₱500,000.00) from the PPMP data by ₱55,500.00. The total cost must coincide with or be lower than the Allocated Budget.',
         ]);
 
-        // 2. Coincides with budget (₱500,000 == ₱500,000) -> 200 accepted
         $coincidingResponse = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmp->uuid}/attachment-list", [
             'office_name' => 'OPPMO',
             'project_title' => 'Procurement of Laptops',
@@ -478,7 +576,6 @@ class PortalAndMonitoringSystemTest extends TestCase
 
         $coincidingResponse->assertStatus(200);
 
-        // 3. Lower than budget (₱400,000 < ₱500,000) -> 200 accepted
         $lowerResponse = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$ppmp->uuid}/attachment-list", [
             'office_name' => 'OPPMO',
             'project_title' => 'Procurement of Laptops',
@@ -490,5 +587,369 @@ class PortalAndMonitoringSystemTest extends TestCase
         ]);
 
         $lowerResponse->assertStatus(200);
+    }
+
+    public function test_cell_update_persists_for_ppmp_and_detailed_specifications(): void
+    {
+        $ppmp = Ppmp::create([
+            'uuid' => (string) \Illuminate\Support\Str::uuid(),
+            'tracking_number' => 'OPPMOGOODS-2026-888888',
+            'ppmp_number' => '888888',
+            'office_id' => $this->office->id,
+            'created_by' => $this->endUser->id,
+            'title' => 'Catering Services',
+            'fiscal_year' => '2026',
+            'plan_type' => 'FINAL',
+            'total_budget' => 60000,
+            'status' => 'TWG_RETURNED',
+        ]);
+
+        $item1 = \App\Models\PpmpItem::create([
+            'ppmp_id' => $ppmp->id,
+            'item_no' => 1,
+            'description' => 'Catering without venue',
+            'quantity_size' => '10 pax',
+            'estimated_budget' => 50000,
+            'is_header' => false,
+        ]);
+
+        $item2 = \App\Models\PpmpItem::create([
+            'ppmp_id' => $ppmp->id,
+            'item_no' => 2,
+            'description' => 'Catering with venue',
+            'quantity_size' => '10 pax',
+            'estimated_budget' => 10000,
+            'is_header' => false,
+        ]);
+
+        $ppmp->update([
+            'attachment_list_data' => [
+                'rows' => [
+                    ['id' => 1, 'itemNo' => 1, 'unit' => 'pax', 'description' => 'sdfsdfgsdfgd', 'qty' => '50', 'unitCost' => '100', 'totalCost' => '5000'],
+                ],
+                'attachment_lists' => [
+                    (string) $item1->id => [
+                        'total_budget' => 50000,
+                        'rows' => [
+                            ['id' => 1, 'itemNo' => 1, 'unit' => 'pax', 'description' => 'sdfsdfgsdfgd', 'qty' => '50', 'unitCost' => '100', 'totalCost' => '5000'],
+                        ],
+                    ],
+                    (string) $item2->id => [
+                        'total_budget' => 10000,
+                        'rows' => [
+                            ['id' => 1, 'itemNo' => 1, 'unit' => 'pax', 'description' => 'Venue meal', 'qty' => '10', 'unitCost' => '500', 'totalCost' => '5000'],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->actingAs($this->endUser);
+
+        $this->postJson("/api/ppmps/{$ppmp->uuid}/update-cell", [
+            'field_key' => 'quantity_size',
+            'field_label' => 'Quantity / Size',
+            'value' => '25 pax',
+            'item_id' => $item1->id,
+            'item_no' => 1,
+        ])->assertOk();
+
+        $this->assertEquals('25 pax', $item1->fresh()->quantity_size);
+
+        $this->postJson("/api/ppmps/{$ppmp->uuid}/update-cell", [
+            'field_key' => 'att_r1_description',
+            'field_label' => 'Detailed Specifications #1 • Row #1 Description',
+            'value' => 'sdfsdfgsdfgd ok',
+            'item_id' => $item1->id,
+            'item_no' => 1,
+        ])->assertOk();
+
+        $this->postJson("/api/ppmps/{$ppmp->uuid}/update-cell", [
+            'field_key' => 'att_r1_qty',
+            'field_label' => 'Detailed Specifications #2 • Row #1 Quantity',
+            'value' => '9',
+            'item_id' => $item2->id,
+            'item_no' => 2,
+        ])->assertOk();
+
+        $freshAtt = $ppmp->fresh()->attachment_list_data;
+        $this->assertEquals('sdfsdfgsdfgd ok', $freshAtt['attachment_lists'][(string) $item1->id]['rows'][0]['description']);
+        $this->assertEquals('9', $freshAtt['attachment_lists'][(string) $item2->id]['rows'][0]['qty']);
+        $this->assertEquals('4500', $freshAtt['attachment_lists'][(string) $item2->id]['rows'][0]['totalCost']);
+    }
+
+    public function test_monitoring_step1_starts_pending_requires_admin_and_checks_ppmp_prerequisites(): void
+    {
+        $this->actingAs($this->endUser);
+
+        $ppmp = Ppmp::create([
+            'uuid' => (string) \Illuminate\Support\Str::uuid(),
+            'ppmp_number' => 'PPMP-2026-999',
+            'office_id' => $this->office->id,
+            'implementing_unit' => $this->office->name,
+            'created_by' => $this->endUser->id,
+            'title' => 'Unfinished PPMP Published Early',
+            'fiscal_year' => '2026',
+            'tracking_number' => 'TRK-2026-999',
+            'total_budget' => 100000,
+            'status' => 'DRAFT',
+        ]);
+
+        $publishRes = $this->postJson('/api/monitoring/pims-publish', [
+            'ppmp_uuid' => $ppmp->uuid,
+            'project_title' => $ppmp->title,
+            'category' => 'GOODS_CONSULTING',
+            'procurement_mode' => 'Competitive Bidding (RA 12009)',
+            'abc_amount' => 100000,
+            'pr_number' => $ppmp->tracking_number,
+        ]);
+        $publishRes->assertCreated();
+
+        $projectId = $publishRes->json('project.id');
+        $step1 = collect($publishRes->json('project.steps'))->firstWhere('step_order', 1);
+
+        $this->assertNotNull($step1);
+        $this->assertEquals('PENDING', $step1['status']);
+
+        $monitorUser = User::factory()->create([
+            'role' => 'monitor',
+            'office_id' => $this->office->id,
+            'accessible_systems' => ['/monitoringsystem'],
+        ]);
+        $this->actingAs($monitorUser);
+        $this->putJson("/api/monitoring/steps/{$step1['id']}", [
+            'status' => 'SUSPENDED',
+        ])->assertForbidden();
+
+        $this->actingAs($this->admin);
+        $failRes = $this->putJson("/api/monitoring/steps/{$step1['id']}", [
+            'status' => 'COMPLETED',
+            'completed_at' => '2026-11-23',
+        ]);
+        $failRes->assertStatus(422);
+        $this->assertFalse($failRes->json('pims_review_checklist.all_approved'));
+        $this->assertEquals('DRAFT', $failRes->json('pims_review_checklist.ppmp_status'));
+        $this->assertEquals('Draft', $failRes->json('pims_review_checklist.ppmp_status_label'));
+
+        $budgetReviewer = User::factory()->create([
+            'name' => 'Budget Reviewer Jane',
+            'role' => 'budget_officer',
+            'office_id' => $this->office->id,
+        ]);
+        $ppmp->update([
+            'status' => 'BUDGET_OFFICER_REVIEW',
+            'budget_reviewer_id' => $budgetReviewer->id,
+        ]);
+        $showUnderReview = $this->getJson("/api/monitoring/projects/{$projectId}");
+        $showUnderReview->assertOk();
+        $this->assertTrue($showUnderReview->json('project.pims_review_checklist.ppmp_is_under_review'));
+        $this->assertEquals('Budget Reviewer Jane', $showUnderReview->json('project.pims_review_checklist.ppmp_reviewer_name'));
+        $this->assertEquals('Under Review (Budget Reviewer Jane)', $showUnderReview->json('project.pims_review_checklist.ppmp_status_label'));
+
+        $this->putJson("/api/monitoring/steps/{$step1['id']}", [
+            'status' => 'SUSPENDED',
+            'completed_at' => '2026-11-23',
+        ])->assertOk();
+
+        $ppmp->update([
+            'status' => 'READY_TO_PRINT',
+            'app_data' => ['is_generated' => true, 'rows' => [['id' => 1]]],
+            'attachment_list_data' => ['is_generated' => true, 'rows' => [['id' => 1]]],
+        ]);
+        \App\Models\PpmpMarketScoping::create([
+            'ppmp_id' => $ppmp->id,
+            'project_name' => $ppmp->title,
+            'approved_by_name' => 'Test Approver',
+            'approved_by_date' => now()->toDateString(),
+            'created_by' => $this->endUser->id,
+            'updated_by' => $this->endUser->id,
+        ]);
+
+        $this->actingAs($this->superAdmin);
+        $okRes = $this->putJson("/api/monitoring/steps/{$step1['id']}", [
+            'status' => 'COMPLETED',
+            'completed_at' => '2026-11-23',
+        ]);
+        $okRes->assertOk();
+        $this->assertTrue($okRes->json('project.pims_review_checklist.all_approved'));
+        $this->assertEquals('COMPLETED', $okRes->json('step.status'));
+
+        $step2 = collect($publishRes->json('project.steps'))->firstWhere('step_order', 2);
+        $this->assertNotNull($step2);
+        $this->assertStringContainsString('Approve PIMS', $step2['step_name']);
+        $this->assertEquals('PENDING', $step2['status']);
+
+        $this->putJson("/api/monitoring/steps/{$step2['id']}", [
+            'status' => 'COMPLETED',
+        ])->assertStatus(422);
+
+        $step2Ok = $this->putJson("/api/monitoring/steps/{$step2['id']}", [
+            'status' => 'COMPLETED',
+            'completed_at' => '2026-11-23',
+            'checklist_data' => [
+                'pr_reviewer_approved' => true,
+                'pr_reviewer_approved_date' => '2026-11-23',
+                'pr_controlled' => true,
+                'pr_controlled_date' => '2026-11-23',
+            ],
+        ]);
+        $step2Ok->assertOk();
+        $this->assertEquals('COMPLETED', $step2Ok->json('step.status'));
+        $this->assertTrue($step2Ok->json('step.checklist_data.pr_reviewer_approved'));
+        $this->assertEquals('2026-11-23', $step2Ok->json('step.checklist_data.pr_reviewer_approved_date'));
+        $this->assertTrue($step2Ok->json('step.checklist_data.pr_controlled'));
+        $this->assertEquals('2026-11-23', $step2Ok->json('step.checklist_data.pr_controlled_date'));
+
+        $this->actingAs($monitorUser);
+        $this->postJson("/api/monitoring/projects/{$projectId}/steps", [
+            'division' => 'technical_division',
+            'step_name' => 'Monitor Cannot Add Checkbox Step',
+            'checklist_data' => [
+                'items' => [['id' => 'c1', 'label' => 'Check 1']],
+            ],
+        ])->assertForbidden();
+
+        $this->actingAs($this->admin);
+        $addStepRes = $this->postJson("/api/monitoring/projects/{$projectId}/steps", [
+            'division' => 'technical_division',
+            'step_name' => 'Technical Verification Step',
+            'checklist_data' => [
+                'items' => [
+                    ['id' => 'chk-1', 'label' => 'Specs Checked'],
+                    ['id' => 'chk-2', 'label' => 'ABC Verified'],
+                ],
+            ],
+        ]);
+        $addStepRes->assertCreated();
+        $customStep = $addStepRes->json('step');
+        $this->assertCount(2, $customStep['checklist_data']['items']);
+
+        $this->putJson("/api/monitoring/steps/{$customStep['id']}", [
+            'status' => 'COMPLETED',
+            'completed_at' => '2026-11-23',
+        ])->assertStatus(422);
+
+        $updateCustomRes = $this->putJson("/api/monitoring/steps/{$customStep['id']}", [
+            'status' => 'COMPLETED',
+            'completed_at' => '2026-11-23',
+            'checklist_data' => [
+                'items' => [
+                    ['id' => 'chk-2', 'label' => 'ABC Verified', 'checked' => true, 'date' => '2026-11-23'],
+                    ['id' => 'chk-1', 'label' => 'Specs Checked', 'checked' => true, 'date' => '2026-11-23'],
+                    ['id' => 'chk-3', 'label' => 'End-User Signed', 'checked' => true, 'date' => '2026-11-23'],
+                ],
+            ],
+        ]);
+        $updateCustomRes->assertOk();
+        $this->assertCount(3, $updateCustomRes->json('step.checklist_data.items'));
+        $this->assertEquals('chk-2', $updateCustomRes->json('step.checklist_data.items.0.id'));
+
+        $techStepIds = collect($updateCustomRes->json('project.steps'))
+            ->where('division', 'technical_division')
+            ->pluck('id')
+            ->reverse()
+            ->values()
+            ->toArray();
+
+        $reorderRes = $this->postJson("/api/monitoring/projects/{$projectId}/reorder-steps", [
+            'division' => 'technical_division',
+            'step_ids' => $techStepIds,
+        ]);
+        $reorderRes->assertOk();
+    }
+
+    public function test_monitoring_system_scopes_ppmp_to_creator_unless_authorized_by_admin(): void
+    {
+        $userA = User::factory()->create([
+            'name' => 'Creator A',
+            'role' => 'end_user',
+            'office_id' => $this->office->id,
+            'accessible_systems' => ['/eprocrementppmpapp', '/monitoringsystem'],
+        ]);
+        $userB = User::factory()->create([
+            'name' => 'Creator B',
+            'role' => 'end_user',
+            'office_id' => $this->office->id,
+            'accessible_systems' => ['/eprocrementppmpapp', '/monitoringsystem'],
+        ]);
+
+        $ppmpA = Ppmp::create([
+            'uuid' => (string) \Illuminate\Support\Str::uuid(),
+            'ppmp_number' => 'PPMP-A-001',
+            'office_id' => $this->office->id,
+            'implementing_unit' => $this->office->name,
+            'created_by' => $userA->id,
+            'title' => 'User A Project',
+            'fiscal_year' => '2026',
+            'tracking_number' => 'TRK-A-001',
+            'total_budget' => 50000,
+            'status' => 'READY_TO_PRINT',
+        ]);
+        $ppmpB = Ppmp::create([
+            'uuid' => (string) \Illuminate\Support\Str::uuid(),
+            'ppmp_number' => 'PPMP-B-001',
+            'office_id' => $this->office->id,
+            'implementing_unit' => $this->office->name,
+            'created_by' => $userB->id,
+            'title' => 'User B Project',
+            'fiscal_year' => '2026',
+            'tracking_number' => 'TRK-B-001',
+            'total_budget' => 75000,
+            'status' => 'READY_TO_PRINT',
+        ]);
+
+        $this->actingAs($userA);
+        $pubA = $this->postJson('/api/monitoring/pims-publish', [
+            'ppmp_uuid' => $ppmpA->uuid,
+            'project_title' => $ppmpA->title,
+            'category' => 'GOODS_CONSULTING',
+            'procurement_mode' => 'SVP',
+            'abc_amount' => 50000,
+            'pr_number' => $ppmpA->tracking_number,
+        ])->assertCreated();
+        $projAId = $pubA->json('project.id');
+
+        $this->actingAs($userB);
+        $pubB = $this->postJson('/api/monitoring/pims-publish', [
+            'ppmp_uuid' => $ppmpB->uuid,
+            'project_title' => $ppmpB->title,
+            'category' => 'GOODS_CONSULTING',
+            'procurement_mode' => 'SVP',
+            'abc_amount' => 75000,
+            'pr_number' => $ppmpB->tracking_number,
+        ])->assertCreated();
+        $projBId = $pubB->json('project.id');
+
+        $this->actingAs($userA);
+        $listA = $this->getJson('/api/monitoring/projects')->assertOk();
+        $idsA = collect($listA->json('projects'))->pluck('id')->all();
+        $this->assertContains($projAId, $idsA);
+        $this->assertNotContains($projBId, $idsA);
+        $this->getJson("/api/monitoring/projects/{$projBId}")->assertForbidden();
+
+        $this->postJson('/api/monitoring/authorized-users', ['user_ids' => [$userA->id]])->assertForbidden();
+
+        $this->actingAs($this->admin);
+        $this->postJson('/api/monitoring/authorized-users', [
+            'user_ids' => [$userA->id],
+        ])->assertOk();
+
+        $this->actingAs($userA->fresh());
+        $listAAuth = $this->getJson('/api/monitoring/projects')->assertOk();
+        $idsAAuth = collect($listAAuth->json('projects'))->pluck('id')->all();
+        $this->assertContains($projAId, $idsAAuth);
+        $this->assertContains($projBId, $idsAAuth);
+        $this->getJson("/api/monitoring/projects/{$projBId}")->assertOk();
+
+        $this->actingAs($this->admin);
+        $this->postJson('/api/monitoring/authorized-users', [
+            'user_ids' => [],
+        ])->assertOk();
+
+        $this->actingAs($userA->fresh());
+        $listARevoked = $this->getJson('/api/monitoring/projects')->assertOk();
+        $idsARevoked = collect($listARevoked->json('projects'))->pluck('id')->all();
+        $this->assertContains($projAId, $idsARevoked);
+        $this->assertNotContains($projBId, $idsARevoked);
     }
 }

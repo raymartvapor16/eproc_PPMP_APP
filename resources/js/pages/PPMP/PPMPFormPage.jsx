@@ -4,7 +4,7 @@ import { ProcurementPlanTable } from '../../components/PPMP/ProcurementPlanTable
 import { SourceOfFundCombobox } from '../../components/PPMP/SourceOfFundCombobox';
 import { CommentableCell } from '../../components/PPMP/CommentableCell';
 import { GreenSpecDropdown } from '../../components/PPMP/GreenSpecDropdown';
-import { ArrowLeft, Save, Send, AlertCircle, AlertTriangle, CheckCircle2, FileCheck, Truck, Sparkles, Lock, Leaf, MessageSquare, CheckCheck, Building2, Search, ChevronDown, X } from 'lucide-react';
+import { ArrowLeft, Save, Send, AlertCircle, AlertTriangle, CheckCircle2, FileCheck, Truck, Sparkles, Lock, Leaf, MessageSquare, CheckCheck, Building2, Search, ChevronDown, X, Loader2 } from 'lucide-react';
 import {
     BASE_DELIVERY_PERIODS,
     BASE_PLACES_OF_DELIVERY,
@@ -52,6 +52,17 @@ export const PPMPFormPage = ({
 
     const [sourceOfFund, setSourceOfFund] = useState(cleanInitialFund);
     const [fundSourceId, setFundSourceId] = useState(initialPpmp?.fund_source_id || null);
+    const [trackingNumber, setTrackingNumber] = useState(
+        initialPpmp?.tracking_number ? String(initialPpmp.tracking_number) : ''
+    );
+    const [trackerManuallyEdited, setTrackerManuallyEdited] = useState(isEditMode);
+    const [loadingAutoTracker, setLoadingAutoTracker] = useState(false);
+    const [trackerStatus, setTrackerStatus] = useState({
+        checking: false,
+        available: true,
+        exists: false,
+        message: '',
+    });
     const [ppmpNumber, setPpmpNumber] = useState(
         (initialPpmp?.ppmp_number !== undefined && initialPpmp?.ppmp_number !== null) ? initialPpmp.ppmp_number : ''
     );
@@ -61,7 +72,6 @@ export const PPMPFormPage = ({
     const [fiscalYear, setFiscalYear] = useState(initialPpmp?.fiscal_year || new Date().getFullYear().toString());
     const [planType, setPlanType] = useState(initialPpmp?.plan_type || 'INDICATIVE');
 
-    // Dynamic Offices state for Search Dropdown
     const [offices, setOffices] = useState([]);
     const [loadingOffices, setLoadingOffices] = useState(false);
     const [isOfficeDropdownOpen, setIsOfficeDropdownOpen] = useState(false);
@@ -96,22 +106,17 @@ export const PPMPFormPage = ({
     const [additionalCondition, setAdditionalCondition] = useState(initialPpmp?.additional_condition || '');
     const [warrantyAndOtherTerms, setWarrantyAndOtherTerms] = useState(initialPpmp?.warranty_and_other_terms || '');
 
-    // Dynamic procurement conditions state
     const [conditions, setConditions] = useState([]);
     const [loadingConditions, setLoadingConditions] = useState(false);
 
-    // Dynamic Other Terms & Green Specifications state
     const [otherTermsList, setOtherTermsList] = useState([]);
     const [loadingOtherTerms, setLoadingOtherTerms] = useState(false);
     const [selectedOtherTermId, setSelectedOtherTermId] = useState('');
 
-    // Dynamic Supporting Documents state
     const [supportingDocsList, setSupportingDocsList] = useState([]);
 
-    // Dynamic Modes of Procurement state
     const [procurementModesList, setProcurementModesList] = useState([]);
 
-    // Reviewer Cell Comments for compliance tracking during edit
     const [cellComments, setCellComments] = useState(initialPpmp?.cell_comments || initialPpmp?.cellComments || []);
     const [activeHeaderCellKey, setActiveHeaderCellKey] = useState(null);
 
@@ -133,6 +138,63 @@ export const PPMPFormPage = ({
         }
         fetchCellComments();
     }, [initialPpmp?.uuid, initialPpmp?.updated_at, initialPpmp?.status]);
+
+    useEffect(() => {
+        const cleanVal = String(trackingNumber || '').replace(/\s+/g, '').trim().toUpperCase();
+        const initialVal = String(initialPpmp?.tracking_number || '').replace(/\s+/g, '').trim().toUpperCase();
+
+        if (!cleanVal) {
+            setTrackerStatus({
+                checking: false,
+                available: true,
+                exists: false,
+                message: isEditMode ? 'Tracker No. is required.' : 'Leave blank to auto-generate official Tracker No.',
+            });
+            return;
+        }
+
+        if (isEditMode && cleanVal === initialVal) {
+            setTrackerStatus({
+                checking: false,
+                available: true,
+                exists: false,
+                message: 'Current assigned Tracker No.',
+            });
+            return;
+        }
+
+        let cancelled = false;
+        setTrackerStatus(prev => ({ ...prev, checking: true, message: 'Checking availability...' }));
+
+        const timer = setTimeout(async () => {
+            try {
+                const res = await ppmpService.checkTrackerAvailability({
+                    tracking_number: cleanVal,
+                    exclude_uuid: initialPpmp?.uuid || undefined,
+                });
+                if (cancelled) return;
+                setTrackerStatus({
+                    checking: false,
+                    available: Boolean(res.data?.available),
+                    exists: Boolean(res.data?.exists),
+                    message: res.data?.message || '',
+                });
+            } catch (err) {
+                if (cancelled) return;
+                setTrackerStatus({
+                    checking: false,
+                    available: true,
+                    exists: false,
+                    message: '',
+                });
+            }
+        }, 300);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [trackingNumber, initialPpmp?.tracking_number, initialPpmp?.uuid, isEditMode]);
 
     const handleAddCellComment = async (commentData) => {
         if (!initialPpmp?.uuid) return;
@@ -195,8 +257,6 @@ export const PPMPFormPage = ({
     const canComment = isReviewerRole;
     const canComply = isSuspended || ['admin', 'super_admin'].includes(user?.role);
 
-    // End-users must NOT see reviewer cell comments until the PPMP is officially suspended/returned,
-    // BUT comments that have already been complied with remain visible so end-users can see what was complied.
     const visibleCellComments = (isReviewerRole || isSuspended)
         ? (cellComments || [])
         : (cellComments || []).filter(c => c.status === 'complied');
@@ -402,17 +462,16 @@ export const PPMPFormPage = ({
         const found = conditions.find(c => c.name === conditionName);
 
         if (conditionName === 'POL Condition') {
-            // Automatically put the POL Condition specification in Other Terms
+
             const polText = found?.other_terms || POL_TERMS_TEXT;
             setWarrantyAndOtherTerms(polText);
-            // Clear and lock Delivery Period, Place of Delivery, and Payment Method
+
             setDeliveryPeriod('');
             setPlaceOfDelivery('');
             setPaymentMethod('');
             return;
         }
 
-        // If switching away from POL Condition, clear Other Terms if it still has the auto-filled POL text
         if (warrantyAndOtherTerms === POL_TERMS_TEXT) {
             setWarrantyAndOtherTerms('');
         }
@@ -421,7 +480,7 @@ export const PPMPFormPage = ({
             setPlaceOfDelivery(found.place_of_delivery || '');
             setDeliveryPeriod(found.delivery_period || '');
             setPaymentMethod(found.payment_method || '');
-            // For other conditions, Other Terms is strictly manual input only as requested
+
         }
     };
 
@@ -457,6 +516,8 @@ export const PPMPFormPage = ({
                 const cleanFund = it.source_of_fund === 'General Fund and etc..' ? '' : (it.source_of_fund || '');
                 return {
                     ...it,
+                    is_retention: Boolean(it.is_retention),
+                    retention_percentage: it.retention_percentage ?? null,
                     description: it.description || '',
                     quantity_size: it.quantity_size || '',
                     source_of_fund: cleanFund,
@@ -492,6 +553,39 @@ export const PPMPFormPage = ({
     const [loading, setLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
 
+    const primaryProjectType = useMemo(() => {
+        const firstTyped = items.find((it) => it && !it.is_header && it.project_type);
+        return firstTyped?.project_type || 'Goods';
+    }, [items]);
+
+    useEffect(() => {
+        if (isEditMode || trackerManuallyEdited) return;
+        let cancelled = false;
+        setLoadingAutoTracker(true);
+
+        const timer = setTimeout(async () => {
+            try {
+                const res = await ppmpService.getNextTrackerNumber({
+                    implementing_unit: implementingUnit || '',
+                    project_type: primaryProjectType || 'Goods',
+                    fiscal_year: fiscalYear || new Date().getFullYear().toString(),
+                });
+                if (!cancelled && res.data?.tracking_number) {
+                    setTrackingNumber(String(res.data.tracking_number).toUpperCase());
+                }
+            } catch (err) {
+                console.warn('Failed to auto-generate preview tracker number:', err);
+            } finally {
+                if (!cancelled) setLoadingAutoTracker(false);
+            }
+        }, 150);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [isEditMode, trackerManuallyEdited, implementingUnit, primaryProjectType, fiscalYear]);
+
     const totalBudget = items.reduce((sum, item) => sum + (parseFloat(item.estimated_budget) || 0), 0);
 
     const isContinuation = !!initialPpmp?.is_continuation;
@@ -507,7 +601,6 @@ export const PPMPFormPage = ({
         handleFundChange(defaultName, null);
     };
 
-    // Hide Funding Source & Review Route banner if editing a PPMP that is on a reviewer or under active review
     const isUnderReviewOrOnReviewer = isEditMode && (
         [
             'HEAD_PENDING',
@@ -531,7 +624,7 @@ export const PPMPFormPage = ({
         if (newFundId !== undefined && newFundId !== null) {
             setFundSourceId(newFundId);
         }
-        // Also update any item source of fund that matches old fund or is empty
+
         setItems(prevItems => prevItems.map(item => ({
             ...item,
             source_of_fund: item.source_of_fund === sourceOfFund || !item.source_of_fund ? newFund : item.source_of_fund,
@@ -567,6 +660,8 @@ export const PPMPFormPage = ({
             ...items,
             {
                 is_header: false,
+                is_retention: false,
+                retention_percentage: null,
                 description: '',
                 project_type: 'Goods',
                 quantity_size: '',
@@ -582,6 +677,65 @@ export const PPMPFormPage = ({
                 remarks: '',
             }
         ]);
+    };
+
+    const handleAddRetention = ({ percentage = 10, deductFromItems = true } = {}) => {
+        const pct = Math.max(0, Math.min(100, parseFloat(percentage) || 0));
+        const defaultProcMode = procurementModesList[0]?.name || 'Competitive Bidding (RA 12009)';
+
+        setItems(prevItems => {
+            const regularEntries = prevItems
+                .map((it, idx) => ({ it, idx, budget: parseFloat(it.estimated_budget) || 0 }))
+                .filter(e => !e.it.is_header && !e.it.is_retention);
+
+            const regularTotal = regularEntries.reduce((sum, e) => sum + e.budget, 0);
+            const firstRegular = regularEntries[0]?.it || null;
+
+            let retentionAmount = 0;
+            let nextItems = prevItems.map(it => ({ ...it }));
+
+            if (deductFromItems && regularTotal > 0 && pct > 0) {
+                retentionAmount = Math.round(regularTotal * (pct / 100) * 100) / 100;
+                let remainingToDeduct = retentionAmount;
+                const positiveRegulars = regularEntries.filter(e => e.budget > 0);
+
+                positiveRegulars.forEach((entry, i) => {
+                    const isLast = i === positiveRegulars.length - 1;
+                    const deduction = isLast
+                        ? Math.round(remainingToDeduct * 100) / 100
+                        : Math.round((entry.budget / regularTotal) * retentionAmount * 100) / 100;
+                    const newBudget = Math.max(0, Math.round((entry.budget - deduction) * 100) / 100);
+                    remainingToDeduct = Math.round((remainingToDeduct - deduction) * 100) / 100;
+                    nextItems[entry.idx] = {
+                        ...nextItems[entry.idx],
+                        estimated_budget: newBudget,
+                        pre_proc_conference: newBudget >= 5000000 ? true : nextItems[entry.idx].pre_proc_conference,
+                    };
+                });
+            }
+
+            const pctLabel = Number.isInteger(pct) ? String(pct) : pct.toFixed(2).replace(/\.?0+$/, '');
+            nextItems.push({
+                is_header: false,
+                is_retention: true,
+                retention_percentage: pct,
+                description: '',
+                project_type: firstRegular?.project_type || 'Goods',
+                quantity_size: '',
+                procurement_mode: firstRegular?.procurement_mode || defaultProcMode,
+                pre_proc_conference: retentionAmount >= 5000000,
+                start_date: firstRegular?.start_date || '',
+                end_date: firstRegular?.end_date || '',
+                delivery_period: firstRegular?.delivery_period || '',
+                source_of_fund: firstRegular?.source_of_fund || sourceOfFund,
+                fund_source_id: firstRegular?.fund_source_id || fundSourceId,
+                estimated_budget: retentionAmount,
+                supporting_docs_text: '',
+                remarks: `${pctLabel}% Retention`,
+            });
+
+            return nextItems;
+        });
     };
 
     const handleRemoveItem = (index) => {
@@ -603,7 +757,7 @@ export const PPMPFormPage = ({
                 updated[index] = {
                     ...updated[index],
                     estimated_budget: value,
-                    // Automatic check Pre-Procurement Conference if 5 million and above
+
                     pre_proc_conference: numVal >= 5000000
                         ? true
                         : (wasAbove5M ? false : updated[index].pre_proc_conference),
@@ -624,7 +778,6 @@ export const PPMPFormPage = ({
             return;
         }
 
-        // Basic validation
         if (!title.trim()) {
             setErrorMessage('Please provide a descriptive Project Title / Objective.');
             return;
@@ -633,6 +786,16 @@ export const PPMPFormPage = ({
         const invalidItem = items.filter(i => !i.is_header).find(item => !item.description?.trim());
         if (invalidItem) {
             setErrorMessage('All item rows must have a description.');
+            return;
+        }
+
+        const cleanTracker = String(trackingNumber || '').replace(/\s+/g, '').trim().toUpperCase();
+        if (isEditMode && !cleanTracker) {
+            setErrorMessage('Please provide a valid Tracker No.');
+            return;
+        }
+        if (trackerStatus.exists) {
+            setErrorMessage(trackerStatus.message || `Tracker No. "${cleanTracker}" already exists. Duplicate tracker numbers are not allowed.`);
             return;
         }
 
@@ -647,7 +810,8 @@ export const PPMPFormPage = ({
         const derivedFundSourceId = items.find(i => i.fund_source_id && !i.is_header)?.fund_source_id || fundSourceId || null;
 
         const payload = {
-            ppmp_number: ppmpNumber.trim(),
+            tracking_number: cleanTracker || null,
+            ppmp_number: String(ppmpNumber ?? '').trim(),
             title: title.trim(),
             source_of_fund: derivedSourceOfFund,
             fund_source_id: derivedFundSourceId,
@@ -665,6 +829,10 @@ export const PPMPFormPage = ({
             warranty_and_other_terms: warrantyAndOtherTerms,
             items: items.map(item => ({
                 ...item,
+                is_retention: Boolean(item.is_retention),
+                retention_percentage: item.is_retention && item.retention_percentage !== null && item.retention_percentage !== ''
+                    ? (parseFloat(item.retention_percentage) || 0)
+                    : null,
                 fund_source_id: item.fund_source_id || fundSourceId || null,
                 estimated_budget: parseFloat(item.estimated_budget) || 0,
             })),
@@ -688,7 +856,7 @@ export const PPMPFormPage = ({
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Action Bar */}
+
             <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
                 <button
                     type="button"
@@ -701,13 +869,19 @@ export const PPMPFormPage = ({
                 <div className="flex items-center gap-3">
                     <button
                         type="submit"
-                        disabled={loading || isAttachmentOnly}
+                        disabled={loading || isAttachmentOnly || trackerStatus.exists}
                         className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm transition ${
-                            isAttachmentOnly
+                            isAttachmentOnly || trackerStatus.exists
                                 ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
                                 : 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50'
                         }`}
-                        title={isAttachmentOnly ? 'PPMP procurement items are locked for this revision.' : ''}
+                        title={
+                            isAttachmentOnly
+                                ? 'PPMP procurement items are locked for this revision.'
+                                : trackerStatus.exists
+                                    ? trackerStatus.message
+                                    : ''
+                        }
                     >
                         {isAttachmentOnly ? <Lock className="w-4 h-4" /> : <Save className="w-4 h-4" />}
                         {loading ? 'Saving...' : isAttachmentOnly ? 'PPMP Items Locked' : isEditMode ? 'Save Changes' : 'Save as Draft'}
@@ -769,7 +943,6 @@ export const PPMPFormPage = ({
                 </div>
             )}
 
-            {/* Official PPMP Header Form Block (Province of Davao del Sur) */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6">
                 <div className="border-b border-slate-200 pb-4 mb-6 text-center">
                     <span className="text-xs uppercase font-medium text-slate-500 tracking-wider">
@@ -786,8 +959,87 @@ export const PPMPFormPage = ({
                     </div>
                 </div>
 
-                {/* Form fields: PPMP Number, Fiscal Year, Plan Type, Implementing Office */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-5">
+                    <CommentableCell
+                        as="div"
+                        fieldKey="tracking_number"
+                        fieldLabel="Tracker No."
+                        cellValue={trackingNumber}
+                        comments={visibleCellComments}
+                        changeLogs={initialPpmp?.change_logs || initialPpmp?.changeLogs || []}
+                        canComment={canComment}
+                        canComply={canComply}
+                        currentUser={user}
+                        activeCellKey={activeHeaderCellKey}
+                        setActiveCellKey={setActiveHeaderCellKey}
+                        onAddCellComment={handleAddCellComment}
+                        onDeleteCellComment={handleDeleteCellComment}
+                        onComplyCellComment={handleComplyCellComment}
+                        onUncomplyCellComment={handleUncomplyCellComment}
+                        onUpdateCellValue={(newVal) => setTrackingNumber(String(newVal || '').toUpperCase())}
+                        className="p-1 rounded-md"
+                    >
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                            <label className="block text-xs font-bold text-slate-700 uppercase">
+                                Tracker No.: <span className="text-rose-600">*</span>
+                            </label>
+                            <div className="flex items-center gap-1.5">
+                                {!isEditMode && trackerManuallyEdited && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setTrackerManuallyEdited(false)}
+                                        className="text-[10px] font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                                        title="Reset to auto-generated Tracker No."
+                                    >
+                                        Auto
+                                    </button>
+                                )}
+                                {(trackerStatus.checking || loadingAutoTracker) && (
+                                    <span className="text-[10px] font-semibold text-blue-600 flex items-center gap-1">
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                        {loadingAutoTracker ? 'Generating...' : 'Checking...'}
+                                    </span>
+                                )}
+                                {!trackerStatus.checking && !loadingAutoTracker && trackerStatus.exists && (
+                                    <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 flex items-center gap-1">
+                                        <AlertCircle className="w-2.5 h-2.5" /> Duplicate
+                                    </span>
+                                )}
+                                {!trackerStatus.checking && !loadingAutoTracker && !trackerStatus.exists && trackingNumber?.trim() && (
+                                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
+                                        <CheckCircle2 className="w-2.5 h-2.5" /> Valid
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                        <input
+                            type="text"
+                            required={isEditMode}
+                            value={trackingNumber ?? ''}
+                            onChange={(e) => {
+                                setTrackerManuallyEdited(true);
+                                setTrackingNumber(e.target.value.toUpperCase());
+                            }}
+                            className={`w-full text-xs p-2.5 border rounded-md focus:ring-2 focus:outline-none font-mono font-bold ${
+                                trackerStatus.exists
+                                    ? 'border-rose-400 bg-rose-50/40 text-rose-900 focus:ring-rose-500'
+                                    : 'border-slate-300 text-slate-900 focus:ring-blue-500'
+                            }`}
+                            placeholder="e.g. PMOGOODS-2026-000001"
+                        />
+                        {trackerStatus.exists ? (
+                            <span className="text-[10px] text-rose-600 font-semibold mt-0.5 block leading-tight">
+                                {trackerStatus.message || 'This Tracker No. already exists. Duplicate tracker numbers are not allowed.'}
+                            </span>
+                        ) : (
+                            <span className="text-[10px] text-slate-400 mt-0.5 block leading-tight">
+                                {isEditMode
+                                    ? 'Editable unique Tracker No. (no duplicates allowed)'
+                                    : 'Auto-generated unique Tracker No. — editable (no duplicates allowed)'}
+                            </span>
+                        )}
+                    </CommentableCell>
+
                     <CommentableCell
                         as="div"
                         fieldKey="ppmp_number"
@@ -975,10 +1227,9 @@ export const PPMPFormPage = ({
                                 </div>
                             </div>
 
-                            {/* Search Dropdown Popover */}
                             {isOfficeDropdownOpen && (
                                 <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-2xl overflow-hidden flex flex-col text-xs animate-in fade-in zoom-in-95 duration-100">
-                                    {/* Search Filter Header */}
+
                                     <div className="p-2 border-b border-slate-100 bg-slate-50 flex items-center gap-1.5">
                                         <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                                         <input
@@ -1000,7 +1251,6 @@ export const PPMPFormPage = ({
                                         )}
                                     </div>
 
-                                    {/* Offices Options List */}
                                     <div className="overflow-y-auto divide-y divide-slate-100 max-h-56">
                                         {loadingOffices ? (
                                             <div className="p-4 text-center text-slate-400 flex items-center justify-center gap-2">
@@ -1047,7 +1297,6 @@ export const PPMPFormPage = ({
                                         )}
                                     </div>
 
-                                    {/* Dropdown Footer */}
                                     <div className="px-3 py-1.5 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-500 flex items-center justify-between">
                                         <span>{filteredOffices.length} office{filteredOffices.length === 1 ? '' : 's'} available</span>
                                         <span className="font-mono text-slate-400">(code)name</span>
@@ -1092,9 +1341,8 @@ export const PPMPFormPage = ({
                     </CommentableCell>
                 </div>
 
-                {/* Delivery Specifications & Conditions */}
                 <div className="pt-4 border-t border-slate-200 space-y-4">
-                    {/* Additional Condition Preset Selector */}
+
                     <div className="bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-slate-50 p-4 rounded-xl border border-blue-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs">
                         <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -1127,9 +1375,8 @@ export const PPMPFormPage = ({
                         </div>
                     </div>
 
-                    {/* Delivery Period, Place of Delivery, Payment Method, Other Terms */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {/* Delivery Period */}
+
                         <div className="space-y-1">
                             <div className="flex items-center justify-between">
                                 <label className="block text-xs font-bold text-slate-700">Delivery Period:</label>
@@ -1175,7 +1422,6 @@ export const PPMPFormPage = ({
                             />
                         </div>
 
-                        {/* Place of Delivery */}
                         <div className="space-y-1">
                             <div className="flex items-center justify-between">
                                 <label className="block text-xs font-bold text-slate-700">Place of Delivery:</label>
@@ -1221,7 +1467,6 @@ export const PPMPFormPage = ({
                             />
                         </div>
 
-                        {/* Payment Method */}
                         <div className="space-y-1">
                             <div className="flex items-center justify-between">
                                 <label className="block text-xs font-bold text-slate-700">Payment Method:</label>
@@ -1267,7 +1512,6 @@ export const PPMPFormPage = ({
                             />
                         </div>
 
-                        {/* Other Terms */}
                         <div className="space-y-1">
                             <div className="flex items-center justify-between">
                                 <label className="block text-xs font-bold text-slate-700">
@@ -1316,7 +1560,7 @@ export const PPMPFormPage = ({
                                         : 'border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:outline-none'
                                     }`}
                             />
-                            {/* Quick Append helper if an option is selected and textarea has text */}
+
                             {currentSelectedTermId && currentSelectedTermId !== 'CUSTOM' && warrantyAndOtherTerms && (
                                 <div className="flex items-center justify-between text-[11px] pt-1 text-slate-500">
                                     <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
@@ -1337,7 +1581,6 @@ export const PPMPFormPage = ({
                 </div>
             </div>
 
-            {/* PPMP Items Table */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6">
                 <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-bold uppercase text-slate-800 tracking-wide">
@@ -1390,6 +1633,7 @@ export const PPMPFormPage = ({
                     fiscalYear={fiscalYear}
                     workflowRoute={workflowRoute}
                     onAddItem={handleAddItem}
+                    onAddRetention={handleAddRetention}
                     onRemoveItem={handleRemoveItem}
                     onUpdateItem={handleUpdateItem}
                     totalBudget={totalBudget}

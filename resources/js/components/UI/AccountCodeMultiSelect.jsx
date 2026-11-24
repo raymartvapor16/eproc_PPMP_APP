@@ -2,16 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Check, X, BookOpen, Layers, Filter, CheckSquare, Square } from 'lucide-react';
 import { accountCodeService } from '../../services/api';
 
-/**
- * AccountCodeMultiSelect:
- * Searchable multi-checkbox selector for assigning Chart of Accounts to BAC-TWG Reviewers.
- * Supports:
- * - Real-time keyword filter (code, name, parent)
- * - Category filter pills (All, Expenses, Assets, Liabilities, Income)
- * - Select All Filtered / Clear All
- * - Visual chips of selected codes
- * - Fast performance with 800+ account codes
- */
 export const AccountCodeMultiSelect = ({
     selectedIds = [],
     onChange,
@@ -28,7 +18,6 @@ export const AccountCodeMultiSelect = ({
     const [searchQuery, setSearchQuery] = useState('');
     const [classFilter, setClassFilter] = useState('ALL');
 
-    // Load account codes if not provided
     useEffect(() => {
         if (Array.isArray(accountCodes) && accountCodes.length > 0) {
             setCodesList(accountCodes);
@@ -55,7 +44,6 @@ export const AccountCodeMultiSelect = ({
         };
     }, [accountCodes, isPublic]);
 
-    // Fast filtered codes
     const filteredCodes = useMemo(() => {
         const q = searchQuery.trim().toLowerCase();
         return codesList.filter((item) => {
@@ -72,7 +60,6 @@ export const AccountCodeMultiSelect = ({
         });
     }, [codesList, searchQuery, classFilter]);
 
-    // Selected items map / objects
     const selectedMap = useMemo(() => {
         const map = new Set();
         (selectedIds || []).forEach((id) => map.add(Number(id)));
@@ -83,7 +70,6 @@ export const AccountCodeMultiSelect = ({
         return codesList.filter((c) => selectedMap.has(Number(c.id)));
     }, [codesList, selectedMap]);
 
-    // Toggle individual ID
     const toggleCode = (id) => {
         const numId = Number(id);
         const next = new Set(selectedMap);
@@ -95,25 +81,21 @@ export const AccountCodeMultiSelect = ({
         onChange(Array.from(next));
     };
 
-    // Remove single ID chip
     const handleRemoveId = (id) => {
         const next = selectedIds.filter((item) => Number(item) !== Number(id));
         onChange(next);
     };
 
-    // Select all filtered items
     const handleSelectAllFiltered = () => {
         const next = new Set(selectedMap);
         filteredCodes.forEach((c) => next.add(Number(c.id)));
         onChange(Array.from(next));
     };
 
-    // Clear all selections
     const handleClearAll = () => {
         onChange([]);
     };
 
-    // Color badges helper
     const getClassBadge = (cls) => {
         switch (cls) {
             case 'Expenses':
@@ -131,7 +113,7 @@ export const AccountCodeMultiSelect = ({
 
     return (
         <div className="bg-slate-50/80 border-2 border-blue-300 rounded-2xl p-3.5 space-y-3 shadow-xs">
-            {/* Header & Selected count badge */}
+
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-200 pb-2.5">
                 <div>
                     <div className="flex items-center gap-1.5">
@@ -169,7 +151,6 @@ export const AccountCodeMultiSelect = ({
                 </div>
             </div>
 
-            {/* Selected Chips Bar (if any selected) */}
             {selectedObjects.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5 max-h-24 overflow-y-auto p-1.5 bg-white border border-blue-200 rounded-xl shadow-2xs">
                     <span className="text-[10px] text-slate-400 font-bold uppercase shrink-0 mr-1">
@@ -199,7 +180,6 @@ export const AccountCodeMultiSelect = ({
                 </div>
             )}
 
-            {/* Search Bar & Category Filters */}
             <div className="space-y-2">
                 <div className="relative">
                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -221,7 +201,6 @@ export const AccountCodeMultiSelect = ({
                     )}
                 </div>
 
-                {/* Class Filters & Select All Button */}
                 <div className="flex items-center justify-between gap-2 overflow-x-auto text-[10px] font-bold pb-0.5">
                     <div
                         className="flex items-center gap-1 shrink-0 overflow-x-auto"
@@ -253,7 +232,6 @@ export const AccountCodeMultiSelect = ({
                 </div>
             </div>
 
-            {/* Checkbox List Container */}
             <div className={`bg-white border border-slate-300 rounded-xl divide-y divide-slate-100 ${maxHeight} overflow-y-auto overflow-x-hidden shadow-inner`}>
                 {loading ? (
                     <div className="p-6 text-center text-xs text-slate-500">
@@ -317,4 +295,3 @@ export const AccountCodeMultiSelect = ({
         </div>
     );
 };
-

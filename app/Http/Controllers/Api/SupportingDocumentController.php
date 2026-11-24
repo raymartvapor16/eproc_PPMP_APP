@@ -10,10 +10,7 @@ use Illuminate\Http\Request;
 
 class SupportingDocumentController extends Controller
 {
-    /**
-     * List supporting documents.
-     * End-users receive active documents only. Admins can view all.
-     */
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -31,9 +28,6 @@ class SupportingDocumentController extends Controller
         return response()->json($documents);
     }
 
-    /**
-     * Create a new supporting document (Admin only).
-     */
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -63,9 +57,6 @@ class SupportingDocumentController extends Controller
         ], 201);
     }
 
-    /**
-     * Update an existing supporting document (Admin only).
-     */
     public function update(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -99,9 +90,6 @@ class SupportingDocumentController extends Controller
         ]);
     }
 
-    /**
-     * Delete a supporting document (Admin only).
-     */
     public function destroy(Request $request, int $id): JsonResponse
     {
         $user = $request->user();

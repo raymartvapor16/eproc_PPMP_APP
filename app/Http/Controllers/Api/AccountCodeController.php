@@ -14,9 +14,7 @@ use Illuminate\Validation\Rule;
 
 class AccountCodeController extends Controller
 {
-    /**
-     * Public active account codes for registration dropdown/checkboxes.
-     */
+
     public function publicDropdown(Request $request): JsonResponse
     {
         $codes = AccountCode::where('is_active', true)
@@ -28,12 +26,6 @@ class AccountCodeController extends Controller
         return response()->json($codes);
     }
 
-    /**
-     * List account codes.
-     * Supports:
-     *  - Paginated list with filtering for Admin management (avoiding any UI/system lag)
-     *  - Fast dropdown list for PPMP create/edit forms (active only, optimized fields)
-     */
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -41,7 +33,6 @@ class AccountCodeController extends Controller
 
         $query = AccountCode::query();
 
-        // 1. Status Filter
         $status = strtolower($request->input('status', ''));
         if ($status === 'active' || (!$isAdmin && !$request->has('status'))) {
             $query->where('is_active', true);
@@ -49,13 +40,11 @@ class AccountCodeController extends Controller
             $query->where('is_active', false);
         }
 
-        // 2. Class Filter (Expenses, Assets, Liabilities, Equity, Income)
         $accountClass = $request->input('account_class', $request->input('class'));
         if (!empty($accountClass) && $accountClass !== 'ALL') {
             $query->where('account_class', $accountClass);
         }
 
-        // 3. Search query filter
         $search = trim((string) $request->input('search', $request->input('q', '')));
         if (!empty($search)) {
             $query->where(function ($q) use ($search) {
@@ -67,7 +56,6 @@ class AccountCodeController extends Controller
             });
         }
 
-        // Fast Dropdown Mode: If all=1 or dropdown=1
         if ($request->boolean('all') || $request->boolean('dropdown')) {
             $limit = $request->integer('limit', 0);
             $codesQuery = $query->select([
@@ -88,7 +76,6 @@ class AccountCodeController extends Controller
             return response()->json($codesQuery->get());
         }
 
-        // Paginated Admin Mode
         $perPage = max(10, min(100, $request->integer('per_page', 20)));
 
         $query->withCount('ppmps')
@@ -100,9 +87,6 @@ class AccountCodeController extends Controller
         return response()->json($paginated);
     }
 
-    /**
-     * Statistics summary for Admin Management Dashboard.
-     */
     public function stats(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -137,9 +121,6 @@ class AccountCodeController extends Controller
         ]);
     }
 
-    /**
-     * Store a new account code (Admin and Super Admin only).
-     */
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -161,7 +142,6 @@ class AccountCodeController extends Controller
         $code = !empty($validated['code']) ? trim($validated['code']) : null;
         $name = trim($validated['name']);
 
-        // Check for duplicates
         $duplicate = AccountCode::where('code', $code)->where('name', $name)->first();
         if ($duplicate) {
             return response()->json([
@@ -205,18 +185,12 @@ class AccountCodeController extends Controller
         ], 201);
     }
 
-    /**
-     * Display the specified account code.
-     */
     public function show(int $id): JsonResponse
     {
         $accountCode = AccountCode::withCount('ppmps')->findOrFail($id);
         return response()->json($accountCode);
     }
 
-    /**
-     * Update the specified account code (Admin only).
-     */
     public function update(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -240,7 +214,6 @@ class AccountCodeController extends Controller
         $code = !empty($validated['code']) ? trim($validated['code']) : null;
         $name = trim($validated['name']);
 
-        // Check for duplicate with different ID
         $duplicate = AccountCode::where('code', $code)
             ->where('name', $name)
             ->where('id', '!=', $id)
@@ -288,9 +261,6 @@ class AccountCodeController extends Controller
         ]);
     }
 
-    /**
-     * Toggle active/inactive status (Admin only).
-     */
     public function toggleStatus(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -319,9 +289,6 @@ class AccountCodeController extends Controller
         ]);
     }
 
-    /**
-     * Delete an account code (Admin only).
-     */
     public function destroy(Request $request, int $id): JsonResponse
     {
         $user = $request->user();

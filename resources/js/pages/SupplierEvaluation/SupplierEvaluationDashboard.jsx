@@ -81,19 +81,15 @@ export function SupplierEvaluationDashboard({
         pdfs_pending: 0,
     });
 
-    // Main workspace view: 'evaluations' | 'bulk' | 'analytics'
     const [workspaceView, setWorkspaceView] = useState('evaluations');
 
-    // Evaluations table status tab: 'pending' | 'head review' | 'submitted'
     const [statusTab, setStatusTab] = useState('pending');
     const [evaluations, setEvaluations] = useState([]);
     const [loadingEvals, setLoadingEvals] = useState(true);
 
-    // Evaluations table pagination (10 rows per page default)
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
 
-    // Search & Filters
     const [search, setSearch] = useState('');
     const [filterOpen, setFilterOpen] = useState(false);
     const [deptFilter, setDeptFilter] = useState('all');
@@ -102,10 +98,9 @@ export function SupplierEvaluationDashboard({
     const [maxScore, setMaxScore] = useState('');
     const [openActionDropdownId, setOpenActionDropdownId] = useState(null);
 
-    // Active Modals
-    const [activeEvalModal, setActiveEvalModal] = useState(null); // { evaluation, mode: 'view'|'evaluate'|'edit' }
+    const [activeEvalModal, setActiveEvalModal] = useState(null);
     const [printEval, setPrintEval] = useState(null);
-    const [printReport, setPrintReport] = useState(null); // 'summary' | 'semester' | 'missing_pdf'
+    const [printReport, setPrintReport] = useState(null);
     const [showAddModal, setShowAddModal] = useState(false);
     const [showPoModal, setShowPoModal] = useState(false);
     const [showRequestsModal, setShowRequestsModal] = useState(false);
@@ -114,7 +109,6 @@ export function SupplierEvaluationDashboard({
     const [showLogsModal, setShowLogsModal] = useState(false);
     const [calculateModalGroup, setCalculateModalGroup] = useState(null);
 
-    // Bulk Evaluation Workspace state
     const [bulkSuppliers, setBulkSuppliers] = useState([]);
     const [selectedBulkSupplier, setSelectedBulkSupplier] = useState('');
     const [bulkEvaluations, setBulkEvaluations] = useState([]);
@@ -122,8 +116,7 @@ export function SupplierEvaluationDashboard({
     const [loadingBulk, setLoadingBulk] = useState(false);
     const [submittingBulk, setSubmittingBulk] = useState(false);
 
-    // Analytics state
-    const [analyticsSubTab, setAnalyticsSubTab] = useState('summary'); // 'summary' | 'semester' | 'charts' | 'missing_pdf'
+    const [analyticsSubTab, setAnalyticsSubTab] = useState('summary');
     const [analyticsData, setAnalyticsData] = useState({
         summary: [],
         semester_data: [],
@@ -145,7 +138,6 @@ export function SupplierEvaluationDashboard({
             setEffectiveRole(d.effective_role || 'end_user');
             setCounts(d.counts || {});
 
-            // Set sensible default tab for Office Head
             if (d.effective_role === 'head' && d.counts?.review > 0) {
                 setStatusTab((prev) => (prev === 'pending' ? 'head review' : prev));
             }
@@ -177,7 +169,6 @@ export function SupplierEvaluationDashboard({
         loadInit();
     }, [loadInit]);
 
-    // Close action dropdown when clicking outside or pressing Escape
     useEffect(() => {
         const handleClickOutside = (e) => {
             if (!e.target.closest('[data-action-dropdown]')) {
@@ -206,7 +197,6 @@ export function SupplierEvaluationDashboard({
         return () => clearTimeout(t);
     }, [workspaceView, loadEvaluations]);
 
-    // Reset pagination to first page whenever tab, search, or filters change
     useEffect(() => {
         setCurrentPage(1);
     }, [statusTab, search, deptFilter, yearFilter, minScore, maxScore]);
@@ -222,7 +212,6 @@ export function SupplierEvaluationDashboard({
         }
     };
 
-    // Bulk Evaluation Workspace loaders
     const loadBulkWorkspaceSuppliers = async () => {
         setLoadingBulk(true);
         try {
@@ -330,7 +319,6 @@ export function SupplierEvaluationDashboard({
         }
     };
 
-    // Analytics loader
     const loadAnalyticsData = useCallback(async () => {
         setLoadingAnalytics(true);
         try {
@@ -410,12 +398,10 @@ export function SupplierEvaluationDashboard({
 
     return (
         <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col font-sans">
-            {/* ─────────────────────────────────────────────────────────────
-                1. TOP BRAND & ROLE HEADER BAR
-            ───────────────────────────────────────────────────────────── */}
+
             <header className={`bg-gradient-to-r from-slate-900 via-slate-900 to-orange-950 text-white border-b border-orange-500/30 shadow-md sticky top-0 z-30 ${printEval || printReport ? 'no-print' : ''}`}>
                 <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
-                    {/* Left Brand */}
+
                     <div className="flex items-center gap-3">
                         <img
                             src="/images/logo.png"
@@ -445,7 +431,6 @@ export function SupplierEvaluationDashboard({
                         </div>
                     </div>
 
-                    {/* Right Navigation & User Controls */}
                     <div className="flex flex-wrap items-center gap-2">
                         <SystemSwitcherDropdown
                             user={user}
@@ -477,10 +462,9 @@ export function SupplierEvaluationDashboard({
                     </div>
                 </div>
 
-                {/* Role-Based Module Bar */}
                 <div className="bg-slate-950/70 border-t border-slate-800 px-4 sm:px-6 py-2">
                     <div className="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-2">
-                        {/* Primary Workspace Switcher */}
+
                         <div className="flex flex-wrap items-center gap-1.5">
                             <button
                                 type="button"
@@ -530,7 +514,6 @@ export function SupplierEvaluationDashboard({
                             )}
                         </div>
 
-                        {/* Secondary Action Modals by Role */}
                         <div className="flex flex-wrap items-center gap-1.5">
                             {isAdminOrPgso && (
                                 <button
@@ -615,16 +598,11 @@ export function SupplierEvaluationDashboard({
                 </div>
             </header>
 
-            {/* ─────────────────────────────────────────────────────────────
-                2. MAIN CONTENT CONTAINER
-            ───────────────────────────────────────────────────────────── */}
             <main className={`flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 py-6 space-y-6 ${printEval || printReport ? 'no-print' : ''}`}>
-                {/* =========================================================
-                    WORKSPACE 1: EVALUATIONS TABLE (Pending / Head Review / Approved)
-                ========================================================= */}
+
                 {workspaceView === 'evaluations' && (
                     <>
-                        {/* 3 Status KPI / Tab Cards */}
+
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <button
                                 type="button"
@@ -734,7 +712,6 @@ export function SupplierEvaluationDashboard({
                             </button>
                         </div>
 
-                        {/* Search & Filter Card */}
                         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div className="relative flex-1 min-w-[260px]">
@@ -773,7 +750,6 @@ export function SupplierEvaluationDashboard({
                                 </div>
                             </div>
 
-                            {/* Collapsible Filter Drawer */}
                             {filterOpen && (
                                 <div className="mt-4 pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
                                     {isAdminOrPgso && (
@@ -850,7 +826,6 @@ export function SupplierEvaluationDashboard({
                             )}
                         </div>
 
-                        {/* Evaluations Data Table */}
                         {(() => {
                             const totalEvaluationPages = Math.ceil(evaluations.length / pageSize) || 1;
                             const validCurrentPage = Math.min(currentPage, totalEvaluationPages);
@@ -860,7 +835,7 @@ export function SupplierEvaluationDashboard({
 
                             return (
                                 <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-visible">
-                                    {/* Table Card Header */}
+
                                     <div className="px-6 py-4.5 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-slate-50 via-white to-orange-50/20 rounded-t-2xl">
                                         <div className="flex items-center gap-3">
                                             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center text-white shadow-md shadow-orange-500/20 shrink-0">
@@ -941,7 +916,7 @@ export function SupplierEvaluationDashboard({
                                                         key={ev.id}
                                                         className="hover:bg-orange-50/30 transition-colors duration-150"
                                                     >
-                                                        {/* PO No + PDF badge */}
+
                                                         <td className="px-5 py-3.5">
                                                             <div className="flex flex-col gap-1">
                                                                 <span className="font-mono font-bold text-slate-900 bg-slate-100 border border-slate-200/80 px-2 py-0.5 rounded-lg text-xs inline-block w-fit">
@@ -970,7 +945,6 @@ export function SupplierEvaluationDashboard({
                                                             </div>
                                                         </td>
 
-                                                        {/* Supplier Name */}
                                                         <td className="px-5 py-3.5">
                                                             <div className="font-bold text-slate-900 leading-snug">
                                                                 {ev.supplier_name}
@@ -982,7 +956,6 @@ export function SupplierEvaluationDashboard({
                                                             )}
                                                         </td>
 
-                                                        {/* Evaluator / Office */}
                                                         <td className="px-5 py-3.5">
                                                             <div className="flex items-center gap-1.5 flex-wrap">
                                                                 {ev.office_code && (
@@ -1001,7 +974,6 @@ export function SupplierEvaluationDashboard({
                                                             )}
                                                         </td>
 
-                                                        {/* Score Badge */}
                                                         <td className="px-5 py-3.5 text-center">
                                                             {ev.status === 'pending' && score === 0 ? (
                                                                 <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 font-bold text-[11px] border border-slate-200">
@@ -1024,21 +996,18 @@ export function SupplierEvaluationDashboard({
                                                             )}
                                                         </td>
 
-                                                        {/* Covered Period */}
                                                         <td className="px-5 py-3.5 text-center font-semibold text-slate-700">
                                                             <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold border border-slate-200">
                                                                 {ev.covered_period}
                                                             </span>
                                                         </td>
 
-                                                        {/* Date */}
                                                         <td className="px-5 py-3.5 text-center text-slate-600 font-medium">
                                                             {ev.date_evaluation
                                                                 ? String(ev.date_evaluation).slice(0, 10)
                                                                 : '-'}
                                                         </td>
 
-                                                        {/* Role-based Action Dropdown */}
                                                         <td className="px-5 py-3.5 text-center">
                                                             <div className="relative inline-block text-left" data-action-dropdown>
                                                                 <button
@@ -1070,9 +1039,9 @@ export function SupplierEvaluationDashboard({
                                                                                 : 'top-full mt-1.5 origin-top-right'
                                                                         }`}
                                                                     >
-                                                                        {/* Section 1: Main Actions */}
+
                                                                         <div className="p-1 space-y-0.5">
-                                                                            {/* View Details */}
+
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={() => {
@@ -1085,7 +1054,6 @@ export function SupplierEvaluationDashboard({
                                                                                 <span>View Details</span>
                                                                             </button>
 
-                                                                            {/* Evaluate (Pending Stage) */}
                                                                             {canEvaluatePending && (
                                                                                 <button
                                                                                     type="button"
@@ -1100,7 +1068,6 @@ export function SupplierEvaluationDashboard({
                                                                                 </button>
                                                                             )}
 
-                                                                            {/* Approve & Sign (Head Review Stage) */}
                                                                             {canHeadApprove && (
                                                                                 <button
                                                                                     type="button"
@@ -1119,7 +1086,6 @@ export function SupplierEvaluationDashboard({
                                                                                 </button>
                                                                             )}
 
-                                                                            {/* Edit Evaluation */}
                                                                             {canEditReviewed && (
                                                                                 <button
                                                                                     type="button"
@@ -1134,7 +1100,6 @@ export function SupplierEvaluationDashboard({
                                                                                 </button>
                                                                             )}
 
-                                                                            {/* Download / Print Official PDF (Submitted) */}
                                                                             {ev.status === 'submitted' && (
                                                                                 <button
                                                                                     type="button"
@@ -1150,7 +1115,6 @@ export function SupplierEvaluationDashboard({
                                                                             )}
                                                                         </div>
 
-                                                                        {/* Section 2: Related Documents */}
                                                                         {ev.po_record?.has_pdf && (
                                                                             <div className="p-1">
                                                                                 <a
@@ -1166,7 +1130,6 @@ export function SupplierEvaluationDashboard({
                                                                             </div>
                                                                         )}
 
-                                                                        {/* Section 3: Modification Request */}
                                                                         {effectiveRole === 'end_user' &&
                                                                             ['head review', 'submitted'].includes(ev.status) &&
                                                                             !ev.has_approved_update_request &&
@@ -1186,7 +1149,6 @@ export function SupplierEvaluationDashboard({
                                                                                 </div>
                                                                             )}
 
-                                                                        {/* Section 4: Delete Action */}
                                                                         {(isAdminOrPgso || ev.has_approved_delete_request) && (
                                                                             <div className="p-1">
                                                                                 <button
@@ -1214,7 +1176,6 @@ export function SupplierEvaluationDashboard({
                                 </table>
                             </div>
 
-                            {/* Pagination Footer */}
                             {evaluations.length > 0 && (
                                 <div className="px-6 py-4 border-t border-slate-200/80 bg-slate-50/60 rounded-b-2xl">
                                     <PaginationControl
@@ -1240,9 +1201,6 @@ export function SupplierEvaluationDashboard({
             </>
         )}
 
-                {/* =========================================================
-                    WORKSPACE 2: BULK EVALUATION WORKSPACE (bulkpage.blade.php)
-                ========================================================= */}
                 {workspaceView === 'bulk' && (
                     <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
                         <div className="bg-gradient-to-r from-orange-500 to-amber-600 px-6 py-5 text-white flex flex-wrap items-center justify-between gap-3">
@@ -1266,7 +1224,7 @@ export function SupplierEvaluationDashboard({
                         </div>
 
                         <div className="p-6 space-y-6 text-xs">
-                            {/* Step 1: Select Supplier + Quick Rating Fill */}
+
                             <div className="flex flex-wrap items-end justify-between gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
                                 <div className="flex-1 min-w-[260px]">
                                     <label className="block font-black text-slate-700 mb-1.5 uppercase">
@@ -1303,7 +1261,6 @@ export function SupplierEvaluationDashboard({
                                 )}
                             </div>
 
-                            {/* Step 2: Multi-PO Evaluation Cards */}
                             {loadingBulk ? (
                                 <div className="py-12 text-center text-slate-400">
                                     <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-orange-500" />
@@ -1466,12 +1423,9 @@ export function SupplierEvaluationDashboard({
                     </div>
                 )}
 
-                {/* =========================================================
-                    WORKSPACE 3: ANALYTICS & REPORTS (analytics.blade.php)
-                ========================================================= */}
                 {workspaceView === 'analytics' && (
                     <div className="space-y-6">
-                        {/* Analytics Header & Global Filters */}
+
                         <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-5">
                             <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-200">
                                 <div>
@@ -1484,7 +1438,6 @@ export function SupplierEvaluationDashboard({
                                     </p>
                                 </div>
 
-                                {/* 4 Analytics View Tabs */}
                                 <div className="flex flex-wrap gap-1.5 bg-slate-100 p-1.5 rounded-2xl text-xs font-bold">
                                     <button
                                         type="button"
@@ -1533,7 +1486,6 @@ export function SupplierEvaluationDashboard({
                                 </div>
                             </div>
 
-                            {/* Filters Row */}
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 text-xs">
                                 <div>
                                     <label className="block font-bold text-slate-600 mb-1">Filter Department</label>
@@ -1583,7 +1535,6 @@ export function SupplierEvaluationDashboard({
                             </div>
                         </div>
 
-                        {/* SUB-TAB 1: SUMMARY & CALCULATE EVALUATIONS */}
                         {analyticsSubTab === 'summary' && (
                             <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
                                 <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
@@ -1669,7 +1620,6 @@ export function SupplierEvaluationDashboard({
                             </div>
                         )}
 
-                        {/* SUB-TAB 2: SEMESTER EVALUATION SCORE COMPARISON */}
                         {analyticsSubTab === 'semester' && (
                             <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
                                 <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
@@ -1760,10 +1710,9 @@ export function SupplierEvaluationDashboard({
                             </div>
                         )}
 
-                        {/* SUB-TAB 3: MONTHLY EVALUATION COUNT & SUPPLIER RANKINGS */}
                         {analyticsSubTab === 'charts' && (
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                {/* Monthly Evaluation Count */}
+
                                 <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs">
                                     <h3 className="text-sm font-black text-slate-800 mb-1">
                                         Monthly Evaluation Count (Jan – Dec)
@@ -1803,7 +1752,6 @@ export function SupplierEvaluationDashboard({
                                     </div>
                                 </div>
 
-                                {/* Supplier Score Rankings */}
                                 <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs flex flex-col">
                                     <h3 className="text-sm font-black text-slate-800 mb-1">
                                         Supplier Average Score Rankings
@@ -1840,7 +1788,6 @@ export function SupplierEvaluationDashboard({
                             </div>
                         )}
 
-                        {/* SUB-TAB 4: PURCHASE ORDERS PENDING PDF UPLOAD */}
                         {analyticsSubTab === 'missing_pdf' && (
                             <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
                                 <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
@@ -1908,9 +1855,6 @@ export function SupplierEvaluationDashboard({
                 )}
             </main>
 
-            {/* ─────────────────────────────────────────────────────────────
-                3. MODALS & PRINT VIEWS
-            ───────────────────────────────────────────────────────────── */}
             {activeEvalModal && (
                 <EvaluateOrViewModal
                     evaluation={activeEvalModal.evaluation}
@@ -1991,7 +1935,6 @@ export function SupplierEvaluationDashboard({
 
             {showLogsModal && <ActivityLogsModal onClose={() => setShowLogsModal(false)} />}
 
-            {/* Calculate Evaluations Breakdown Modal (analytics.blade.php) */}
             {calculateModalGroup && (
                 <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden">
@@ -2053,4 +1996,3 @@ export function SupplierEvaluationDashboard({
         </div>
     );
 }
-

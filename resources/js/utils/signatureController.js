@@ -4,6 +4,7 @@ import { systemSettingService } from '../services/api';
 const STORAGE_KEY = 'eproc_signature_settings';
 
 const DEFAULT_SETTINGS = {
+    pnpki_enabled: typeof window !== 'undefined' && window.App?.pnpki_enabled !== undefined ? Boolean(window.App.pnpki_enabled) : true,
     ppmp: true,
     app: true,
     attachment_list: true,
@@ -11,24 +12,39 @@ const DEFAULT_SETTINGS = {
 
 let cachedSettings = null;
 
-// Initialize cache from localStorage if available
 function initCache() {
     if (cachedSettings !== null) return cachedSettings;
+    const winSettings = typeof window !== 'undefined' ? window.App?.signature_settings : null;
+    const winPnpki = typeof window !== 'undefined' && window.App?.pnpki_enabled !== undefined
+        ? Boolean(window.App.pnpki_enabled)
+        : undefined;
+
     try {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {
             const parsed = JSON.parse(stored);
             cachedSettings = {
-                ppmp: parsed.ppmp !== false,
-                app: parsed.app !== false,
-                attachment_list: parsed.attachment_list !== false,
+                pnpki_enabled: winPnpki !== undefined
+                    ? winPnpki
+                    : (parsed.pnpki_enabled !== undefined ? parsed.pnpki_enabled !== false : true),
+                ppmp: winSettings?.ppmp !== undefined ? winSettings.ppmp !== false : parsed.ppmp !== false,
+                app: winSettings?.app !== undefined ? winSettings.app !== false : parsed.app !== false,
+                attachment_list: winSettings?.attachment_list !== undefined ? winSettings.attachment_list !== false : parsed.attachment_list !== false,
             };
             return cachedSettings;
         }
     } catch (e) {
-        // ignore parse error
+
     }
-    cachedSettings = { ...DEFAULT_SETTINGS };
+    cachedSettings = {
+        ...DEFAULT_SETTINGS,
+        ...(winSettings ? {
+            pnpki_enabled: winSettings.pnpki_enabled !== false,
+            ppmp: winSettings.ppmp !== false,
+            app: winSettings.app !== false,
+            attachment_list: winSettings.attachment_list !== false,
+        } : {}),
+    };
     return cachedSettings;
 }
 
@@ -36,17 +52,27 @@ export function getSignatureSettings() {
     return initCache();
 }
 
+export function isPnpkiEnabled() {
+    return getSignatureSettings().pnpki_enabled !== false;
+}
+
 export function setLocalSignatureSettings(settings) {
     if (!settings || typeof settings !== 'object') return;
+    const current = initCache();
     cachedSettings = {
-        ppmp: settings.ppmp !== false,
-        app: settings.app !== false,
-        attachment_list: settings.attachment_list !== false,
+        pnpki_enabled: settings.pnpki_enabled !== undefined ? settings.pnpki_enabled !== false : current.pnpki_enabled !== false,
+        ppmp: settings.ppmp !== undefined ? settings.ppmp !== false : current.ppmp !== false,
+        app: settings.app !== undefined ? settings.app !== false : current.app !== false,
+        attachment_list: settings.attachment_list !== undefined ? settings.attachment_list !== false : current.attachment_list !== false,
     };
+    if (typeof window !== 'undefined' && window.App) {
+        window.App.pnpki_enabled = cachedSettings.pnpki_enabled;
+        window.App.signature_settings = { ...cachedSettings };
+    }
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(cachedSettings));
     } catch (e) {
-        // ignore storage error
+
     }
     window.dispatchEvent(new CustomEvent('signature_settings:changed', { detail: cachedSettings }));
 }
@@ -64,11 +90,6 @@ export async function fetchSignatureSettings() {
     return getSignatureSettings();
 }
 
-/**
- * Check if signature insertion is enabled for a document type.
- * @param {'ppmp' | 'app' | 'attachment_list'} documentType
- * @returns {boolean}
- */
 export function isSignatureInsertionEnabled(documentType) {
     const settings = getSignatureSettings();
     const normalized = String(documentType || '').toLowerCase().trim();
@@ -86,9 +107,6 @@ export function isSignatureInsertionEnabled(documentType) {
     return true;
 }
 
-/**
- * React hook to listen for signature setting changes dynamically
- */
 export function useSignatureSettings() {
     const [settings, setSettings] = useState(() => getSignatureSettings());
     const [loading, setLoading] = useState(false);
@@ -102,7 +120,6 @@ export function useSignatureSettings() {
 
         window.addEventListener('signature_settings:changed', handleChange);
 
-        // Fetch latest settings from server in background
         setLoading(true);
         fetchSignatureSettings()
             .then((fresh) => {
@@ -128,7 +145,53 @@ export function useSignatureSettings() {
     return {
         settings,
         isEnabled,
+        isPnpkiEnabled: settings.pnpki_enabled !== false,
         loading,
         setSettings: setLocalSignatureSettings,
+    };
+}
+
+export function isSignatoryPnpkiActive(sigOrUser, fallbackUser = null) {
+    if (!isPnpkiEnabled()) return false;
+
+    const userObj = sigOrUser?.user || sigOrUser || fallbackUser || null;
+    const pnpki =
+        userObj?.pnpki_signature ||
+        userObj?.pnpkiSignature ||
+        sigOrUser?.pnpki_signature ||
+        sigOrUser?.pnpkiSignature ||
+        fallbackUser?.pnpki_signature ||
+        fallbackUser?.pnpkiSignature ||
+        null;
+
+    if (!pnpki) return false;
+
+    if (pnpki.effective_signature_type) {
+        return pnpki.effective_signature_type === 'pnpki';
+    }
+
+    if (pnpki.signature_type !== 'pnpki') {
+        return false;
+    }
+
+    if (pnpki.is_expired) {
+        return false;
+    }
+
+    if (pnpki.expiration_date) {
+        const exp = new Date(`${pnpki.expiration_date}T23:59:59`);
+        if (!isNaN(exp.getTime()) && exp < new Date()) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+export function resolveSubmittedBySignatory() {
+    return {
+        user: null,
+        isPnpkiActive: false,
+        signedAt: null,
     };
 }

@@ -164,7 +164,6 @@ class PimsPurchaseRequestIntegrationTest extends TestCase
             'quantity' => 5521,
         ]);
 
-        // Duplicate generation for same PPMP must be rejected
         $this->actingAs($this->endUser)
             ->postJson('/api/pims/purchase-requests', $payload)
             ->assertStatus(409);
@@ -197,7 +196,6 @@ class PimsPurchaseRequestIntegrationTest extends TestCase
             'created_by' => $this->endUser->id,
         ]);
 
-        // 1. PR Division review -> passes to BAC TWG
         $this->actingAs($this->admin)
             ->postJson("/api/pims/purchase-requests/{$pr->uuid}/review", [
                 'action' => 'approve',
@@ -207,7 +205,6 @@ class PimsPurchaseRequestIntegrationTest extends TestCase
             ->assertJsonPath('purchase_request.current_stage', 'bac_twg')
             ->assertJsonPath('purchase_request.status', 'BAC_TWG_REVIEW');
 
-        // 2. BAC TWG review -> passes to PR Division Control
         $this->actingAs($this->twg)
             ->postJson("/api/pims/purchase-requests/{$pr->uuid}/review", [
                 'action' => 'approve',
@@ -217,7 +214,6 @@ class PimsPurchaseRequestIntegrationTest extends TestCase
             ->assertJsonPath('purchase_request.current_stage', 'pr_control')
             ->assertJsonPath('purchase_request.status', 'PR_CONTROL_REVIEW');
 
-        // 3. PR Control -> assigns PR Number and officially approves
         $this->actingAs($this->admin)
             ->postJson("/api/pims/purchase-requests/{$pr->uuid}/review", [
                 'action' => 'approve',
@@ -247,7 +243,6 @@ class PimsPurchaseRequestIntegrationTest extends TestCase
             'is_published_to_pims' => false,
         ]);
 
-        // Create a fake PDF with genuine %PDF- magic bytes
         $fakePdfContent = "%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF";
         $fakePdf = \Illuminate\Http\UploadedFile::fake()->createWithContent('specs.pdf', $fakePdfContent);
 
@@ -275,7 +270,6 @@ class PimsPurchaseRequestIntegrationTest extends TestCase
             ],
         ];
 
-        // 1. Non-HTTPS link must be rejected
         $invalidPayload = $payload;
         $invalidPayload['links'] = [
             ['url' => 'http://insecure-site.com/file.pdf', 'title' => 'Insecure link'],
@@ -284,7 +278,6 @@ class PimsPurchaseRequestIntegrationTest extends TestCase
             ->postJson('/api/pims/purchase-requests', $invalidPayload)
             ->assertStatus(422);
 
-        // 2. Valid generation with PDF file and HTTPS link
         $response = $this->actingAs($this->endUser)
             ->post('/api/pims/purchase-requests', array_merge($payload, [
                 'pdf_files' => [$fakePdf],
@@ -296,7 +289,6 @@ class PimsPurchaseRequestIntegrationTest extends TestCase
         $prData = $response->json('purchase_request');
         $this->assertEquals('PMOGOODS-2026-000001', $prData['tracker_id']);
 
-        // Check attachments were created
         $this->assertDatabaseHas('purchase_request_attachments', [
             'purchase_request_id' => $prData['id'],
             'attachment_type' => 'PDF_FILE',
@@ -308,10 +300,8 @@ class PimsPurchaseRequestIntegrationTest extends TestCase
             'external_url' => 'https://drive.google.com/file/d/test-doc-id/view',
         ]);
 
-        // Check PPMP was marked as published
         $this->assertTrue((bool) $ppmp->fresh()->is_published_to_pims);
 
-        // Check MonitoringProject was automatically created with pims_pr_id = tracker_id
         $this->assertDatabaseHas('monitoring_projects', [
             'ppmp_id' => $ppmp->id,
             'purchase_request_id' => $prData['id'],
@@ -352,7 +342,7 @@ class PimsPurchaseRequestIntegrationTest extends TestCase
 
     public function test_end_user_with_ppmp_access_can_query_purchase_requests_by_ppmp_id(): void
     {
-        // End user has only PPMP access, NOT direct /pims access
+
         $userOnlyPpmp = User::factory()->create([
             'name' => 'PPMP End User',
             'email' => 'ppmp.only@system.com',
@@ -375,12 +365,10 @@ class PimsPurchaseRequestIntegrationTest extends TestCase
             'tracking_number' => 'PSWDO-2026-000099',
         ]);
 
-        // Direct PIMS dashboard should be 403 Forbidden
         $this->actingAs($userOnlyPpmp)
             ->getJson('/api/pims/dashboard')
             ->assertStatus(403);
 
-        // But querying purchase-requests by ppmp_id should be 200 OK
         $response = $this->actingAs($userOnlyPpmp)
             ->getJson('/api/pims/purchase-requests?ppmp_id=' . $ppmp->id)
             ->assertOk();
@@ -390,4 +378,3 @@ class PimsPurchaseRequestIntegrationTest extends TestCase
         ]);
     }
 }
-

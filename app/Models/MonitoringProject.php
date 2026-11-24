@@ -196,14 +196,12 @@ class MonitoringProject extends Model
         })->values()->toArray();
     }
 
-    /**
-     * Initializes default workflow steps for all 4 OPPMO divisions
-     */
     public function initializeDefaultSteps(): void
     {
-        // 1. PR Division Steps
+
         $prSteps = [
             'Monitor the create, publish (approve/suspended) to the PIMS system',
+            'Approve PIMS (PR Reviewer Approved & PR Controlled)',
             'Releasing PR documents to the end-user',
             'Receive PR documents from the end-user',
             'Review PR documents (approve/suspend - if suspend need to comply)',
@@ -215,13 +213,17 @@ class MonitoringProject extends Model
                 'division' => 'pr_division',
                 'step_name' => $stepName,
                 'step_order' => $index + 1,
-                'status' => $index === 0 ? 'COMPLETED' : 'PENDING',
-                'action_date' => $index === 0 ? now()->toDateString() : null,
-                'completed_at' => $index === 0 ? now() : null,
+                'status' => 'PENDING',
+                'completed_at' => null,
+                'checklist_data' => $index === 1 ? [
+                    'pr_reviewer_approved' => false,
+                    'pr_reviewer_approved_date' => null,
+                    'pr_controlled' => false,
+                    'pr_controlled_date' => null,
+                ] : null,
             ]);
         }
 
-        // 2. Technical Division Steps
         $isCbMode = strtoupper($this->procurement_mode) === 'CB' || stripos($this->procurement_mode, 'Competitive') !== false;
 
         if ($isCbMode) {
@@ -233,7 +235,7 @@ class MonitoringProject extends Model
                 ['name' => 'Release to end-user (For CB only miss sharia release the documents)', 'badge' => 'CB Only: Miss Sharia Release Documents'],
             ];
         } else {
-            // Default SVP Mode
+
             $techSteps = [
                 ['name' => 'Canvass document preparation and validation', 'badge' => null],
                 ['name' => 'Canvassing / Request for Quotation (RFQ) distribution', 'badge' => null],
@@ -253,7 +255,6 @@ class MonitoringProject extends Model
             ]);
         }
 
-        // 3. BAC Support Division Steps
         $bacSteps = [
             ['name' => 'Dropping documents by end-user', 'decision' => null],
             ['name' => 'Opening during BAC meeting and release to the TWG', 'decision' => null],
@@ -271,7 +272,6 @@ class MonitoringProject extends Model
             ]);
         }
 
-        // 4. Contracting Division Steps
         $contractingSteps = [
             'Receipt of transmitted procurement folder from BAC Support',
             'Preparation and review of Notice of Award (NOA)',
@@ -289,7 +289,6 @@ class MonitoringProject extends Model
             ]);
         }
 
-        // Initial History Log
         $this->histories()->create([
             'action' => 'PROJECT_CREATED',
             'division' => 'pr_division',
@@ -302,37 +301,28 @@ class MonitoringProject extends Model
         ]);
     }
 
-    /**
-     * Synchronize a family of PPMPs (root + amendments/supplementals sharing the same tracker number)
-     * into a single unified monitoring project.
-     *
-     * @param Collection<int, Ppmp> $family
-     */
     public static function syncPpmpFamily(Collection $family, bool $createIfMissing = false): ?self
     {
         if ($family->isEmpty()) {
             return null;
         }
 
-        // Active PPMP is the latest revision (highest ID in family)
         $activePpmp = $family->sortByDesc('id')->first();
-        // Baseline/Root PPMP is the original one without parent_id (or lowest ID)
+
         $rootPpmp = $family->whereNull('parent_id')->first() ?: $family->sortBy('id')->first();
 
         $familyIds = $family->pluck('id')->toArray();
         $trackerNo = $activePpmp->tracking_number ?: ($rootPpmp->tracking_number ?: $activePpmp->ppmp_number);
 
-        // Check if there are amendments or supplementals
-        $isAmended = $family->count() > 1 
-            || !empty($activePpmp->parent_id) 
+        $isAmended = $family->count() > 1
+            || !empty($activePpmp->parent_id)
             || in_array($activePpmp->amendment_type, ['AMENDMENT', 'SUPPLEMENTAL'], true)
             || in_array($rootPpmp->amendment_status, ['APPROVED'], true);
 
-        $amendmentType = $activePpmp->amendment_type 
-            ?: ($rootPpmp->amendment_type 
+        $amendmentType = $activePpmp->amendment_type
+            ?: ($rootPpmp->amendment_type
             ?: ($family->whereNotNull('amendment_type')->first()?->amendment_type ?: ($isAmended ? 'AMENDMENT' : null)));
 
-        // Find all existing monitoring project records for this tracker or family IDs
         $existingProjects = self::where(function ($query) use ($familyIds, $trackerNo) {
             if (!empty($trackerNo)) {
                 $query->where('pr_number', $trackerNo)
@@ -341,7 +331,6 @@ class MonitoringProject extends Model
             $query->orWhereIn('ppmp_id', $familyIds);
         })->orderBy('id', 'asc')->get();
 
-        // If multiple duplicate monitoring projects exist for the same tracker, consolidate them into one
         $primary = null;
         if ($existingProjects->isNotEmpty()) {
             $primary = $existingProjects->first();
@@ -354,25 +343,23 @@ class MonitoringProject extends Model
             }
         }
 
-        // Determine category: INFRA or GOODS_CONSULTING
         $category = 'GOODS_CONSULTING';
         $combinedText = strtolower(($activePpmp->title ?? '') . ' ' . ($activePpmp->general_description ?? '') . ' ' . ($trackerNo ?? ''));
         if (
-            str_contains($combinedText, 'infra') || 
-            str_contains($combinedText, 'construction') || 
-            str_contains($combinedText, 'rehabilitation') || 
-            str_contains($combinedText, 'building') || 
+            str_contains($combinedText, 'infra') ||
+            str_contains($combinedText, 'construction') ||
+            str_contains($combinedText, 'rehabilitation') ||
+            str_contains($combinedText, 'building') ||
             str_contains($combinedText, 'concreting')
         ) {
             $category = 'INFRA';
         }
 
-        // Determine procurement mode: CB (Competitive Bidding) or SVP
         $procurementMode = 'SVP';
         if (
-            ($activePpmp->total_budget >= 500000) || 
-            str_contains($combinedText, 'competitive') || 
-            str_contains($combinedText, 'bidding') || 
+            ($activePpmp->total_budget >= 500000) ||
+            str_contains($combinedText, 'competitive') ||
+            str_contains($combinedText, 'bidding') ||
             str_contains($combinedText, 'public bidding')
         ) {
             $procurementMode = 'CB';
@@ -388,7 +375,6 @@ class MonitoringProject extends Model
             }
         }
 
-        // Map Active PPMP status to monitoring division
         $division = 'pr_division';
         $status = 'ON_GOING';
 
@@ -402,7 +388,6 @@ class MonitoringProject extends Model
             $status = 'SUSPENDED';
         }
 
-        // Prepare remarks showing amendment/supplemental status
         if ($isAmended) {
             $typeLabel = $amendmentType === 'SUPPLEMENTAL' ? 'Supplemental' : 'Amended';
             $remarks = "PPMP Status: {$activePpmp->status} ({$typeLabel} PPMP)";
@@ -435,7 +420,6 @@ class MonitoringProject extends Model
             return $primary;
         }
 
-        // Only create a new monitoring project if explicitly requested (e.g. publication or manual test)
         if (!$createIfMissing) {
             return null;
         }
@@ -465,10 +449,6 @@ class MonitoringProject extends Model
         return $project;
     }
 
-    /**
-     * Synchronize details from an end-user PPMP for existing monitored projects only.
-     * Automatically groups by tracker number/family to merge amendments and supplementals.
-     */
     public static function syncFromPpmp(Ppmp $ppmp, bool $createIfMissing = false): ?self
     {
         static::flushCache();
@@ -499,11 +479,6 @@ class MonitoringProject extends Model
         return self::syncPpmpFamily($family, $createIfMissing);
     }
 
-    /**
-     * Synchronize all existing monitored projects linked to active PPMPs,
-     * merging amended and supplemental PPMPs with the same tracker number.
-     * Does NOT create monitoring projects for unpublished PPMPs.
-     */
     public static function syncAllActivePpmps(): void
     {
         $ppmpIds = self::whereNotNull('ppmp_id')->pluck('ppmp_id')->filter()->toArray();
@@ -524,7 +499,6 @@ class MonitoringProject extends Model
             })
             ->get();
 
-        // Group by tracking_number if present, else by root PPMP ID
         $grouped = $allPpmps->groupBy(function ($ppmp) {
             if (!empty($ppmp->tracking_number)) {
                 return 'TRACKER_' . $ppmp->tracking_number;
@@ -535,5 +509,182 @@ class MonitoringProject extends Model
         foreach ($grouped as $family) {
             self::syncPpmpFamily($family, false);
         }
+    }
+
+    public function isFirstPimsReviewStep(MonitoringStep $step): bool
+    {
+        if ($step->division !== 'pr_division') {
+            return false;
+        }
+
+        return (int) $step->step_order === 1
+            || stripos((string) $step->step_name, 'Monitor the create, publish') !== false;
+    }
+
+    public function isApprovePimsStep(MonitoringStep $step): bool
+    {
+        if ($step->division !== 'pr_division') {
+            return false;
+        }
+
+        return stripos((string) $step->step_name, 'Approve PIMS') !== false;
+    }
+
+    public function ensureApprovePimsStepExists(): void
+    {
+        $prSteps = $this->steps()->where('division', 'pr_division')->orderBy('step_order')->orderBy('id')->get();
+        if ($prSteps->isEmpty()) {
+            return;
+        }
+
+        $hasApprovePims = $prSteps->contains(fn ($s) => $this->isApprovePimsStep($s));
+        if ($hasApprovePims) {
+            return;
+        }
+
+        foreach ($prSteps as $s) {
+            if ((int) $s->step_order >= 2) {
+                $s->update(['step_order' => (int) $s->step_order + 1]);
+            }
+        }
+
+        $this->steps()->create([
+            'division' => 'pr_division',
+            'step_name' => 'Approve PIMS (PR Reviewer Approved & PR Controlled)',
+            'step_order' => 2,
+            'status' => 'PENDING',
+            'completed_at' => null,
+            'checklist_data' => [
+                'pr_reviewer_approved' => false,
+                'pr_reviewer_approved_date' => null,
+                'pr_controlled' => false,
+                'pr_controlled_date' => null,
+            ],
+        ]);
+
+        $this->unsetRelation('steps');
+    }
+
+    public function getPimsReviewChecklist(): array
+    {
+        $relations = [
+            'attachments',
+            'marketScoping',
+            'parent.marketScoping',
+            'twgReviewer',
+            'budgetReviewer',
+            'oppmoReviewer',
+            'office',
+        ];
+
+        $ppmp = $this->relationLoaded('ppmp')
+            ? $this->ppmp
+            : $this->ppmp()->with($relations)->first();
+
+        if (!$ppmp && !empty($this->pr_number)) {
+            $ppmp = Ppmp::with($relations)
+                ->where('tracking_number', $this->pr_number)
+                ->orderByDesc('id')
+                ->first();
+        }
+
+        if (!$ppmp) {
+            return [
+                'has_ppmp' => false,
+                'ppmp_id' => null,
+                'ppmp_uuid' => null,
+                'ppmp_status' => null,
+                'ppmp_status_label' => null,
+                'ppmp_reviewer_name' => null,
+                'ppmp_is_under_review' => false,
+                'ppmp_created_approved' => null,
+                'app_done' => null,
+                'attachment_list_done' => null,
+                'market_scoping_approved' => null,
+                'all_approved' => true,
+                'missing_items' => [],
+            ];
+        }
+
+        $ppmpApproved = in_array($ppmp->status, ['READY_TO_PRINT', 'APPROVED', 'HEAD_APPROVED', 'COMPLETED'], true);
+        $reviewStages = [
+            'HEAD_PENDING',
+            'TWG_REVIEW',
+            'BUDGET_OFFICER_REVIEW',
+            'BUDGET_HEAD_REVIEW',
+            'PACCO_REVIEW',
+            'PACCO_HEAD_REVIEW',
+            'OPPMO_REVIEW',
+            'OPPMO_HEAD_REVIEW',
+            'APP_PREPARER_REVIEW',
+            'GOVERNOR_REVIEW',
+        ];
+        $isUnderReview = in_array($ppmp->status, $reviewStages, true);
+
+        $reviewerName = null;
+        if ($isUnderReview) {
+            $reviewerName = match ($ppmp->status) {
+                'TWG_REVIEW' => $ppmp->twgReviewer?->name ?? 'BAC-TWG Reviewer',
+                'BUDGET_OFFICER_REVIEW' => $ppmp->budgetReviewer?->name ?? 'Budget Officer Reviewer',
+                'PACCO_REVIEW' => $ppmp->budgetReviewer?->name ?? 'PACCO Reviewer',
+                'OPPMO_REVIEW' => $ppmp->oppmoReviewer?->name ?? 'OPPMO Reviewer',
+                'HEAD_PENDING' => $ppmp->office_head_name ?? 'Office Head',
+                'BUDGET_HEAD_REVIEW', 'PACCO_HEAD_REVIEW', 'OPPMO_HEAD_REVIEW' => ($ppmp->current_stage_user_id ? User::find($ppmp->current_stage_user_id)?->name : null) ?? 'Division / Office Head',
+                'APP_PREPARER_REVIEW' => 'APP Preparer',
+                'GOVERNOR_REVIEW' => 'Provincial Governor',
+                default => null,
+            };
+        }
+
+        $statusLabel = match ($ppmp->status) {
+            'DRAFT' => 'Draft',
+            'READY_TO_PRINT', 'APPROVED', 'HEAD_APPROVED', 'COMPLETED' => 'Ready to Print',
+            default => $isUnderReview
+                ? ('Under Review' . ($reviewerName ? " ({$reviewerName})" : ''))
+                : ucwords(strtolower(str_replace('_', ' ', (string) $ppmp->status))),
+        };
+        $appDone = $ppmp->hasAppGenerated()
+            || !empty($ppmp->app_preparer_approved_at)
+            || !empty($ppmp->governor_approved_at);
+        $attachmentListDone = $ppmp->hasAttachmentListGenerated();
+
+        $scoping = $ppmp->marketScoping ?: ($ppmp->parent ? $ppmp->parent->marketScoping : null);
+        $hasScopingForm = $ppmp->hasMarketScopingForm();
+        $hasScopingPdf = $ppmp->hasMarketScopingPdf();
+        $marketScopingApproved = $hasScopingPdf && (
+            $ppmpApproved
+            || ($scoping && (!empty($scoping->approved_by_name) || !empty($scoping->approved_by_date)))
+            || !$hasScopingForm
+        );
+
+        $missing = [];
+        if (!$ppmpApproved) {
+            $missing[] = 'PPMP not yet approved';
+        }
+        if (!$appDone) {
+            $missing[] = 'APP not yet generated/approved';
+        }
+        if (!$attachmentListDone) {
+            $missing[] = 'List of Attachment not yet created';
+        }
+        if (!$marketScopingApproved) {
+            $missing[] = 'Market Scoping not yet approved';
+        }
+
+        return [
+            'has_ppmp' => true,
+            'ppmp_id' => $ppmp->id,
+            'ppmp_uuid' => $ppmp->uuid,
+            'ppmp_status' => $ppmp->status,
+            'ppmp_status_label' => $statusLabel,
+            'ppmp_reviewer_name' => $reviewerName,
+            'ppmp_is_under_review' => $isUnderReview,
+            'ppmp_created_approved' => $ppmpApproved,
+            'app_done' => $appDone,
+            'attachment_list_done' => $attachmentListDone,
+            'market_scoping_approved' => $marketScopingApproved,
+            'all_approved' => empty($missing),
+            'missing_items' => $missing,
+        ];
     }
 }

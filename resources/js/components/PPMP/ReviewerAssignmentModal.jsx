@@ -1,20 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-    X, 
-    Check, 
-    Loader2, 
-    Shield, 
-    UserCheck, 
-    AlertCircle, 
-    Send, 
-    RefreshCw, 
-    Sparkles, 
-    Briefcase, 
-    CheckCircle2, 
-    FileSpreadsheet, 
-    Landmark, 
-    Building2, 
+import {
+    X,
+    Check,
+    Loader2,
+    Shield,
+    UserCheck,
+    AlertCircle,
+    Send,
+    RefreshCw,
+    Sparkles,
+    Briefcase,
+    CheckCircle2,
+    FileSpreadsheet,
+    Landmark,
+    Building2,
     Compass,
     Info,
     Lock,
@@ -26,11 +26,6 @@ import {
 import { ppmpService } from '../../services/api';
 import { UserAvatar } from '../UI/UserAvatar';
 
-/**
- * SearchableReviewerSelect:
- * Interactive searchable combobox dropdown for reviewer specialists.
- * Renders via React Portal with fixed viewport coordinates to prevent overflow clipping.
- */
 const SearchableReviewerSelect = ({
     value,
     onChange,
@@ -41,7 +36,7 @@ const SearchableReviewerSelect = ({
     isTwg = false,
     ppmpAccountCode = '',
     ppmpAccountName = '',
-    accentColor = 'amber', // 'amber' | 'emerald' | 'indigo'
+    accentColor = 'amber',
     required = false,
 }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -52,13 +47,11 @@ const SearchableReviewerSelect = ({
     const menuRef = useRef(null);
     const searchInputRef = useRef(null);
 
-    // Currently selected reviewer object
     const selectedOption = useMemo(() => {
         if (!value) return null;
         return options.find(opt => String(opt.id) === String(value)) || null;
     }, [value, options]);
 
-    // Position calculator for portal dropdown
     const updatePosition = useCallback(() => {
         if (!triggerRef.current) return;
         const rect = triggerRef.current.getBoundingClientRect();
@@ -88,7 +81,6 @@ const SearchableReviewerSelect = ({
         });
     }, []);
 
-    // Dropdown open/close & positioning listeners
     useEffect(() => {
         if (!isOpen) return;
 
@@ -134,7 +126,6 @@ const SearchableReviewerSelect = ({
         };
     }, [isOpen, updatePosition]);
 
-    // In-memory filtered list
     const filteredOptions = useMemo(() => {
         const q = searchQuery.trim().toLowerCase();
         if (!q) return options;
@@ -147,7 +138,7 @@ const SearchableReviewerSelect = ({
 
             let codeMatch = false;
             if (Array.isArray(opt.account_codes)) {
-                codeMatch = opt.account_codes.some(c => 
+                codeMatch = opt.account_codes.some(c =>
                     (c.code && c.code.toLowerCase().includes(q)) ||
                     (c.name && c.name.toLowerCase().includes(q))
                 );
@@ -157,7 +148,6 @@ const SearchableReviewerSelect = ({
         });
     }, [options, searchQuery]);
 
-    // Grouping for BAC-TWG: recommended vs others
     const { recommendedGroup, otherGroup } = useMemo(() => {
         if (!isTwg) {
             return { recommendedGroup: [], otherGroup: filteredOptions };
@@ -185,7 +175,6 @@ const SearchableReviewerSelect = ({
         onChange('', null);
     };
 
-    // Styling configurations based on card stage accent
     const borderActive = accentColor === 'emerald'
         ? 'border-emerald-500 ring-2 ring-emerald-200'
         : accentColor === 'indigo'
@@ -200,7 +189,7 @@ const SearchableReviewerSelect = ({
 
     return (
         <div className="relative w-full">
-            {/* Trigger Button */}
+
             <div
                 ref={triggerRef}
                 onClick={() => {
@@ -277,7 +266,6 @@ const SearchableReviewerSelect = ({
                 </div>
             </div>
 
-            {/* Portal Dropdown Menu */}
             {isOpen && coords && createPortal(
                 <div
                     ref={menuRef}
@@ -291,7 +279,7 @@ const SearchableReviewerSelect = ({
                     }}
                     className="z-[9999] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150"
                 >
-                    {/* Search Input Box */}
+
                     <div className="p-2.5 bg-slate-50 border-b border-slate-200 shrink-0">
                         <div className="relative flex items-center">
                             <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
@@ -325,9 +313,8 @@ const SearchableReviewerSelect = ({
                         </div>
                     </div>
 
-                    {/* Reviewers List */}
                     <div className="overflow-y-auto flex-1 divide-y divide-slate-100">
-                        {/* 1. BAC-TWG Recommended Group */}
+
                         {isTwg && recommendedGroup.length > 0 && (
                             <div className="bg-emerald-50/50">
                                 <div className="px-3 py-1.5 bg-emerald-100/70 border-y border-emerald-200 text-[10px] font-black text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
@@ -381,10 +368,9 @@ const SearchableReviewerSelect = ({
                                                     {opt.designation || 'BAC-TWG Specialist'}
                                                 </p>
 
-                                                {/* Matching account codes list */}
                                                 <div className="mt-2 flex flex-wrap gap-1">
                                                     {opt.account_codes?.map((ac) => {
-                                                        const isMatchingCode = 
+                                                        const isMatchingCode =
                                                             (opt.matching_codes && opt.matching_codes.includes(ac.code)) ||
                                                             (ppmpAccountCode && ac.code === ppmpAccountCode);
                                                         return (
@@ -409,7 +395,6 @@ const SearchableReviewerSelect = ({
                             </div>
                         )}
 
-                        {/* 2. BAC-TWG Other Specialists Group */}
                         {isTwg && otherGroup.length > 0 && (
                             <div>
                                 {recommendedGroup.length > 0 && (
@@ -485,7 +470,6 @@ const SearchableReviewerSelect = ({
                             </div>
                         )}
 
-                        {/* 3. Non-TWG (Budget/PACCO & OPPMO) Standard Options */}
                         {!isTwg && filteredOptions.length > 0 && (
                             <div>
                                 {filteredOptions.map(opt => {
@@ -543,7 +527,6 @@ const SearchableReviewerSelect = ({
                             </div>
                         )}
 
-                        {/* Empty Search Result */}
                         {filteredOptions.length === 0 && (
                             <div className="p-8 text-center text-slate-400 space-y-1">
                                 <Search className="w-6 h-6 mx-auto text-slate-300" />
@@ -557,7 +540,6 @@ const SearchableReviewerSelect = ({
                         )}
                     </div>
 
-                    {/* Optional Clear Footer */}
                     {!required && selectedOption && (
                         <div className="p-2 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
                             <button
@@ -584,7 +566,7 @@ export const ReviewerAssignmentModal = ({
     onClose,
     ppmp,
     user,
-    mode = 'submit', // 'submit' or 'reassign'
+    mode = 'submit',
     onSuccess,
 }) => {
     const isAdmin = ['admin', 'super_admin'].includes(user?.role);
@@ -595,11 +577,14 @@ export const ReviewerAssignmentModal = ({
     const isBudget = ['budget_officer', 'pacco'].includes(userRole);
     const isOppmo = userRole === 'oppmo';
 
+    const isPpmpAppOnly = (ppmp?.amendment_scope || ppmp?.amendment?.amendment_scope) === 'PPMP_APP';
+    const isAttachmentOnly = (ppmp?.amendment_scope || ppmp?.amendment?.amendment_scope) === 'ATTACHMENT_LIST';
+
     const isTwgApproved = Boolean(
-        ppmp?.amendment_scope === 'PPMP_APP' ||
+        isPpmpAppOnly ||
         ppmp?.twg_approved_at ||
         ppmp?.signatures?.some(s => s.role === 'twg') ||
-        ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'READY_TO_PRINT', 'HEAD_APPROVED'].includes(ppmp?.status)
+        ['BUDGET_OFFICER_REVIEW', 'BUDGET_HEAD_REVIEW', 'PACCO_REVIEW', 'PACCO_HEAD_REVIEW', 'OPPMO_REVIEW', 'OPPMO_HEAD_REVIEW', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW', 'READY_TO_PRINT', 'HEAD_APPROVED'].includes(ppmp?.status)
     );
     const isBudgetApproved = Boolean(
         ppmp?.budget_approved_at ||
@@ -633,11 +618,10 @@ export const ReviewerAssignmentModal = ({
         (ppmp?.program_name || ppmp?.program_name_ref?.name || ppmp?.programNameRef?.name || ppmp?.programName?.name || '').trim()
     );
 
-    // Selected Reviewers State
     const [selectedTwgId, setSelectedTwgId] = useState('');
     const [selectedBudgetId, setSelectedBudgetId] = useState('');
     const [selectedOppmoId, setSelectedOppmoId] = useState('');
-    const [budgetType, setBudgetType] = useState('auto'); // 'auto', 'budget', 'pacco'
+    const [budgetType, setBudgetType] = useState('auto');
     const [reassignReason, setReassignReason] = useState('');
 
     useEffect(() => {
@@ -663,8 +647,7 @@ export const ReviewerAssignmentModal = ({
                 }
 
                 const assigned = data.assigned_reviewers || {};
-                
-                // 1. Initial TWG: use already assigned or first recommended matching TWG
+
                 if (assigned.twg_reviewer_id) {
                     setSelectedTwgId(String(assigned.twg_reviewer_id));
                 } else if (ppmp.twg_reviewer_id) {
@@ -674,7 +657,6 @@ export const ReviewerAssignmentModal = ({
                     setSelectedTwgId(String(match ? match.id : data.twg_reviewers[0].id));
                 }
 
-                // 2. Initial Budget / PACCO:
                 if (assigned.budget_reviewer_id) {
                     setSelectedBudgetId(String(assigned.budget_reviewer_id));
                 } else if (ppmp.budget_reviewer_id) {
@@ -687,7 +669,6 @@ export const ReviewerAssignmentModal = ({
                     }
                 }
 
-                // 3. Initial OPPMO:
                 if (assigned.oppmo_reviewer_id) {
                     setSelectedOppmoId(String(assigned.oppmo_reviewer_id));
                 } else if (ppmp.oppmo_reviewer_id) {
@@ -708,19 +689,16 @@ export const ReviewerAssignmentModal = ({
         return () => { isMounted = false; };
     }, [isOpen, ppmp?.uuid]);
 
-    // Available budget reviewers based on fund type
     const activeBudgetReviewersList = useMemo(() => {
         if (budgetType === 'pacco') return paccoReviewers;
         if (budgetType === 'budget') return budgetReviewers;
         return isTrustFund ? paccoReviewers : budgetReviewers;
     }, [budgetType, isTrustFund, paccoReviewers, budgetReviewers]);
 
-    // Pre-calculate selected reviewer objects
     const currentTwg = useMemo(() => {
         return twgReviewers.find(t => String(t.id) === String(selectedTwgId)) || null;
     }, [twgReviewers, selectedTwgId]);
 
-    // Find recommended TWG reviewer matching account code
     const recommendedTwg = useMemo(() => {
         return twgReviewers.find(t => t.matches_ppmp_account_code) || null;
     }, [twgReviewers]);
@@ -737,15 +715,15 @@ export const ReviewerAssignmentModal = ({
         e.preventDefault();
         setErrorMessage('');
 
-        if (!selectedTwgId) {
+        if (!isPpmpAppOnly && !selectedTwgId) {
             setErrorMessage('Please select the 1st Pick: BAC-TWG Reviewer.');
             return;
         }
 
         const payload = {
-            twg_reviewer_id: selectedTwgId ? Number(selectedTwgId) : null,
-            budget_reviewer_id: selectedBudgetId ? Number(selectedBudgetId) : null,
-            oppmo_reviewer_id: selectedOppmoId ? Number(selectedOppmoId) : null,
+            twg_reviewer_id: isPpmpAppOnly ? null : (selectedTwgId ? Number(selectedTwgId) : null),
+            budget_reviewer_id: isAttachmentOnly ? undefined : (selectedBudgetId ? Number(selectedBudgetId) : null),
+            oppmo_reviewer_id: isAttachmentOnly ? undefined : (selectedOppmoId ? Number(selectedOppmoId) : null),
         };
 
         if (mode === 'reassign' && reassignReason.trim()) {
@@ -778,11 +756,11 @@ export const ReviewerAssignmentModal = ({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-            <div 
+            <div
                 className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]"
                 onClick={(e) => e.stopPropagation()}
             >
-                {/* Header */}
+
                 <div className={`px-6 py-4 text-white flex items-center justify-between shrink-0 shadow-sm gap-3 ${
                     mode === 'reassign'
                         ? 'bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800'
@@ -801,7 +779,7 @@ export const ReviewerAssignmentModal = ({
                                 {mode === 'reassign' ? 'Reassign PPMP Reviewers' : 'Select Assigned Reviewers for this PPMP'}
                             </h3>
                             <div className="text-[11px] text-white/90 flex items-center gap-1.5 mt-0.5 min-w-0">
-                                <span 
+                                <span
                                     className="font-semibold truncate min-w-0 flex-1 block"
                                     title={(ppmpProgramName || ppmp?.program_name || ppmp?.program_name_ref?.name || ppmp?.programNameRef?.name || ppmp?.programName?.name || '').trim() || ppmp?.title || ppmp?.project_title || 'PPMP Procurement Program'}
                                 >
@@ -829,7 +807,6 @@ export const ReviewerAssignmentModal = ({
                     </button>
                 </div>
 
-                {/* Sub-Header / Informational Notice */}
                 <div className="px-6 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs text-slate-700 shrink-0 flex-wrap gap-2">
                     <div className="flex items-center gap-2">
                         <Info className="w-4 h-4 text-blue-600 shrink-0" />
@@ -844,6 +821,10 @@ export const ReviewerAssignmentModal = ({
                                 ) : (
                                     <span>As <strong>PPMP Preparer / Admin</strong>, you can reassign any of the designated reviewers.</span>
                                 )
+                            ) : isPpmpAppOnly ? (
+                                <span>Review process order (PPMP/APP only): <strong>1. Budget / PACCO</strong> &rarr; <strong>2. OPPMO</strong> &rarr; <strong>Signatories</strong>.</span>
+                            ) : isAttachmentOnly ? (
+                                <span>Review process order (Detailed Specifications only): <strong>1. BAC-TWG</strong> &rarr; <strong>Office Head</strong>.</span>
                             ) : (
                                 <span>Review process order: <strong>1. BAC-TWG</strong> &rarr; <strong>2. Budget / PACCO</strong> &rarr; <strong>3. OPPMO</strong>.</span>
                             )}
@@ -856,7 +837,6 @@ export const ReviewerAssignmentModal = ({
                     )}
                 </div>
 
-                {/* Error Banner */}
                 {errorMessage && (
                     <div className="mx-6 mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-xs text-rose-700 shrink-0">
                         <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
@@ -864,7 +844,6 @@ export const ReviewerAssignmentModal = ({
                     </div>
                 )}
 
-                {/* Body Form */}
                 <form onSubmit={handleSubmit} className="p-6 overflow-y-auto flex-1 space-y-5">
                     {loadingData ? (
                         <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
@@ -873,7 +852,8 @@ export const ReviewerAssignmentModal = ({
                         </div>
                     ) : (
                         <>
-                            {/* 1st Pick: BAC-TWG Reviewer */}
+
+                            {!isPpmpAppOnly && (
                             <div className={`p-4 rounded-xl border-2 space-y-2.5 transition ${
                                 canEditTwg
                                     ? 'border-amber-300 bg-amber-50/40'
@@ -912,7 +892,7 @@ export const ReviewerAssignmentModal = ({
                                 </div>
 
                                 <div className="space-y-2 pt-1">
-                                    {/* Searchable Combobox for TWG */}
+
                                     <SearchableReviewerSelect
                                         value={selectedTwgId}
                                         onChange={(newId) => setSelectedTwgId(newId)}
@@ -926,7 +906,6 @@ export const ReviewerAssignmentModal = ({
                                         required={true}
                                     />
 
-                                    {/* Recommendation Prompt if another reviewer matches the PPMP account code */}
                                     {canEditTwg && recommendedTwg && String(recommendedTwg.id) !== String(selectedTwgId) && (
                                         <div className="flex items-center justify-between p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-950 shadow-2xs animate-in fade-in duration-200">
                                             <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -945,7 +924,6 @@ export const ReviewerAssignmentModal = ({
                                         </div>
                                     )}
 
-                                    {/* Confirmation badge if selected TWG matches domain */}
                                     {currentTwg && currentTwg.matches_ppmp_account_code && (
                                         <div className="flex items-center gap-2 p-2 bg-emerald-50/90 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 shadow-2xs">
                                             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -956,8 +934,9 @@ export const ReviewerAssignmentModal = ({
                                     )}
                                 </div>
                             </div>
+                            )}
 
-                            {/* 2nd Pick: Budget / PACCO Reviewer */}
+                            {!isAttachmentOnly && (
                             <div className={`p-4 rounded-xl border-2 space-y-2.5 transition ${
                                 canEditBudget
                                     ? 'border-emerald-300 bg-emerald-50/40'
@@ -968,12 +947,12 @@ export const ReviewerAssignmentModal = ({
                                         <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shadow-xs ${
                                             canEditBudget ? 'bg-emerald-600 text-white' : 'bg-slate-400 text-white'
                                         }`}>
-                                            2
+                                            {isPpmpAppOnly ? 1 : 2}
                                         </span>
                                         <div>
                                             <div className="flex items-center gap-1.5">
                                                 <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wider">
-                                                    2nd Pick: Budget / PACCO Reviewer
+                                                    {isPpmpAppOnly ? '1st Pick: Budget / PACCO Reviewer' : '2nd Pick: Budget / PACCO Reviewer'}
                                                 </h4>
                                                 {mode === 'reassign' && isBudgetApproved ? (
                                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded">
@@ -1021,7 +1000,7 @@ export const ReviewerAssignmentModal = ({
                                 </div>
 
                                 <div className="space-y-1.5 pt-1">
-                                    {/* Searchable Combobox for Budget / PACCO */}
+
                                     <SearchableReviewerSelect
                                         value={selectedBudgetId}
                                         onChange={(newId) => setSelectedBudgetId(newId)}
@@ -1032,8 +1011,9 @@ export const ReviewerAssignmentModal = ({
                                     />
                                 </div>
                             </div>
+                            )}
 
-                            {/* 3rd Pick: OPPMO Reviewer */}
+                            {!isAttachmentOnly && (
                             <div className={`p-4 rounded-xl border-2 space-y-2.5 transition ${
                                 canEditOppmo
                                     ? 'border-indigo-300 bg-indigo-50/40'
@@ -1044,12 +1024,12 @@ export const ReviewerAssignmentModal = ({
                                         <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shadow-xs ${
                                             canEditOppmo ? 'bg-indigo-600 text-white' : 'bg-slate-400 text-white'
                                         }`}>
-                                            3
+                                            {isPpmpAppOnly ? 2 : 3}
                                         </span>
                                         <div>
                                             <div className="flex items-center gap-1.5">
                                                 <h4 className="text-xs font-bold text-indigo-950 uppercase tracking-wider">
-                                                    3rd Pick: OPPMO Reviewer
+                                                    {isPpmpAppOnly ? '2nd Pick: OPPMO Reviewer' : '3rd Pick: OPPMO Reviewer'}
                                                 </h4>
                                                 {mode === 'reassign' && isOppmoApproved ? (
                                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded">
@@ -1072,7 +1052,7 @@ export const ReviewerAssignmentModal = ({
                                 </div>
 
                                 <div className="space-y-1.5 pt-1">
-                                    {/* Searchable Combobox for OPPMO */}
+
                                     <SearchableReviewerSelect
                                         value={selectedOppmoId}
                                         onChange={(newId) => setSelectedOppmoId(newId)}
@@ -1083,8 +1063,8 @@ export const ReviewerAssignmentModal = ({
                                     />
                                 </div>
                             </div>
+                            )}
 
-                            {/* Reason for reassignment (optional if reassigning) */}
                             {mode === 'reassign' && (
                                 <div className="space-y-1">
                                     <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
@@ -1102,7 +1082,6 @@ export const ReviewerAssignmentModal = ({
                         </>
                     )}
 
-                    {/* Footer Actions */}
                     <div className="pt-3 border-t border-slate-200 flex items-center justify-between shrink-0">
                         <span className="text-[11px] text-slate-500 max-w-sm leading-tight">
                             {mode === 'reassign'

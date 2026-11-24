@@ -16,17 +16,17 @@ class MonitoringStep extends Model
         'step_order',
         'status',
         'decision',
-        'action_date',
         'completed_at',
         'handled_by',
         'notes',
         'special_badge',
+        'checklist_data',
         'is_custom',
     ];
 
     protected $casts = [
-        'action_date' => 'date',
         'completed_at' => 'datetime',
+        'checklist_data' => 'array',
         'is_custom' => 'boolean',
     ];
 

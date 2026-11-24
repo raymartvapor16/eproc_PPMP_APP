@@ -13,20 +13,13 @@ use Illuminate\Support\Facades\DB;
 
 class FundSourceController extends Controller
 {
-    /**
-     * Determine if the authenticated user can manage (create, edit, delete, export) fund sources.
-     * Allowed: Admin, Super Admin, Budget Officer, and PACCO Reviewer.
-     */
+
     protected function canManage(Request $request): bool
     {
         $user = $request->user();
         return $user && ($user->isAdmin() || in_array($user->role, ['budget_officer', 'pacco'], true));
     }
 
-    /**
-     * List fund sources.
-     * End-users receive active sources only. Admins, Budget Officers, and PACCO Reviewers view all with usage counts.
-     */
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -39,7 +32,6 @@ class FundSourceController extends Controller
             $query->active();
         }
 
-        // Automatic role-based separation for PACCO Reviewer (Trust Funds only) and Budget Officer (General/Special only)
         if ($user && !$user->isAdmin()) {
             if ($user->role === 'pacco') {
                 $query->where(function ($q) {
@@ -73,7 +65,6 @@ class FundSourceController extends Controller
 
         $fundSources = $query->get();
 
-        // If privileged (Admin, Budget Officer, PACCO Reviewer), attach PPMP usage count to each source
         if ($canManage) {
             $usageByFk = Ppmp::select('fund_source_id', DB::raw('count(*) as count'))
                 ->whereNotNull('fund_source_id')
@@ -96,9 +87,6 @@ class FundSourceController extends Controller
         return response()->json($fundSources);
     }
 
-    /**
-     * Create a new fund source (Admin, Budget Officer, and PACCO Reviewer).
-     */
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -148,9 +136,6 @@ class FundSourceController extends Controller
         ], 201);
     }
 
-    /**
-     * Update an existing fund source (Admin, Budget Officer, and PACCO Reviewer).
-     */
     public function update(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -185,7 +170,6 @@ class FundSourceController extends Controller
             'display_order'  => $validated['display_order'] ?? $fundSource->display_order,
         ]);
 
-        // If the name changed, synchronize existing PPMPs that reference the old name
         if ($oldName !== $newName) {
             Ppmp::where('source_of_fund', $oldName)->update(['source_of_fund' => $newName]);
             PpmpItem::where('source_of_fund', $oldName)->update(['source_of_fund' => $newName]);
@@ -203,9 +187,6 @@ class FundSourceController extends Controller
         ]);
     }
 
-    /**
-     * Export all fund sources to Excel / CSV format (Admin, Budget Officer, and PACCO Reviewer).
-     */
     public function export(Request $request)
     {
         $user = $request->user();
@@ -261,7 +242,7 @@ class FundSourceController extends Controller
 
         $callback = function () use ($sources, $usageByFk, $usageByName) {
             $output = fopen('php://output', 'w');
-            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF)); // UTF-8 BOM for Excel
+            fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
             fputcsv($output, ['ID', 'Source of Fund Name', 'Code', 'Category', 'Review Route', 'Status', 'PPMP Usage Count', 'Description', 'Display Order']);
 
             foreach ($sources as $s) {
@@ -284,10 +265,6 @@ class FundSourceController extends Controller
         return response()->stream($callback, 200, $headers);
     }
 
-    /**
-     * Delete a fund source (Admin, Budget Officer, and PACCO Reviewer).
-     * Prevents deletion if existing PPMPs reference it.
-     */
     public function destroy(Request $request, int $id): JsonResponse
     {
         $user = $request->user();

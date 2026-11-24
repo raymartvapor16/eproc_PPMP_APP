@@ -83,7 +83,6 @@ class AuthorizedStaffTest extends TestCase
             'head_name' => 'Engr. Juan Dela Cruz',
         ]);
 
-        // 6MB PDF file
         $oversizedFile = UploadedFile::fake()->create('large_auth.pdf', 6000, 'application/pdf');
 
         $response = $this->postJson('/api/register', [
@@ -114,7 +113,6 @@ class AuthorizedStaffTest extends TestCase
             'head_name' => 'Engr. Juan Dela Cruz',
         ]);
 
-        // 1. .url file rejected
         $urlFile = UploadedFile::fake()->create('Letter.url', 1, 'application/octet-stream');
         $res1 = $this->postJson('/api/register', [
             'name' => 'Staff 1',
@@ -131,7 +129,6 @@ class AuthorizedStaffTest extends TestCase
         ]);
         $res1->assertStatus(422);
 
-        // 2. Disguised .exe.pdf rejected
         $disguised = UploadedFile::fake()->createWithContent('exploit.exe.pdf', "%PDF-1.4\nMalicious code");
         $res2 = $this->postJson('/api/register', [
             'name' => 'Staff 2',
@@ -149,7 +146,6 @@ class AuthorizedStaffTest extends TestCase
         $res2->assertStatus(422)
             ->assertJsonPath('message', 'Security Error: Suspicious disguised multi-extension filename detected.');
 
-        // 3. Fake PDF without %PDF- header rejected
         $fakePdf = UploadedFile::fake()->createWithContent('letter.pdf', 'Not a valid pdf');
         $res3 = $this->postJson('/api/register', [
             'name' => 'Staff 3',
@@ -176,14 +172,12 @@ class AuthorizedStaffTest extends TestCase
             'head_name' => 'Engr. Juan Dela Cruz',
         ]);
 
-        /** @var User $endUser */
         $endUser = User::factory()->create([
             'role' => 'end_user',
             'office_id' => $office->id,
             'is_active' => true,
         ]);
 
-        /** @var User $authorizedStaff */
         $authorizedStaff = User::factory()->create([
             'role' => 'authorized_staff',
             'office_id' => $office->id,
@@ -205,12 +199,10 @@ class AuthorizedStaffTest extends TestCase
             'created_by' => $endUser->id,
         ]);
 
-        // Authorized staff can view dashboard stats (acts like head)
         $this->actingAs($authorizedStaff)
             ->getJson('/api/dashboard/stats')
             ->assertStatus(200);
 
-        // Authorized staff can receive document at head stage
         $receiveResponse = $this->actingAs($authorizedStaff)
             ->postJson("/api/ppmps/{$ppmp->uuid}/receive");
         $receiveResponse->assertStatus(200);
@@ -218,7 +210,6 @@ class AuthorizedStaffTest extends TestCase
         $ppmp->refresh();
         $this->assertNotNull($ppmp->head_received_at);
 
-        // Authorized staff can approve PPMP
         $approveResponse = $this->actingAs($authorizedStaff)
             ->postJson("/api/ppmps/{$ppmp->uuid}/head/approve");
         $approveResponse->assertStatus(200);
@@ -239,14 +230,12 @@ class AuthorizedStaffTest extends TestCase
         $pdfPath = 'authorization_letter/test_letter.pdf';
         Storage::disk('local')->put($pdfPath, "%PDF-1.4 sample pdf content %%EOF");
 
-        /** @var User $staff */
         $staff = User::factory()->create([
             'role' => 'authorized_staff',
             'office_id' => $office->id,
             'authorization_letter_path' => $pdfPath,
         ]);
 
-        /** @var User $admin */
         $admin = User::factory()->create([
             'role' => 'admin',
         ]);
@@ -258,13 +247,12 @@ class AuthorizedStaffTest extends TestCase
 
     public function test_admin_can_reject_pending_user_registration(): void
     {
-        /** @var User $admin */
+
         $admin = User::factory()->create([
             'role' => 'admin',
             'is_active' => true,
         ]);
 
-        /** @var User $pendingUser */
         $pendingUser = User::factory()->create([
             'role' => 'authorized_staff',
             'is_active' => false,
@@ -281,7 +269,6 @@ class AuthorizedStaffTest extends TestCase
         $this->assertEquals('rejected', $pendingUser->approval_status);
         $this->assertEquals('Incomplete documents provided.', $pendingUser->rejection_reason);
 
-        // Login as rejected user should fail with rejected explanation
         $loginResponse = $this->postJson('/api/login', [
             'email' => $pendingUser->email,
             'password' => 'password',
@@ -299,13 +286,11 @@ class AuthorizedStaffTest extends TestCase
         $sigPath = 'signatures/test_signature.png';
         Storage::disk('local')->put($sigPath, 'fake-png-data');
 
-        /** @var User $staff */
         $staff = User::factory()->create([
             'role' => 'authorized_staff',
             'signature_path' => $sigPath,
         ]);
 
-        /** @var User $admin */
         $admin = User::factory()->create(['role' => 'admin']);
 
         $response = $this->actingAs($admin)->get("/api/users/{$staff->id}/signature");

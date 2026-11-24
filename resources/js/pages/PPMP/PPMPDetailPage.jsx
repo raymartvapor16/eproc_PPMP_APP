@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { StatusBadge, formatCurrency, formatDate } from '../../components/UI/StatusBadge';
 import { PPMPPrintView } from '../../components/PPMP/PPMPPrintView';
 import { PPMPAttachmentListView } from '../../components/PPMP/PPMPAttachmentListView';
+import { PPMPMarketScopingView } from '../../components/PPMP/PPMPMarketScopingView';
 import { APPPrintView } from '../../components/PPMP/APPPrintView';
 import { PPMPRoutingPrintView } from '../../components/PPMP/PPMPRoutingPrintView';
 import { ProcurementPlanTable } from '../../components/PPMP/ProcurementPlanTable';
@@ -12,7 +13,9 @@ import { AttachmentUploader } from '../../components/Attachments/AttachmentUploa
 import { RoutingTimeline } from '../../components/RoutingTimeline/RoutingTimeline';
 import { ReviewPanel } from '../../components/Review/ReviewPanel';
 import { ReviewerAssignmentModal } from '../../components/PPMP/ReviewerAssignmentModal';
+import { AdminEditStatusModal } from '../../components/PPMP/AdminEditStatusModal';
 import { UserAvatar } from '../../components/UI/UserAvatar';
+import { ResponsivePrintDocument } from '../../components/UI/ResponsivePrintDocument';
 import { PimsPublishModal } from '../../components/Monitoring/PimsPublishModal';
 import { GeneratePurchaseRequestModal } from '../../components/PIMS/GeneratePurchaseRequestModal';
 import { PurchaseRequestPrintView } from '../../components/PIMS/PurchaseRequestPrintView';
@@ -42,6 +45,7 @@ import {
     Loader2,
     FileSpreadsheet,
     FileText,
+    ClipboardCheck,
     FileUp,
     FileCheck,
     Lock,
@@ -75,7 +79,6 @@ const getRoleDisplayName = (role) => {
 const getLatestSuspension = (ppmp, isSuspended) => {
     if (!isSuspended || !ppmp) return null;
 
-    // 1. Backend calculated attribute
     if (ppmp.latest_return_remarks && ppmp.latest_return_remarks.remarks) {
         return {
             remarks: ppmp.latest_return_remarks.remarks,
@@ -85,7 +88,6 @@ const getLatestSuspension = (ppmp, isSuspended) => {
         };
     }
 
-    // 2. Reviews relation
     const returnReviews = (ppmp.reviews || [])
         .filter(r => r.action === 'return' || (r.status_after && r.status_after.includes('RETURNED')))
         .sort((a, b) => new Date(b.acted_at || b.created_at || 0) - new Date(a.acted_at || a.created_at || 0));
@@ -100,7 +102,6 @@ const getLatestSuspension = (ppmp, isSuspended) => {
         };
     }
 
-    // 3. Routes relation
     const returnRoutes = (ppmp.routes || [])
         .filter(r => (r.action && r.action.includes('RETURNED')) || (r.status && r.status.includes('RETURNED')))
         .sort((a, b) => new Date(b.acted_at || b.submitted_at || b.created_at || 0) - new Date(a.acted_at || a.submitted_at || a.created_at || 0));
@@ -115,7 +116,6 @@ const getLatestSuspension = (ppmp, isSuspended) => {
         };
     }
 
-    // 4. Status-based fallback
     let fallbackRole = 'Reviewer';
     if (ppmp.status === 'HEAD_RETURNED') fallbackRole = 'Department / Office Head';
     else if (ppmp.status === 'BUDGET_OFFICER_RETURNED') fallbackRole = 'Provincial Budget Officer';
@@ -131,18 +131,13 @@ const getLatestSuspension = (ppmp, isSuspended) => {
     };
 };
 
-/**
- * BaselineDocumentsDropdown:
- * Portal-based dropdown menu for baseline/historical PPMP documents (Old APP, Print PPMP, Old Detailed Specifications).
- * Renders via React Portal directly into document.body with fixed coordinates and z-[9999]
- * to prevent any clipping from parent overflow-hidden or overflow-y-auto containers.
- */
 const BaselineDocumentsDropdown = ({
     histPpmp,
     isAnnualRoot,
     onSelectApp,
     onSelectPrint,
     onSelectAttachmentList,
+    onSelectMarketScoping,
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [coords, setCoords] = useState(null);
@@ -244,7 +239,7 @@ const BaselineDocumentsDropdown = ({
                     </div>
 
                     <div className="py-1">
-                        {/* 1. Old APP / Previous APP */}
+
                         <button
                             type="button"
                             onClick={() => {
@@ -266,7 +261,6 @@ const BaselineDocumentsDropdown = ({
                             </div>
                         </button>
 
-                        {/* 2. Print PPMP */}
                         <button
                             type="button"
                             onClick={() => {
@@ -286,7 +280,6 @@ const BaselineDocumentsDropdown = ({
                             </div>
                         </button>
 
-                        {/* 3. Old Detailed Specifications */}
                         <button
                             type="button"
                             onClick={() => {
@@ -307,6 +300,29 @@ const BaselineDocumentsDropdown = ({
                                 </div>
                             </div>
                         </button>
+
+                        {(histPpmp?.market_scoping || histPpmp?.marketScoping) && onSelectMarketScoping && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsOpen(false);
+                                    onSelectMarketScoping(histPpmp);
+                                }}
+                                className="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-teal-50 hover:text-teal-800 flex items-center gap-2.5 transition cursor-pointer"
+                            >
+                                <div className="w-7 h-7 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
+                                    <ClipboardCheck className="w-3.5 h-3.5" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <div className="font-bold text-slate-900">
+                                        {isAnnualRoot ? 'Old Market Scoping' : 'Previous Market Scoping'}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 font-normal truncate">
+                                        Archived NGPA Market Scoping Checklist
+                                    </div>
+                                </div>
+                            </button>
+                        )}
                     </div>
                 </div>,
                 document.body
@@ -332,22 +348,24 @@ export const PPMPDetailPage = ({
     const [receiving, setReceiving] = useState(false);
     const [isPrintView, setIsPrintView] = useState(false);
     const [isAttachmentListView, setIsAttachmentListView] = useState(false);
+    const [isMarketScopingView, setIsMarketScopingView] = useState(false);
     const [selectedAttachmentItemId, setSelectedAttachmentItemId] = useState(null);
     const [isAppView, setIsAppView] = useState(false);
     const [selectedAppPpmp, setSelectedAppPpmp] = useState(null);
     const [selectedAttachmentListPpmp, setSelectedAttachmentListPpmp] = useState(null);
+    const [selectedMarketScopingPpmp, setSelectedMarketScopingPpmp] = useState(null);
     const [isRoutingPrintView, setIsRoutingPrintView] = useState(false);
     const [isItemsModalOpen, setIsItemsModalOpen] = useState(false);
     const [isItemsModalFullScreen, setIsItemsModalFullScreen] = useState(false);
     const [isDocHeaderCollapsed, setIsDocHeaderCollapsed] = useState(false);
-    const [activeSubTab, setActiveSubTab] = useState('overview'); // overview, attachments, timeline
+    const [activeSubTab, setActiveSubTab] = useState('overview');
     const [isAmendModalOpen, setIsAmendModalOpen] = useState(false);
     const [isAssignReviewerModalOpen, setIsAssignReviewerModalOpen] = useState(false);
-    const [reviewerModalMode, setReviewerModalMode] = useState('submit'); // 'submit' or 'reassign'
+    const [reviewerModalMode, setReviewerModalMode] = useState('submit');
     const [scopePpmpApp, setScopePpmpApp] = useState(true);
     const [scopeAttachmentList, setScopeAttachmentList] = useState(false);
-    const [amendType, setAmendType] = useState('SUPPLEMENTAL'); // SUPPLEMENTAL or AMENDMENT
-    const [supplementalPurpose, setSupplementalPurpose] = useState('CONTINUATION'); // CONTINUATION or OTHER
+    const [amendType, setAmendType] = useState('SUPPLEMENTAL');
+    const [supplementalPurpose, setSupplementalPurpose] = useState('CONTINUATION');
     const [supplementalSpecify, setSupplementalSpecify] = useState('');
     const [amendReason, setAmendReason] = useState('');
     const [amendFile, setAmendFile] = useState(null);
@@ -362,8 +380,141 @@ export const PPMPDetailPage = ({
     const [selectedPrintPpmp, setSelectedPrintPpmp] = useState(null);
     const [selectedRoutingPpmp, setSelectedRoutingPpmp] = useState(null);
     const [isRoutingModalOpen, setIsRoutingModalOpen] = useState(false);
+    const [isEditStatusModalOpen, setIsEditStatusModalOpen] = useState(false);
+    const [isMobileActionsOpen, setIsMobileActionsOpen] = useState(false);
+    const mobileActionsRef = useRef(null);
+    const isAdminUser = ['admin', 'super_admin'].includes(user?.role);
 
-    // PIMS & Purchase Request (PR) states
+    useEffect(() => {
+        if (!isMobileActionsOpen) return;
+        const handleOutside = (e) => {
+            if (mobileActionsRef.current && !mobileActionsRef.current.contains(e.target)) {
+                setIsMobileActionsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleOutside);
+        return () => document.removeEventListener('mousedown', handleOutside);
+    }, [isMobileActionsOpen]);
+
+    const [isEditTrackerModalOpen, setIsEditTrackerModalOpen] = useState(false);
+    const [trackerInput, setTrackerInput] = useState('');
+    const [trackerCheck, setTrackerCheck] = useState({
+        checking: false,
+        available: true,
+        exists: false,
+        message: '',
+        existingPpmp: null,
+    });
+    const [savingTracker, setSavingTracker] = useState(false);
+    const [trackerError, setTrackerError] = useState('');
+
+    useEffect(() => {
+        if (!isEditTrackerModalOpen) return;
+        const cleanVal = String(trackerInput || '').replace(/\s+/g, '').trim().toUpperCase();
+        const currentVal = String(ppmp?.tracking_number || '').replace(/\s+/g, '').trim().toUpperCase();
+
+        if (!cleanVal) {
+            setTrackerCheck({
+                checking: false,
+                available: false,
+                exists: false,
+                message: 'Please enter a valid Tracker No.',
+                existingPpmp: null,
+            });
+            return;
+        }
+
+        if (cleanVal === currentVal) {
+            setTrackerCheck({
+                checking: false,
+                available: true,
+                exists: false,
+                message: 'This is the current assigned Tracker No.',
+                existingPpmp: null,
+            });
+            return;
+        }
+
+        let cancelled = false;
+        setTrackerCheck(prev => ({ ...prev, checking: true, message: 'Checking tracker number...' }));
+
+        const timer = setTimeout(async () => {
+            try {
+                const res = await ppmpService.checkTrackerAvailability({
+                    tracking_number: cleanVal,
+                    exclude_uuid: ppmp?.uuid,
+                });
+                if (cancelled) return;
+                setTrackerCheck({
+                    checking: false,
+                    available: Boolean(res.data?.available),
+                    exists: Boolean(res.data?.exists),
+                    message: res.data?.message || '',
+                    existingPpmp: res.data?.existing_ppmp || null,
+                });
+            } catch (err) {
+                if (cancelled) return;
+                setTrackerCheck({
+                    checking: false,
+                    available: true,
+                    exists: false,
+                    message: '',
+                    existingPpmp: null,
+                });
+            }
+        }, 300);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [isEditTrackerModalOpen, trackerInput, ppmp?.tracking_number, ppmp?.uuid]);
+
+    const handleOpenEditTrackerModal = () => {
+        setTrackerInput(ppmp?.tracking_number || ppmp?.ppmp_number || '');
+        setTrackerError('');
+        setTrackerCheck({
+            checking: false,
+            available: true,
+            exists: false,
+            message: 'This is the current assigned Tracker No.',
+            existingPpmp: null,
+        });
+        setIsEditTrackerModalOpen(true);
+    };
+
+    const handleSaveTrackerNumber = async (e) => {
+        e.preventDefault();
+        setTrackerError('');
+        const cleanVal = String(trackerInput || '').replace(/\s+/g, '').trim().toUpperCase();
+        if (!cleanVal) {
+            setTrackerError('Tracker No. cannot be empty.');
+            return;
+        }
+        if (trackerCheck.exists) {
+            setTrackerError(trackerCheck.message || `Tracker No. "${cleanVal}" already exists. Duplicate tracker numbers are not allowed.`);
+            return;
+        }
+
+        setSavingTracker(true);
+        try {
+            const res = await ppmpService.updateTrackingNumber(ppmp.uuid, { tracking_number: cleanVal });
+            if (res.data?.ppmp) {
+                setLocalPpmp(res.data.ppmp);
+            }
+            setIsEditTrackerModalOpen(false);
+            if (onReload) await onReload();
+        } catch (err) {
+            setTrackerError(
+                err.response?.data?.errors?.tracking_number?.[0] ||
+                err.response?.data?.message ||
+                'Failed to update Tracker No.'
+            );
+        } finally {
+            setSavingTracker(false);
+        }
+    };
+
     const { isPimsActive } = usePimsStatus();
     const [isPimsPublishModalOpen, setIsPimsPublishModalOpen] = useState(false);
     const [isGeneratePrModalOpen, setIsGeneratePrModalOpen] = useState(false);
@@ -371,7 +522,6 @@ export const PPMPDetailPage = ({
     const [selectedPrForPrint, setSelectedPrForPrint] = useState(null);
     const [existingPr, setExistingPr] = useState(null);
 
-    // Reviewer Cell Comments (Google Sheets style commenting and compliance tracking)
     const [cellComments, setCellComments] = useState(ppmp?.cell_comments || ppmp?.cellComments || []);
     const [activeHeaderCellKey, setActiveHeaderCellKey] = useState(null);
     const [isCompliedCommentsCollapsed, setIsCompliedCommentsCollapsed] = useState(true);
@@ -408,14 +558,29 @@ export const PPMPDetailPage = ({
 
     const handleAddCellComment = async (commentData) => {
         try {
-            const res = await ppmpService.addCellComment(ppmp.uuid, commentData);
+            const payload = {
+                ...commentData,
+                field_key: String(commentData?.field_key || '').trim().slice(0, 60),
+                field_label: commentData?.field_label
+                    ? String(commentData.field_label).trim().slice(0, 100)
+                    : null,
+                cell_value:
+                    commentData?.cell_value !== null && commentData?.cell_value !== undefined
+                        ? String(commentData.cell_value)
+                        : '',
+            };
+            const res = await ppmpService.addCellComment(ppmp.uuid, payload);
             const newComment = res.data?.data;
             if (newComment) {
                 setCellComments(prev => [newComment, ...prev]);
             }
             return res.data;
         } catch (err) {
-            alert(err.response?.data?.message || 'Failed to post cell comment.');
+            const validationErrors = err.response?.data?.errors;
+            const firstError = validationErrors
+                ? Object.values(validationErrors).flat()[0]
+                : null;
+            alert(firstError || err.response?.data?.message || 'Failed to post cell comment.');
             throw err;
         }
     };
@@ -493,7 +658,6 @@ export const PPMPDetailPage = ({
         }));
     };
 
-    // Array of all historical ancestor PPMPs: uses ppmp.history if returned, otherwise walks parent chain or falls back to [ppmp.parent]
     const historicalPpmps = React.useMemo(() => {
         if (Array.isArray(ppmp?.history) && ppmp.history.length > 0) {
             return ppmp.history;
@@ -507,9 +671,8 @@ export const PPMPDetailPage = ({
         return list;
     }, [ppmp]);
 
-    // Find the Request Letter for Supplemental / Amendment (from current PPMP or parent/ancestor PPMPs)
     const requestLetterInfo = React.useMemo(() => {
-        // Collect candidate PPMPs: active ppmp followed by ancestors
+
         const candidates = [ppmp, ...historicalPpmps].filter(Boolean);
 
         for (const candidate of candidates) {
@@ -517,16 +680,13 @@ export const PPMPDetailPage = ({
             const hasAmendStatus = Boolean(candidate.amendment_status || candidate.requested_amendment_type || candidate.amendment_type);
             if (!hasReason && !hasAmendStatus) continue;
 
-          
             const getAttachmentFrom = (c) => {
                 const atts = c.attachments || [];
                 if (atts.length === 0) return null;
 
-                // Priority 1: Explicitly tagged REQUEST_LETTER
                 let match = atts.find(a => a.attachment_type === 'REQUEST_LETTER');
                 if (match) return match;
 
-                // Priority 2: Mentioned in route remarks
                 const allRoutes = [...(c.routes || []), ...(candidate.routes || [])];
                 const reqRoute = allRoutes.find(r => r.remarks && r.remarks.includes('Attached Letter:'));
                 if (reqRoute && reqRoute.remarks) {
@@ -538,7 +698,6 @@ export const PPMPDetailPage = ({
                     }
                 }
 
-                // Priority 3: Latest PDF
                 const pdfs = atts.filter(a => a.mime_type === 'application/pdf' || a.original_filename?.toLowerCase().endsWith('.pdf'));
                 if (pdfs.length > 0) return pdfs[pdfs.length - 1];
 
@@ -549,7 +708,7 @@ export const PPMPDetailPage = ({
             let attSourcePpmp = candidate;
 
             if (!letterAtt) {
-                // If current candidate has no attachments, look through ancestor candidates
+
                 for (const otherCandidate of candidates) {
                     const found = getAttachmentFrom(otherCandidate);
                     if (found) {
@@ -632,8 +791,33 @@ export const PPMPDetailPage = ({
         };
     }, [ppmp, oldAppData]);
 
+    const isContinuationSupplemental = Boolean(
+        ppmp?.is_continuation ||
+        (ppmp?.amendment_type === 'SUPPLEMENTAL' && ppmp?.supplemental_purpose === 'CONTINUATION')
+    );
+
+    const hasOldParentMarketScoping = Boolean(
+        ppmp?.parent?.market_scoping || ppmp?.parent?.marketScoping
+    );
+
+    const hasOldParentAttachmentList = Boolean(
+        ppmp?.parent?.attachment_list_data ||
+        (Array.isArray(ppmp?.parent?.attachment_lists) && ppmp.parent.attachment_lists.length > 0)
+    );
+
+    const hasMarketScopingForm = isContinuationSupplemental
+        ? Boolean(ppmp?.market_scoping || ppmp?.marketScoping)
+        : Boolean(
+            ppmp?.market_scoping ||
+            ppmp?.marketScoping ||
+            ppmp?.parent?.market_scoping ||
+            ppmp?.parent?.marketScoping ||
+            ppmp?.pre_submission_checks?.market_scoping_generated
+        );
+
     const hasMarketScoping = Boolean(
-        ppmp?.pre_submission_checks?.market_scoping_attached ??
+        hasMarketScopingForm ||
+        ppmp?.pre_submission_checks?.market_scoping_attached ||
         (ppmp?.attachments || []).some(a =>
             (a.attachment_type === 'MARKET_SCOPING' ||
              (a.file_name && /market.*scoping|scoping/i.test(a.file_name))) &&
@@ -662,13 +846,12 @@ export const PPMPDetailPage = ({
     const isOppmoReviewer = user?.role === 'oppmo' || ['admin', 'super_admin'].includes(user?.role);
     const canOppmoGenerateApp = isOppmoReviewer && ppmp?.status === 'OPPMO_REVIEW' && !isAttachmentOnly;
 
-    // View APP is visible:
-    // 1) After the OPPMO Reviewer has approved the PPMP and status is READY_TO_PRINT (or HEAD_PENDING)
-    // 2) Or when scope is ATTACHMENT_LIST, the existing approved Annual Procurement Plan (APP) remains valid and unchanged
     const isOppmoAppApproved = Boolean(
         hasApp &&
         (
-            ['HEAD_PENDING', 'READY_TO_PRINT'].includes(ppmp?.status) ||
+            ppmp?.oppmo_approved_at ||
+            ppmp?.app_data?.is_oppmo_approved ||
+            ['HEAD_PENDING', 'BUDGET_HEAD_REVIEW', 'BUDGET_HEAD_RETURNED', 'PACCO_HEAD_REVIEW', 'PACCO_HEAD_RETURNED', 'OPPMO_HEAD_REVIEW', 'OPPMO_HEAD_RETURNED', 'APP_PREPARER_REVIEW', 'APP_PREPARER_RETURNED', 'GOVERNOR_REVIEW', 'GOVERNOR_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status) ||
             isAttachmentOnly
         )
     );
@@ -677,24 +860,31 @@ export const PPMPDetailPage = ({
     const isCreator = ppmp.created_by === user.id;
     const isReadyToPrint = ppmp.status === 'READY_TO_PRINT';
 
-    // Reviewer edit permission
+    const isTargetReviewOfficeHead = user?.role === 'head' && ['BUDGET_HEAD_REVIEW', 'PACCO_HEAD_REVIEW', 'OPPMO_HEAD_REVIEW'].includes(ppmp?.status) && (!ppmp?.current_stage_office_id || Number(user?.office_id) === Number(ppmp?.current_stage_office_id));
+    const isTargetAppSignatory = ['APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW'].includes(ppmp?.status) && (!ppmp?.current_stage_user_id || Number(user?.id) === Number(ppmp?.current_stage_user_id));
+
     const isReviewerEditable = (
         ((user.role === 'head' || user.role === 'authorized_staff') && ['HEAD_PENDING', 'HEAD_APPROVED'].includes(ppmp.status) && user.office_id === ppmp.office_id) ||
+        isTargetReviewOfficeHead ||
+        isTargetAppSignatory ||
         (user.role === 'budget_officer' && ppmp.status === 'BUDGET_OFFICER_REVIEW' && (!ppmp.budget_reviewer_id || ppmp.budget_reviewer_id === user.id)) ||
         (user.role === 'pacco' && ppmp.status === 'PACCO_REVIEW' && (!ppmp.budget_reviewer_id || ppmp.budget_reviewer_id === user.id)) ||
         (user.role === 'oppmo' && ppmp.status === 'OPPMO_REVIEW' && (!ppmp.oppmo_reviewer_id || ppmp.oppmo_reviewer_id === user.id)) ||
         (user.role === 'twg' && ppmp.status === 'TWG_REVIEW' && (!ppmp.twg_reviewer_id || ppmp.twg_reviewer_id === user.id))
     );
 
-    // End user submission permissions:
-    // Flow: TWG -> (Budget Officer or PACCO) -> OPPMO (generate/regenerate APP) -> Ready to Print
     const canSubmitToHead = false;
     const canSubmitForReview = isCreator && (
         ppmp.status === 'DRAFT' ||
         ppmp.status === 'HEAD_RETURNED' ||
         ppmp.status === 'BUDGET_OFFICER_RETURNED' ||
+        ppmp.status === 'BUDGET_HEAD_RETURNED' ||
         ppmp.status === 'PACCO_RETURNED' ||
+        ppmp.status === 'PACCO_HEAD_RETURNED' ||
         ppmp.status === 'OPPMO_RETURNED' ||
+        ppmp.status === 'OPPMO_HEAD_RETURNED' ||
+        ppmp.status === 'APP_PREPARER_RETURNED' ||
+        ppmp.status === 'GOVERNOR_RETURNED' ||
         ppmp.status === 'TWG_RETURNED' ||
         ppmp.status === 'HEAD_APPROVED'
     );
@@ -703,20 +893,20 @@ export const PPMPDetailPage = ({
         isTwgSkipped ||
         ppmp?.twg_approved_at ||
         ppmp?.signatures?.some(s => s.role === 'twg') ||
-        ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'READY_TO_PRINT', 'HEAD_APPROVED'].includes(ppmp?.status)
+        ['BUDGET_OFFICER_REVIEW', 'BUDGET_HEAD_REVIEW', 'PACCO_REVIEW', 'PACCO_HEAD_REVIEW', 'OPPMO_REVIEW', 'OPPMO_HEAD_REVIEW', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW', 'READY_TO_PRINT', 'HEAD_APPROVED'].includes(ppmp?.status)
     );
 
     const isBudgetApproved = Boolean(
         ppmp?.budget_approved_at ||
         ppmp?.pacco_approved_at ||
         ppmp?.signatures?.some(s => ['budget_officer', 'pacco'].includes(s.role)) ||
-        ['OPPMO_REVIEW', 'READY_TO_PRINT', 'HEAD_APPROVED'].includes(ppmp?.status)
+        ['BUDGET_HEAD_REVIEW', 'PACCO_HEAD_REVIEW', 'OPPMO_REVIEW', 'OPPMO_HEAD_REVIEW', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW', 'READY_TO_PRINT', 'HEAD_APPROVED'].includes(ppmp?.status)
     );
 
     const isOppmoApproved = Boolean(
         ppmp?.oppmo_approved_at ||
         ppmp?.signatures?.some(s => s.role === 'oppmo') ||
-        ['READY_TO_PRINT', 'HEAD_APPROVED'].includes(ppmp?.status)
+        ['BUDGET_HEAD_REVIEW', 'PACCO_HEAD_REVIEW', 'OPPMO_HEAD_REVIEW', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW', 'READY_TO_PRINT', 'HEAD_APPROVED'].includes(ppmp?.status)
     );
 
     const areAllReviewersApproved = Boolean(isTwgApproved && isBudgetApproved && isOppmoApproved);
@@ -816,25 +1006,23 @@ export const PPMPDetailPage = ({
         );
     }
 
-
-
     const isSuspended = ['HEAD_RETURNED', 'BUDGET_OFFICER_RETURNED', 'PACCO_RETURNED', 'OPPMO_RETURNED', 'TWG_RETURNED'].includes(ppmp?.status) || (typeof ppmp?.status === 'string' && ppmp.status.endsWith('_RETURNED'));
     const latestSuspension = getLatestSuspension(ppmp, isSuspended);
 
-    const isReviewerRole = ['head', 'authorized_staff', 'budget_officer', 'pacco', 'oppmo', 'twg', 'admin', 'super_admin'].includes(user?.role);
-    const isUnderReviewStage = ['HEAD_PENDING', 'BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW'].includes(ppmp?.status);
+    const isReviewerRole = ['end_user', 'head', 'authorized_staff', 'budget_officer', 'pacco', 'oppmo', 'twg', 'admin', 'super_admin'].includes(user?.role);
+    const isUnderReviewStage = ['HEAD_PENDING', 'BUDGET_OFFICER_REVIEW', 'BUDGET_HEAD_REVIEW', 'PACCO_REVIEW', 'PACCO_HEAD_REVIEW', 'OPPMO_REVIEW', 'OPPMO_HEAD_REVIEW', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW', 'TWG_REVIEW'].includes(ppmp?.status);
     const isAssignedReviewerForStage = (
         ['admin', 'super_admin'].includes(user?.role) ||
         (user?.role === 'twg' && (!ppmp?.twg_reviewer_id || ppmp?.twg_reviewer_id === user?.id)) ||
         (['budget_officer', 'pacco'].includes(user?.role) && (!ppmp?.budget_reviewer_id || ppmp?.budget_reviewer_id === user?.id)) ||
         (user?.role === 'oppmo' && (!ppmp?.oppmo_reviewer_id || ppmp?.oppmo_reviewer_id === user?.id)) ||
-        ((user?.role === 'head' || user?.role === 'authorized_staff') && (user?.office_id === ppmp?.office_id || !ppmp?.office_id))
+        isTargetReviewOfficeHead ||
+        isTargetAppSignatory ||
+        ((user?.role === 'head' || user?.role === 'authorized_staff') && ['HEAD_PENDING', 'HEAD_APPROVED'].includes(ppmp?.status) && (user?.office_id === ppmp?.office_id || !ppmp?.office_id))
     );
     const canComment = isReviewerRole && isAssignedReviewerForStage && (isUnderReviewStage || ['admin', 'super_admin'].includes(user?.role));
     const canComply = isSuspended && (isCreator || user?.office_id === ppmp?.office_id || ['admin', 'super_admin'].includes(user?.role));
 
-    // End-users must NOT see reviewer cell comments or compliance tracker until the PPMP is officially suspended/returned,
-    // BUT comments that have already been complied with remain visible so end-users can see what was complied after submit to the reviewer.
     const visibleCellComments = (isReviewerRole || isSuspended)
         ? (cellComments || [])
         : (cellComments || []).filter(c => c.status === 'complied');
@@ -842,7 +1030,6 @@ export const PPMPDetailPage = ({
     const pendingCellComments = visibleCellComments.filter(c => c.status === 'pending');
     const compliedCellComments = visibleCellComments.filter(c => c.status === 'complied');
 
-    // Detailed Specifications cell comments / remarks
     const detailedSpecComments = (visibleCellComments || []).filter(c => {
         const key = c.field_key || c.fieldKey || '';
         const label = (c.field_label || c.fieldLabel || '').toLowerCase();
@@ -850,6 +1037,50 @@ export const PPMPDetailPage = ({
     });
     const detailedSpecPendingCount = detailedSpecComments.filter(c => c.status === 'pending').length;
     const detailedSpecCompliedCount = detailedSpecComments.filter(c => c.status === 'complied').length;
+
+    const marketScopingComments = visibleCellComments.filter((c) => {
+        const key = (c.field_key || c.fieldKey || '').toLowerCase();
+        const label = (c.field_label || c.fieldLabel || '').toLowerCase();
+        return key.startsWith('ms_') || label.includes('market scoping');
+    });
+    const marketScopingPendingCount = marketScopingComments.filter((c) => c.status === 'pending').length;
+    const marketScopingCompliedCount = marketScopingComments.filter((c) => c.status === 'complied').length;
+
+    if (selectedMarketScopingPpmp) {
+        return (
+            <PPMPMarketScopingView
+                ppmp={selectedMarketScopingPpmp}
+                user={user}
+                canEdit={false}
+                currentUser={user}
+                onBack={() => setSelectedMarketScopingPpmp(null)}
+            />
+        );
+    }
+
+    if (isMarketScopingView) {
+        return (
+            <PPMPMarketScopingView
+                ppmp={ppmp}
+                user={user}
+                canEdit={canEdit}
+                cellComments={visibleCellComments}
+                canComment={canComment}
+                canComply={canComply}
+                currentUser={user}
+                onAddCellComment={handleAddCellComment}
+                onDeleteCellComment={handleDeleteCellComment}
+                onComplyCellComment={handleComplyCellComment}
+                onUncomplyCellComment={handleUncomplyCellComment}
+                onUpdateCellValue={handleUpdateCellValue}
+                onBack={() => setIsMarketScopingView(false)}
+                onSaved={(updatedPpmp) => {
+                    if (updatedPpmp) setLocalPpmp(updatedPpmp);
+                    if (onReload) onReload();
+                }}
+            />
+        );
+    }
 
     if (isAttachmentListView) {
         return (
@@ -879,8 +1110,6 @@ export const PPMPDetailPage = ({
         );
     }
 
-    // STRICT RULE: Only the end-user (creator) can attach PDF/pictures. Reviewers cannot attach files.
-    // Allowed when in DRAFT, before formal review (HEAD_PENDING, HEAD_APPROVED), or when suspended/returned
     const canUploadAttachment = (isCreator && [
         'DRAFT',
         'HEAD_PENDING',
@@ -939,15 +1168,12 @@ export const PPMPDetailPage = ({
         }
     };
 
-
-
     const handleSubmitForReview = async () => {
         if (isAwaitingReceive(ppmp, user)) {
             alert('Please click "Receive Document" to formally acknowledge receipt before submitting for review.');
             return;
         }
 
-        // Enforce full compliance with reviewer cell comments before resubmission
         if (pendingCellComments.length > 0) {
             alert(
                 `Compliance Incomplete (${pendingCellComments.length} unresolved finding${pendingCellComments.length > 1 ? 's' : ''}):\n\n` +
@@ -957,13 +1183,12 @@ export const PPMPDetailPage = ({
             return;
         }
 
-        // Validate Pre-Submission Requirements before submitting to the first reviewer
         const missingRequirements = [];
         if (!preSubmissionStatus.hasAttachmentList) {
             missingRequirements.push('• Detailed Specifications must already be generated.');
         }
         if (!preSubmissionStatus.hasMarketScoping) {
-            missingRequirements.push('• Market Scoping PDF document must already be uploaded and attached.');
+            missingRequirements.push('• Market Scoping Checklist must already be created.');
         }
 
         if (missingRequirements.length > 0) {
@@ -971,7 +1196,7 @@ export const PPMPDetailPage = ({
                 'Submission Incomplete:\n\n' +
                 'Before submitting this PPMP to the reviewer, the following requirements must be completed:\n\n' +
                 missingRequirements.join('\n') +
-                '\n\nPlease generate the required Detailed Specifications and attach the Market Scoping PDF before submitting.'
+                '\n\nPlease create the required Detailed Specifications and Market Scoping Checklist before submitting.'
             );
             return;
         }
@@ -999,8 +1224,6 @@ export const PPMPDetailPage = ({
             }
         }
 
-        // When resubmitting after suspension / comments compliance:
-        // Reviewers are already designated, so automatically resubmit without popping up the selection modal.
         if (isSuspended) {
             const targetRoleName = getReviewTargetName(ppmp.status);
             const confirmMsg = ppmp.status === 'HEAD_RETURNED'
@@ -1025,7 +1248,6 @@ export const PPMPDetailPage = ({
             return;
         }
 
-        // For initial review submission (DRAFT / HEAD_APPROVED): Pop up reviewer selection modal first (TWG -> Budget/PACCO -> OPPMO)
         setReviewerModalMode('submit');
         setIsAssignReviewerModalOpen(true);
     };
@@ -1039,7 +1261,6 @@ export const PPMPDetailPage = ({
         const filename = String(file.name || '').toLowerCase();
         const isPdfExt = filename.endsWith('.pdf');
 
-        // 1. Strict extension check: reject non-PDFs (like .url, .exe, .bat, etc.)
         if (!isPdfExt) {
             setAmendFile(null);
             if (inputElement) inputElement.value = '';
@@ -1047,7 +1268,6 @@ export const PPMPDetailPage = ({
             return;
         }
 
-        // 2. Reject suspicious disguised multi-extensions (e.g. file.php.pdf, file.exe.pdf, file.url.pdf)
         if (/\.(php|exe|bat|cmd|sh|vbs|js|jar|py|pl|url|lnk)\.pdf$/i.test(filename)) {
             setAmendFile(null);
             if (inputElement) inputElement.value = '';
@@ -1055,7 +1275,6 @@ export const PPMPDetailPage = ({
             return;
         }
 
-        // 3. File size check (5MB max)
         if (file.size > 5 * 1024 * 1024) {
             setAmendFile(null);
             if (inputElement) inputElement.value = '';
@@ -1063,7 +1282,6 @@ export const PPMPDetailPage = ({
             return;
         }
 
-        // 4. Client-side Magic Byte Inspection (%PDF-)
         const reader = new FileReader();
         reader.onloadend = (e) => {
             try {
@@ -1075,7 +1293,7 @@ export const PPMPDetailPage = ({
                     setAmendError(`Security Violation: "${file.name}" does not contain a genuine PDF file signature (%PDF- header). Upload rejected.`);
                     return;
                 }
-                // Validation passed!
+
                 setAmendError('');
                 setAmendFile(file);
             } catch {
@@ -1111,11 +1329,6 @@ export const PPMPDetailPage = ({
             return;
         }
 
-        if (scopePpmpApp && amendType === 'SUPPLEMENTAL' && supplementalPurpose === 'OTHER' && !supplementalSpecify.trim()) {
-            setAmendError('Please specify the details/reason for the Other supplemental request.');
-            return;
-        }
-
         if (!amendReason.trim()) {
             setAmendError('Please provide a valid justification or reason for this request.');
             return;
@@ -1144,7 +1357,7 @@ export const PPMPDetailPage = ({
         if (scopePpmpApp && amendType === 'SUPPLEMENTAL') {
             formData.append('supplemental_purpose', supplementalPurpose);
             if (supplementalPurpose === 'OTHER') {
-                formData.append('supplemental_specify', supplementalSpecify.trim());
+                formData.append('supplemental_specify', amendReason.trim().slice(0, 1000));
             }
         }
         formData.append('reason', amendReason.trim());
@@ -1181,7 +1394,7 @@ export const PPMPDetailPage = ({
             const res = await ppmpService.approveAmendment(ppmp.uuid);
             alert(res.data.message || `${typeLabel} request approved. New PPMP created in DRAFT.`);
             if (res.data?.ppmp?.uuid && onReload) {
-                // If onReload accepts uuid, or reload caller
+
                 onReload(res.data.ppmp.uuid);
             } else if (onReload) {
                 onReload();
@@ -1217,32 +1430,32 @@ export const PPMPDetailPage = ({
     };
 
     return (
-        <div className="space-y-6">
-            {/* Action Bar */}
-            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
-                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-                    <div className="flex items-center gap-3 min-w-0">
+        <div className="space-y-4 sm:space-y-6">
+
+            <div className="bg-white p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs space-y-3">
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 sm:gap-4">
+                    <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0">
                     <button
                         onClick={onBack}
-                        className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition shrink-0"
+                        className="p-1.5 sm:p-2 mt-0.5 sm:mt-0 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition shrink-0"
                         title="Back to PPMP List"
                     >
-                        <ArrowLeft className="w-5 h-5" />
+                        <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
                     </button>
-                    <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
-                                <span>
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                            <h1 className="text-sm sm:text-lg font-black text-slate-900 tracking-tight flex items-center gap-1.5 sm:gap-2 flex-wrap leading-snug">
+                                <span className="break-all sm:break-normal">
                                     {ppmp.ppmp_number && Number(ppmp.ppmp_number) > 0
                                         ? `PPMP No. ${ppmp.ppmp_number}`
                                         : (ppmp.tracking_number ? `PPMP ${ppmp.tracking_number}` : 'PPMP Plan')}
                                 </span>
                                 {!ppmp.parent_id ? (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold tracking-wider uppercase border bg-blue-100 text-blue-800 border-blue-300 shadow-2xs">
+                                    <span className="inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-extrabold tracking-wider uppercase border bg-blue-100 text-blue-800 border-blue-300 shadow-2xs shrink-0">
                                         Annual
                                     </span>
                                 ) : (
-                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-extrabold tracking-wider uppercase border shadow-2xs ${ppmp.amendment_type === 'AMENDMENT'
+                                    <span className={`inline-flex items-center px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-extrabold tracking-wider uppercase border shadow-2xs shrink-0 ${ppmp.amendment_type === 'AMENDMENT'
                                             ? 'bg-purple-100 text-purple-800 border-purple-300'
                                             : 'bg-emerald-100 text-emerald-800 border-emerald-300'
                                         }`}>
@@ -1250,25 +1463,261 @@ export const PPMPDetailPage = ({
                                     </span>
                                 )}
                             </h1>
-                            <span className="font-mono text-xs font-bold px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg border border-slate-300 shadow-2xs" title="Official Tracker Number">
-                                Tracker No.: <span className="text-slate-900 font-extrabold">{ppmp.tracking_number || ppmp.ppmp_number || '—'}</span>
-                            </span>
-                            <StatusBadge status={ppmp.status} />
+                            {canEdit ? (
+                                <button
+                                    type="button"
+                                    onClick={handleOpenEditTrackerModal}
+                                    className="inline-flex items-center gap-1 font-mono text-[11px] sm:text-xs font-bold px-2 sm:px-2.5 py-0.5 sm:py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-800 rounded-md sm:rounded-lg border border-slate-300 hover:border-blue-300 shadow-2xs transition cursor-pointer group max-w-full"
+                                    title="Click to edit Tracker Number"
+                                >
+                                    <span className="truncate">
+                                        Tracker No.: <span className="text-slate-900 group-hover:text-blue-900 font-extrabold">{ppmp.tracking_number || ppmp.ppmp_number || '—'}</span>
+                                    </span>
+                                    <Edit3 className="w-3 h-3 text-slate-400 group-hover:text-blue-600 transition shrink-0" />
+                                </button>
+                            ) : (
+                                <span className="font-mono text-[11px] sm:text-xs font-bold px-2 sm:px-2.5 py-0.5 sm:py-1 bg-slate-100 text-slate-700 rounded-md sm:rounded-lg border border-slate-300 shadow-2xs max-w-full truncate" title="Official Tracker Number">
+                                    Tracker No.: <span className="text-slate-900 font-extrabold">{ppmp.tracking_number || ppmp.ppmp_number || '—'}</span>
+                                </span>
+                            )}
+                            <StatusBadge
+                                status={ppmp.status}
+                                onEditStatus={isAdminUser ? () => setIsEditStatusModalOpen(true) : null}
+                            />
+                            {isAdminUser && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEditStatusModalOpen(true)}
+                                    className="inline-flex items-center gap-1 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-md sm:rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-[11px] sm:text-xs font-bold transition shadow-2xs cursor-pointer"
+                                    title="Change or override PPMP workflow status"
+                                >
+                                    <Edit3 className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-slate-600" />
+                                    <span>Edit Status</span>
+                                </button>
+                            )}
                             {ppmp.amendment_status === 'PENDING_APPROVAL' && (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border bg-amber-100 text-amber-900 border-amber-300 animate-pulse">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-bold border bg-amber-100 text-amber-900 border-amber-300 animate-pulse">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-600 shrink-0" />
                                     Pending {(ppmp.requested_amendment_type || ppmp.amendment_type) === 'SUPPLEMENTAL' ? 'Supplemental' : 'Amendment'} Approval
                                 </span>
                             )}
                         </div>
-                        <p className="text-xs text-slate-500 font-medium truncate max-w-xl mt-1" title={ppmp.title}>
+                        <p className="text-[11px] sm:text-xs text-slate-500 font-medium line-clamp-2 sm:truncate max-w-xl mt-1" title={ppmp.title}>
                             {ppmp.title}
                         </p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap xl:justify-end shrink-0">
-                    {/* Explicit Receive Document Button if user hasn't received it yet */}
+                {(() => {
+                    const mobileOptions = [];
+                    if (isAwaitingReceive(ppmp, user)) {
+                        mobileOptions.push({
+                            key: 'receive',
+                            label: receiving ? 'Receiving...' : 'Receive Document',
+                            sublabel: 'Acknowledge formal receipt in your queue',
+                            icon: receiving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Inbox className="w-4 h-4" />,
+                            iconBg: 'bg-emerald-100 text-emerald-700',
+                            disabled: receiving,
+                            onClick: handleReceiveDocument,
+                        });
+                    }
+                    if (canOppmoGenerateApp) {
+                        mobileOptions.push({
+                            key: 'oppmo-app',
+                            label: ppmp?.app_data?.needs_regeneration ? 'Regenerate APP' : (hasApp ? 'View / Edit APP' : 'Generate APP'),
+                            sublabel: 'Annual Procurement Plan workspace',
+                            icon: <FileText className="w-4 h-4" />,
+                            iconBg: ppmp?.app_data?.needs_regeneration ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700',
+                            onClick: () => setIsAppView(true),
+                        });
+                    }
+                    if (isReadyToPrint) {
+                        if (ppmp.amendment_status !== 'PENDING_APPROVAL' && user?.role === 'end_user' && isCreator && !(Array.isArray(ppmp.children) && ppmp.children.length > 0)) {
+                            mobileOptions.push({
+                                key: 'amend',
+                                label: 'Request Supplemental / Amend',
+                                sublabel: 'Submit a revision or supplemental request',
+                                icon: <RefreshCw className="w-4 h-4" />,
+                                iconBg: 'bg-amber-100 text-amber-700',
+                                onClick: handleOpenAmendModal,
+                            });
+                        }
+                        mobileOptions.push({
+                            key: 'print-ppmp',
+                            label: 'Print PPMP',
+                            sublabel: 'Official PPMP printable layout',
+                            icon: <Printer className="w-4 h-4" />,
+                            iconBg: 'bg-emerald-100 text-emerald-700',
+                            onClick: () => setIsPrintView(true),
+                        });
+                        if (canViewApprovedApp) {
+                            mobileOptions.push({
+                                key: 'print-app',
+                                label: 'Print APP',
+                                sublabel: 'Official Annual Procurement Plan',
+                                icon: <Printer className="w-4 h-4" />,
+                                iconBg: 'bg-blue-100 text-blue-700',
+                                onClick: () => setIsAppView(true),
+                            });
+                        }
+                        if (hasOldApp) {
+                            mobileOptions.push({
+                                key: 'old-app',
+                                label: 'Old APP',
+                                sublabel: 'Previous APP baseline before revision',
+                                icon: <History className="w-4 h-4" />,
+                                iconBg: 'bg-indigo-100 text-indigo-700',
+                                onClick: () => setSelectedAppPpmp(oldAppPpmp),
+                            });
+                        }
+                        if (hasAttachmentList) {
+                            mobileOptions.push({
+                                key: 'print-specs',
+                                label: procurementItems.length > 1 ? `Print Specifications (${procurementItems.length})` : 'Print Specifications',
+                                sublabel: 'Detailed item specifications form',
+                                icon: <Printer className="w-4 h-4" />,
+                                iconBg: 'bg-purple-100 text-purple-700',
+                                onClick: () => {
+                                    setSelectedAttachmentItemId(null);
+                                    setIsAttachmentListView(true);
+                                },
+                            });
+                        }
+                        if (hasMarketScopingForm) {
+                            mobileOptions.push({
+                                key: 'market-scoping',
+                                label: 'Market Scoping',
+                                sublabel: 'NGPA Market Scoping Checklist',
+                                icon: <ClipboardCheck className="w-4 h-4" />,
+                                iconBg: 'bg-teal-100 text-teal-700',
+                                onClick: () => setIsMarketScopingView(true),
+                            });
+                        }
+                        if (canUserAccessSystem(user, '/pims')) {
+                            if (existingPr && isPimsActive) {
+                                mobileOptions.push({
+                                    key: 'view-pr',
+                                    label: `View PR (${existingPr.tracker_id})`,
+                                    sublabel: 'Official Purchase Request print view',
+                                    icon: <FileText className="w-4 h-4" />,
+                                    iconBg: 'bg-purple-100 text-purple-700',
+                                    onClick: () => setSelectedPrForPrint(existingPr),
+                                });
+                            } else {
+                                mobileOptions.push({
+                                    key: 'pims-publish',
+                                    label: isPimsActive ? 'Publish to PIMS / Generate PR' : 'Publish to PIMS',
+                                    sublabel: 'Initiate PIMS monitoring workflow',
+                                    icon: <Sparkles className="w-4 h-4" />,
+                                    iconBg: 'bg-indigo-100 text-indigo-700',
+                                    onClick: () => {
+                                        if (isPimsActive) {
+                                            setIsGeneratePrModalOpen(true);
+                                        } else {
+                                            setIsPimsPublishModalOpen(true);
+                                        }
+                                    },
+                                });
+                            }
+                        }
+                    }
+                    if (canEdit) {
+                        if (isAttachmentOnly && !['admin', 'super_admin'].includes(user.role)) {
+                            mobileOptions.push({
+                                key: 'edit-specs',
+                                label: 'Edit Detailed Specifications',
+                                sublabel: 'Scope restricted to specifications only',
+                                icon: <FileSpreadsheet className="w-4 h-4" />,
+                                iconBg: 'bg-amber-100 text-amber-700',
+                                onClick: () => setIsAttachmentListView(true),
+                            });
+                        } else {
+                            mobileOptions.push({
+                                key: 'edit-ppmp',
+                                label: 'Edit PPMP',
+                                sublabel: 'Modify plan details and items',
+                                icon: <Edit3 className="w-4 h-4" />,
+                                iconBg: 'bg-slate-200 text-slate-700',
+                                onClick: onEdit,
+                            });
+                        }
+                    }
+                    if (canSubmitForReview) {
+                        mobileOptions.push({
+                            key: 'submit',
+                            label: submitting
+                                ? 'Submitting...'
+                                : (ppmp.status === 'DRAFT'
+                                    ? 'Submit for Review'
+                                    : (ppmp.status === 'HEAD_RETURNED'
+                                        ? 'Resubmit to Office Head'
+                                        : `Resubmit to ${getReviewTargetName(ppmp.status).replace(/^the\s+/i, '')}`)),
+                            sublabel: 'Send PPMP to the assigned reviewer',
+                            icon: submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />,
+                            iconBg: 'bg-indigo-100 text-indigo-700',
+                            disabled: submitting,
+                            onClick: handleSubmitForReview,
+                        });
+                    }
+
+                    if (mobileOptions.length === 0 && !(isReadyToPrint && ppmp.amendment_status === 'PENDING_APPROVAL')) {
+                        return null;
+                    }
+
+                    return (
+                        <div ref={mobileActionsRef} className="md:hidden relative w-full pt-1 border-t border-slate-100 space-y-2">
+                            {isReadyToPrint && ppmp.amendment_status === 'PENDING_APPROVAL' && (
+                                <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-50 border border-amber-300 text-amber-900 rounded-lg text-[11px] font-semibold">
+                                    <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                    <span>{(ppmp.requested_amendment_type || ppmp.amendment_type) === 'SUPPLEMENTAL' ? 'Supplemental' : 'Amendment'} Pending Admin Approval</span>
+                                </div>
+                            )}
+                            {mobileOptions.length > 0 && (
+                                <div className="relative">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsMobileActionsOpen(prev => !prev)}
+                                        className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-xs transition cursor-pointer"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <Printer className="w-4 h-4 text-blue-300 shrink-0" />
+                                            <span>Select Action / Document ({mobileOptions.length})</span>
+                                        </span>
+                                        <ChevronDown className={`w-4 h-4 text-slate-300 transition-transform ${isMobileActionsOpen ? 'rotate-180' : ''}`} />
+                                    </button>
+
+                                    {isMobileActionsOpen && (
+                                        <div className="absolute left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-40 overflow-hidden divide-y divide-slate-100">
+                                            {mobileOptions.map((opt) => (
+                                                <button
+                                                    key={opt.key}
+                                                    type="button"
+                                                    disabled={opt.disabled}
+                                                    onClick={() => {
+                                                        setIsMobileActionsOpen(false);
+                                                        if (opt.onClick) opt.onClick();
+                                                    }}
+                                                    className="w-full text-left px-3 py-2.5 hover:bg-slate-50 active:bg-slate-100 flex items-center gap-2.5 transition disabled:opacity-50 cursor-pointer"
+                                                >
+                                                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${opt.iconBg}`}>
+                                                        {opt.icon}
+                                                    </span>
+                                                    <span className="min-w-0 flex-1">
+                                                        <span className="block text-xs font-bold text-slate-900 leading-tight">{opt.label}</span>
+                                                        <span className="block text-[10px] text-slate-500 truncate mt-0.5">{opt.sublabel}</span>
+                                                    </span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })()}
+
+                <div className="hidden md:flex items-center gap-2 flex-wrap xl:justify-end shrink-0">
+
                     {isAwaitingReceive(ppmp, user) && (
                         <button
                             disabled={receiving}
@@ -1281,7 +1730,6 @@ export const PPMPDetailPage = ({
                         </button>
                     )}
 
-                    {/* OPPMO Reviewer Generate/Regenerate APP Action Button (Only after TWG review is complete) */}
                     {canOppmoGenerateApp && (
                         <button
                             type="button"
@@ -1300,7 +1748,6 @@ export const PPMPDetailPage = ({
                         </button>
                     )}
 
-                    {/* READY_TO_PRINT Action Buttons */}
                     {isReadyToPrint && (
                         <>
                             {ppmp.amendment_status === 'PENDING_APPROVAL' ? (
@@ -1309,7 +1756,7 @@ export const PPMPDetailPage = ({
                                     {(ppmp.requested_amendment_type || ppmp.amendment_type) === 'SUPPLEMENTAL' ? 'Supplemental' : 'Amendment'} Pending Admin Approval
                                 </span>
                             ) : (
-                                (user?.role === 'end_user' && isCreator) ? (
+                                (user?.role === 'end_user' && isCreator && !(Array.isArray(ppmp.children) && ppmp.children.length > 0)) ? (
                                     <button
                                         onClick={handleOpenAmendModal}
                                         className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm transition cursor-pointer"
@@ -1359,6 +1806,17 @@ export const PPMPDetailPage = ({
                                 >
                                     <Printer className="w-3.5 h-3.5" />
                                     {procurementItems.length > 1 ? `PRINT SPECIFICATIONS (${procurementItems.length})` : 'PRINT SPECIFICATIONS'}
+                                </button>
+                            )}
+                            {hasMarketScopingForm && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsMarketScopingView(true)}
+                                    className="flex items-center gap-1.5 px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm transition cursor-pointer"
+                                    title="Open and print NGPA Market Scoping Checklist"
+                                >
+                                    <ClipboardCheck className="w-3.5 h-3.5" />
+                                    MARKET SCOPING
                                 </button>
                             )}
 
@@ -1448,7 +1906,6 @@ export const PPMPDetailPage = ({
                 </div>
             </div>
 
-            {/* Suspension / Return Remarks Banner */}
             {isSuspended && latestSuspension && (
                 <div className="pt-3 border-t border-rose-100">
                     <div className="p-3.5 bg-rose-50/90 border border-rose-200 rounded-xl text-xs space-y-2">
@@ -1480,7 +1937,6 @@ export const PPMPDetailPage = ({
                 </div>
             )}
 
-            {/* Cell Comments Findings & Compliance Tracker Banner (visible to End-User only once suspended/returned) */}
             {canViewCellComments && visibleCellComments.length > 0 && (
                 <div className="pt-3 border-t border-slate-200">
                     <div className={`p-3.5 rounded-xl border text-xs space-y-2.5 transition ${
@@ -1529,7 +1985,6 @@ export const PPMPDetailPage = ({
                             <span className="text-emerald-800 font-semibold">• Complied: <strong>{compliedCellComments.length}</strong></span>
                         </div>
 
-                        {/* Progress bar */}
                         <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                             <div
                                 className={`h-2 transition-all duration-300 ${pendingCellComments.length === 0 ? 'bg-emerald-600' : 'bg-red-500'}`}
@@ -1650,7 +2105,6 @@ export const PPMPDetailPage = ({
             )}
         </div>
 
-            {/* Mandatory Pre-Submission Checklist Banner for DRAFT and Returned States */}
             {canSubmitForReview && ['DRAFT', 'HEAD_RETURNED', 'BUDGET_OFFICER_RETURNED', 'PACCO_RETURNED', 'OPPMO_RETURNED', 'TWG_RETURNED'].includes(ppmp.status) && (
                 <div className={`rounded-xl border-2 p-4 shadow-xs transition ${
                     isPreSubmissionReady
@@ -1677,15 +2131,14 @@ export const PPMPDetailPage = ({
                                 </div>
                                 <p className="text-xs text-slate-600 mt-0.5">
                                     {isPreSubmissionReady
-                                        ? 'All mandatory forms and scoping documents are generated and attached. You may now submit for formal review.'
-                                        : 'Before submitting to the reviewer, the Detailed Specifications must be generated, and the Market Scoping PDF must be attached.'}
+                                        ? 'All mandatory forms and scoping documents are created. You may now submit for formal review.'
+                                        : 'Before submitting to the reviewer, both the Detailed Specifications and the Market Scoping Checklist must be created.'}
                                 </p>
                             </div>
                         </div>
 
-                        {/* Checklist items */}
                         <div className="flex flex-wrap items-center gap-2 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-200/60">
-                            {/* 1. Detailed Specifications */}
+
                             <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${
                                 preSubmissionStatus.hasAttachmentList
                                     ? 'bg-emerald-100/60 border-emerald-300 text-emerald-800'
@@ -1712,23 +2165,31 @@ export const PPMPDetailPage = ({
                                 )}
                             </div>
 
-                            {/* 3. Market Scoping PDF */}
                             <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${
                                 preSubmissionStatus.hasMarketScoping
                                     ? 'bg-emerald-100/60 border-emerald-300 text-emerald-800'
                                     : 'bg-white border-amber-300 text-amber-900'
                             }`}>
                                 {preSubmissionStatus.hasMarketScoping ? (
-                                    <>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsMarketScopingView(true)}
+                                        className="inline-flex items-center gap-1.5 hover:underline cursor-pointer"
+                                    >
                                         <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                                        <span>Market Scoping PDF Attached</span>
-                                    </>
+                                        <span>Market Scoping Created</span>
+                                    </button>
                                 ) : (
-                                    <span className="text-amber-800 font-bold flex items-center gap-1.5">
-                                        <FileUp className="w-3.5 h-3.5 text-amber-600" />
-                                        <span>Attach Market Scoping PDF</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsMarketScopingView(true)}
+                                        className="text-amber-800 font-bold hover:underline cursor-pointer flex items-center gap-1.5"
+                                        title="Click to create NGPA Market Scoping Checklist"
+                                    >
+                                        <ClipboardCheck className="w-3.5 h-3.5 text-amber-600" />
+                                        <span>Create Market Scoping</span>
                                         <span className="text-[10px] bg-rose-100 text-rose-800 px-1 py-0.5 rounded font-bold uppercase">Required</span>
-                                    </span>
+                                    </button>
                                 )}
                             </div>
                         </div>
@@ -1736,7 +2197,6 @@ export const PPMPDetailPage = ({
                 </div>
             )}
 
-            {/* Pending Receipt Alert Banner if current actor hasn't received the incoming document */}
             {isAwaitingReceive(ppmp, user) && (
                 <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-in fade-in duration-200">
                     <div className="flex items-start gap-3">
@@ -1770,7 +2230,6 @@ export const PPMPDetailPage = ({
                 </div>
             )}
 
-            {/* Pending Amendment Approval Banner */}
             {ppmp.amendment_status === 'PENDING_APPROVAL' && (
                 <div className="bg-amber-50/90 border-2 border-amber-400 rounded-xl p-4 shadow-sm animate-in fade-in duration-200">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1790,7 +2249,7 @@ export const PPMPDetailPage = ({
                                     <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-amber-200 text-amber-900 rounded">
                                         Awaiting Admin Review
                                     </span>
-                                    {/* Scope badge */}
+
                                     <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-100 text-indigo-800 border border-indigo-200 rounded">
                                         Scope: {
                                             (ppmp.requested_amendment_scope || ppmp.amendment_scope) === 'ATTACHMENT_LIST'
@@ -1871,39 +2330,61 @@ export const PPMPDetailPage = ({
                 </div>
             )}
 
-            {/* Split Grid: Main Document & Side Panel */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Left (2 cols): PPMP Form / Items Table */}
-                <div className="lg:col-span-2 space-y-6">
-                    {/* Header info */}
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6">
-                        <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-                            <div>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[11px] uppercase font-bold text-slate-500 tracking-wider">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+
+                <div className="lg:col-span-2 space-y-4 sm:space-y-6">
+
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 sm:p-6">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 pb-3 border-b border-slate-100 mb-3.5 sm:mb-4">
+                            <div className="min-w-0 flex-1 space-y-1.5">
+                                <div className="flex items-center justify-between sm:justify-start gap-2 flex-wrap">
+                                    <span className="text-[10px] sm:text-[11px] uppercase font-bold text-slate-500 tracking-wider">
                                         Project Procurement Management Plan
                                     </span>
-                                    <span className="text-[11px] font-mono font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                        Tracker No.: {ppmp.tracking_number || ppmp.ppmp_number}
+                                    <span className="sm:hidden px-2 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-[10px] text-slate-800 shrink-0">
+                                        {ppmp.plan_type}
                                     </span>
                                 </div>
-                                <h2 className="text-base font-extrabold text-slate-900 mt-0.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    {canEdit ? (
+                                        <button
+                                            type="button"
+                                            onClick={handleOpenEditTrackerModal}
+                                            className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-mono font-semibold text-slate-700 hover:text-blue-800 bg-slate-100 hover:bg-blue-50 px-2 py-0.5 rounded border border-slate-200 hover:border-blue-300 transition cursor-pointer group"
+                                            title="Click to edit Tracker Number"
+                                        >
+                                            <span>Tracker No.: {ppmp.tracking_number || ppmp.ppmp_number}</span>
+                                            <Edit3 className="w-2.5 h-2.5 text-slate-400 group-hover:text-blue-600 transition shrink-0" />
+                                        </button>
+                                    ) : (
+                                        <span className="text-[10px] sm:text-[11px] font-mono font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                            Tracker No.: {ppmp.tracking_number || ppmp.ppmp_number}
+                                        </span>
+                                    )}
+                                </div>
+                                <h2 className="text-sm sm:text-base font-extrabold text-slate-900 leading-snug break-words">
                                     {ppmp.title}
                                 </h2>
                             </div>
-                            <span className="px-2.5 py-1 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-xs text-slate-800">
+                            <span className="hidden sm:inline-flex px-2.5 py-1 bg-slate-100 border border-slate-300 rounded font-mono font-bold text-xs text-slate-800 shrink-0">
                                 {ppmp.plan_type}
                             </span>
                         </div>
 
-                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-xs">
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4 text-[11px] sm:text-xs">
                             <div>
-                                <span className="text-slate-500 block">Fiscal Year:</span>
+                                <span className="text-slate-500 block text-[10px] sm:text-xs">Fiscal Year:</span>
                                 <span className="font-bold text-slate-900">CY {ppmp.fiscal_year}</span>
                             </div>
                             <div>
-                                <span className="text-slate-500 block">Source of Fund:</span>
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold mt-0.5 ${
+                                <span className="text-slate-500 block text-[10px] sm:text-xs">Total Budget:</span>
+                                <span className="font-mono font-extrabold text-blue-900 text-xs sm:text-sm">
+                                    {formatCurrency(ppmp.total_budget)}
+                                </span>
+                            </div>
+                            <div className="col-span-2 sm:col-span-1">
+                                <span className="text-slate-500 block text-[10px] sm:text-xs">Source of Fund:</span>
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-[11px] font-bold mt-0.5 leading-snug ${
                                     isTrustFund
                                         ? 'bg-teal-100 text-teal-900 border border-teal-300'
                                         : 'bg-blue-100 text-blue-900 border border-blue-300'
@@ -1911,44 +2392,37 @@ export const PPMPDetailPage = ({
                                     {ppmp.source_of_fund || 'General Fund'}
                                 </span>
                             </div>
-                            <div>
-                                <span className="text-slate-500 block">Total Budget:</span>
-                                <span className="font-mono font-extrabold text-blue-900 text-sm">
-                                    {formatCurrency(ppmp.total_budget)}
-                                </span>
-                            </div>
-                            <div>
-                                <span className="text-slate-500 block">Office / Unit:</span>
-                                <span className="font-semibold text-slate-900 truncate block">
+                            <div className="col-span-2 sm:col-span-1">
+                                <span className="text-slate-500 block text-[10px] sm:text-xs">Office / Unit:</span>
+                                <span className="font-semibold text-slate-900 sm:truncate block leading-snug">
                                     {ppmp.implementing_unit || ppmp.office?.name}
                                 </span>
                             </div>
-                            <div>
-                                <span className="text-slate-500 block">Prepared By:</span>
+                            <div className="col-span-2 sm:col-span-1">
+                                <span className="text-slate-500 block text-[10px] sm:text-xs">Prepared By:</span>
                                 <span className="font-semibold text-slate-900 truncate block">
                                     {ppmp.creator?.name}
                                 </span>
                             </div>
                         </div>
 
-                        {/* Current Stage Receipt Status Indicator */}
                         {(() => {
                             const receiptInfo = getStageReceiptInfo(ppmp, user);
                             if (!receiptInfo) return null;
 
                             return (
-                                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs font-semibold text-slate-500">Current Office Receipt:</span>
+                                <div className="mt-3.5 sm:mt-4 pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 min-w-0">
+                                        <span className="text-[11px] sm:text-xs font-semibold text-slate-500 shrink-0">Current Office Receipt:</span>
                                         {receiptInfo.isReceived ? (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300">
-                                                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                                                Received by {receiptInfo.recipientRole} ({formatDate(receiptInfo.receivedAt)})
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg sm:rounded-full text-[11px] sm:text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 leading-snug">
+                                                <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                                <span>Received by {receiptInfo.recipientRole} ({formatDate(receiptInfo.receivedAt)})</span>
                                             </span>
                                         ) : (
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 animate-pulse">
-                                                <Clock className="w-3.5 h-3.5 text-amber-600" />
-                                                Awaiting Receipt by {receiptInfo.recipientRole}
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg sm:rounded-full text-[11px] sm:text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 animate-pulse leading-snug">
+                                                <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                                <span>Awaiting Receipt by {receiptInfo.recipientRole}</span>
                                             </span>
                                         )}
                                     </div>
@@ -1958,7 +2432,7 @@ export const PPMPDetailPage = ({
                                             type="button"
                                             disabled={receiving}
                                             onClick={handleReceiveDocument}
-                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-xs transition disabled:opacity-50 cursor-pointer"
+                                            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-xs transition disabled:opacity-50 cursor-pointer shrink-0"
                                         >
                                             {receiving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Inbox className="w-3.5 h-3.5" />}
                                             Receive Document Now
@@ -1968,7 +2442,6 @@ export const PPMPDetailPage = ({
                             );
                         })()}
 
-                        {/* Assigned Reviewers Section (Merged into PPMP Card) */}
                         <div className="mt-4 pt-3.5 border-t border-slate-100">
                             <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
                                 <div className="flex items-center gap-2">
@@ -1979,7 +2452,11 @@ export const PPMPDetailPage = ({
                                         Assigned Reviewers
                                     </h4>
                                     <span className="hidden sm:inline text-[11px] text-slate-400 font-normal">
-                                        &bull; Sequential Review Flow (1. TWG &rarr; 2. Budget/PACCO &rarr; 3. OPPMO)
+                                        {isTwgSkipped
+                                            ? <>&bull; Sequential Review Flow (1. Budget/PACCO &rarr; 2. OPPMO &rarr; Signatories)</>
+                                            : isAttachmentOnly
+                                                ? <>&bull; Sequential Review Flow (1. BAC-TWG &rarr; Office Head)</>
+                                                : <>&bull; Sequential Review Flow (1. TWG &rarr; 2. Budget/PACCO &rarr; 3. OPPMO)</>}
                                     </span>
                                 </div>
 
@@ -1999,9 +2476,10 @@ export const PPMPDetailPage = ({
                                 )}
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
-                                {/* 1. BAC-TWG */}
-                                <div className={`p-3 rounded-xl border transition flex items-start gap-3 ${
+                            <div className={`grid grid-cols-1 ${isAttachmentOnly ? 'sm:grid-cols-1' : `sm:grid-cols-2 ${isTwgSkipped ? 'xl:grid-cols-2' : 'xl:grid-cols-3'}`} gap-2.5 text-xs`}>
+
+                                {!isTwgSkipped && (
+                                <div className={`p-3 rounded-xl border transition flex items-start gap-2.5 overflow-hidden min-w-0 ${
                                     ppmp.status === 'TWG_REVIEW'
                                         ? 'bg-amber-50/90 border-amber-300 ring-2 ring-amber-400/40 shadow-2xs'
                                         : isTwgApproved
@@ -2019,17 +2497,17 @@ export const PPMPDetailPage = ({
                                         className="mt-0.5 border border-amber-300/60 shadow-2xs shrink-0"
                                     />
                                     <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-[10px] uppercase font-bold text-amber-800 tracking-wider">
+                                        <div className="flex items-start justify-between gap-1.5 flex-wrap mb-1">
+                                            <span className="text-[10px] uppercase font-bold text-amber-800 tracking-wide leading-tight break-words min-w-0">
                                                 1. BAC-TWG Reviewer
                                             </span>
                                             {ppmp.status === 'TWG_REVIEW' ? (
-                                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-300 animate-pulse">
+                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-300 animate-pulse shrink-0 whitespace-nowrap">
                                                     In Review
                                                 </span>
                                             ) : isTwgApproved ? (
-                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                                    <CheckCircle className="w-2.5 h-2.5 text-emerald-600" />
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 whitespace-nowrap">
+                                                    <CheckCircle className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
                                                     Approved
                                                 </span>
                                             ) : null}
@@ -2044,9 +2522,10 @@ export const PPMPDetailPage = ({
                                         </span>
                                     </div>
                                 </div>
+                                )}
 
-                                {/* 2. Budget / PACCO */}
-                                <div className={`p-3 rounded-xl border transition flex items-start gap-3 ${
+                                {!isAttachmentOnly && (
+                                <div className={`p-3 rounded-xl border transition flex items-start gap-2.5 overflow-hidden min-w-0 ${
                                     ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW'].includes(ppmp.status)
                                         ? 'bg-emerald-50/90 border-emerald-300 ring-2 ring-emerald-400/40 shadow-2xs'
                                         : isBudgetApproved
@@ -2064,17 +2543,17 @@ export const PPMPDetailPage = ({
                                         className="mt-0.5 border border-emerald-300/60 shadow-2xs shrink-0"
                                     />
                                     <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">
-                                                2. {isTrustFund ? 'PACCO (Trust Fund)' : 'Budget Officer (PBO)'}
+                                        <div className="flex items-start justify-between gap-1.5 flex-wrap mb-1">
+                                            <span className="text-[10px] uppercase font-bold text-emerald-800 tracking-wide leading-tight break-words min-w-0">
+                                                {isTwgSkipped ? '1' : '2'}. {isTrustFund ? 'PACCO (Trust Fund)' : 'Budget Officer (PBO)'}
                                             </span>
                                             {['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW'].includes(ppmp.status) ? (
-                                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-200 text-emerald-900 border border-emerald-300 animate-pulse">
+                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-200 text-emerald-900 border border-emerald-300 animate-pulse shrink-0 whitespace-nowrap">
                                                     In Review
                                                 </span>
                                             ) : isBudgetApproved ? (
-                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                                    <CheckCircle className="w-2.5 h-2.5 text-emerald-600" />
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 whitespace-nowrap">
+                                                    <CheckCircle className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
                                                     Approved
                                                 </span>
                                             ) : null}
@@ -2089,9 +2568,10 @@ export const PPMPDetailPage = ({
                                         </span>
                                     </div>
                                 </div>
+                                )}
 
-                                {/* 3. OPPMO */}
-                                <div className={`p-3 rounded-xl border transition flex items-start gap-3 ${
+                                {!isAttachmentOnly && (
+                                <div className={`p-3 rounded-xl border transition flex items-start gap-2.5 overflow-hidden min-w-0 ${
                                     ppmp.status === 'OPPMO_REVIEW'
                                         ? 'bg-indigo-50/90 border-indigo-300 ring-2 ring-indigo-400/40 shadow-2xs'
                                         : isOppmoApproved
@@ -2109,17 +2589,17 @@ export const PPMPDetailPage = ({
                                         className="mt-0.5 border border-indigo-300/60 shadow-2xs shrink-0"
                                     />
                                     <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-[10px] uppercase font-bold text-indigo-800 tracking-wider">
-                                                3. OPPMO (Consolidation/APP)
+                                        <div className="flex items-start justify-between gap-1.5 flex-wrap mb-1">
+                                            <span className="text-[10px] uppercase font-bold text-indigo-800 tracking-wide leading-tight break-words min-w-0">
+                                                {isTwgSkipped ? '2' : '3'}. OPPMO (Consolidation / APP)
                                             </span>
                                             {ppmp.status === 'OPPMO_REVIEW' ? (
-                                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-indigo-200 text-indigo-900 border border-indigo-300 animate-pulse">
+                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-200 text-indigo-900 border border-indigo-300 animate-pulse shrink-0 whitespace-nowrap">
                                                     In Review
                                                 </span>
                                             ) : isOppmoApproved ? (
-                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                                    <CheckCircle className="w-2.5 h-2.5 text-emerald-600" />
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0 whitespace-nowrap">
+                                                    <CheckCircle className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
                                                     Approved
                                                 </span>
                                             ) : null}
@@ -2134,11 +2614,11 @@ export const PPMPDetailPage = ({
                                         </span>
                                     </div>
                                 </div>
+                                )}
                             </div>
                         </div>
                     </div>
 
-                    {/* Table of Items */}
                     <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6">
                         <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
                             <div>
@@ -2184,7 +2664,6 @@ export const PPMPDetailPage = ({
                         />
                     </div>
 
-                    {/* COLLAPSIBLE / FOLD FEATURE FOR ALL PREVIOUS / HISTORICAL PPMPS */}
                     {historicalPpmps.length > 0 && (
                         <div className="space-y-3">
                             <div className="flex items-center justify-between px-1">
@@ -2202,7 +2681,7 @@ export const PPMPDetailPage = ({
                             <div className={`space-y-3 ${historicalPpmps.length > 5 ? 'max-h-[460px] overflow-y-auto pr-1.5 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent' : ''}`}>
                             {historicalPpmps.map((histPpmp) => {
                                 const isExpanded = Boolean(expandedPpmpIds[histPpmp.id]);
-                                // Only the very first created root PPMP (no parent_id) is the Annual PPMP
+
                                 const isAnnualRoot = !histPpmp.parent_id;
                                 const isAmended = histPpmp.amendment_type === 'AMENDMENT';
 
@@ -2266,13 +2745,13 @@ export const PPMPDetailPage = ({
                                                         Full Review
                                                     </button>
 
-                                                    {/* Dropdown Options for Old APP, Print PPMP, and Old Detailed Specifications */}
                                                     <BaselineDocumentsDropdown
                                                         histPpmp={histPpmp}
                                                         isAnnualRoot={isAnnualRoot}
                                                         onSelectApp={setSelectedAppPpmp}
                                                         onSelectPrint={setSelectedPrintPpmp}
                                                         onSelectAttachmentList={setSelectedAttachmentListPpmp}
+                                                        onSelectMarketScoping={setSelectedMarketScopingPpmp}
                                                     />
                                                 </div>
                                                 <div className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 shadow-2xs">
@@ -2283,12 +2762,23 @@ export const PPMPDetailPage = ({
 
                                         {isExpanded && (
                                             <div className="p-5 space-y-4 bg-slate-50/50 animate-in fade-in duration-200">
-                                                <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-200">
+                                                <div className="flex items-center justify-between flex-wrap gap-2 text-xs pb-2 border-b border-slate-200">
                                                     <div className="text-slate-600">
                                                         <span className="font-semibold text-slate-900">Project Title: </span>
                                                         {histPpmp.title}
                                                     </div>
-                                                    <div className="flex items-center gap-2.5">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        {(histPpmp?.market_scoping || histPpmp?.marketScoping) && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSelectedMarketScopingPpmp(histPpmp)}
+                                                                className="inline-flex items-center gap-1.5 text-xs text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-2.5 py-1 rounded-lg font-bold transition shadow-2xs cursor-pointer"
+                                                                title="View old Market Scoping Checklist for this baseline revision"
+                                                            >
+                                                                <ClipboardCheck className="w-3.5 h-3.5 text-teal-600" />
+                                                                <span>{isAnnualRoot ? 'View Old Market Scoping' : 'View Previous Market Scoping'}</span>
+                                                            </button>
+                                                        )}
                                                         <button
                                                             type="button"
                                                             onClick={() => setSelectedAttachmentListPpmp(histPpmp)}
@@ -2325,9 +2815,8 @@ export const PPMPDetailPage = ({
                     )}
                 </div>
 
-                {/* Right (1 col): Review Actions, Attachments, and Routing Timeline */}
                 <div className="space-y-6">
-                    {/* Reviewer Action Center */}
+
                     <ReviewPanel
                         ppmp={ppmp}
                         user={user}
@@ -2341,7 +2830,6 @@ export const PPMPDetailPage = ({
                         onOpenApp={() => setIsAppView(true)}
                     />
 
-                    {/* Create / View Detailed Specifications Card */}
                     <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 flex flex-col gap-2.5">
                         <div className="flex items-center gap-2">
                             <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0">
@@ -2358,7 +2846,7 @@ export const PPMPDetailPage = ({
                                         )}
                                     </h4>
                                     {detailedSpecComments.length > 0 && (
-                                        <span 
+                                        <span
                                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                                 detailedSpecPendingCount > 0
                                                     ? 'bg-red-100 text-red-800 border border-red-300'
@@ -2397,18 +2885,20 @@ export const PPMPDetailPage = ({
                             <span>
                                 {hasAttachmentList
                                     ? (procurementItems.length > 1 ? `View Detailed Specifications (${procurementItems.length})` : 'View Detailed Specifications')
-                                    : (procurementItems.length > 1 ? `Create Detailed Specifications (${procurementItems.length})` : 'Create Detailed Specifications')
+                                    : isContinuationSupplemental
+                                        ? (procurementItems.length > 1 ? `Generate Detailed Specifications (${procurementItems.length})` : 'Generate Detailed Specifications')
+                                        : (procurementItems.length > 1 ? `Create Detailed Specifications (${procurementItems.length})` : 'Create Detailed Specifications')
                                 }
                             </span>
                             {detailedSpecComments.length > 0 && (
-                                <span 
+                                <span
                                     className={`ml-1.5 px-2 py-0.5 rounded-full text-white text-[10px] font-mono font-black flex items-center gap-1 shadow-sm ring-2 ${
                                         detailedSpecPendingCount > 0
                                             ? 'bg-red-600 ring-white/70'
                                             : 'bg-emerald-500 ring-white/80'
                                     }`}
-                                    title={detailedSpecPendingCount > 0 
-                                        ? `${detailedSpecPendingCount} pending remark(s) in Detailed Specifications` 
+                                    title={detailedSpecPendingCount > 0
+                                        ? `${detailedSpecPendingCount} pending remark(s) in Detailed Specifications`
                                         : `All ${detailedSpecComments.length} remark(s) complied in Detailed Specifications`
                                     }
                                 >
@@ -2422,7 +2912,18 @@ export const PPMPDetailPage = ({
                             )}
                         </button>
 
-                        {/* If multiple procurement rows, display direct links for each item */}
+                        {isContinuationSupplemental && hasOldParentAttachmentList && (
+                            <button
+                                type="button"
+                                onClick={() => setSelectedAttachmentListPpmp(ppmp.parent)}
+                                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition shadow-2xs cursor-pointer"
+                                title="View preserved Old Detailed Specifications from the baseline PPMP"
+                            >
+                                <History className="w-3.5 h-3.5 text-amber-700" />
+                                <span>View Old Detailed Specifications</span>
+                            </button>
+                        )}
+
                         {procurementItems.length > 1 && (
                             <div className="pt-2 border-t border-slate-100 space-y-1.5">
                                 <div className="flex items-center justify-between text-[10px] uppercase font-bold text-slate-400 tracking-wider">
@@ -2436,8 +2937,7 @@ export const PPMPDetailPage = ({
                                 {procurementItems.map((item, idx) => {
                                     const savedItem = ppmp?.attachment_list_data?.attachment_lists?.[String(item.id || idx)];
                                     const isDone = Boolean(savedItem?.rows?.some(r => r.description || r.qty));
-                                    
-                                    // Count remarks for this specific row/item
+
                                     const rowComments = detailedSpecComments.filter(c => {
                                         const matchesId = item.id && c.item_id && String(c.item_id) === String(item.id);
                                         const matchesNo = (item.item_no !== undefined && item.item_no !== null) && (c.item_no !== undefined && c.item_no !== null) && Number(c.item_no) === Number(item.item_no);
@@ -2458,14 +2958,19 @@ export const PPMPDetailPage = ({
                                             title={`Open Detailed Specifications for Row #${item.item_no || idx + 1}: ${item.description}`}
                                         >
                                             <div className="truncate flex-1 mr-2 flex items-center gap-1.5">
-                                                <span className="w-4 h-4 rounded-full bg-slate-200 group-hover:bg-indigo-200 text-slate-700 group-hover:text-indigo-800 text-[10px] font-bold flex items-center justify-center shrink-0">
+                                                <span className={`w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0 ${item.is_retention ? 'bg-amber-200 text-amber-900' : 'bg-slate-200 group-hover:bg-indigo-200 text-slate-700 group-hover:text-indigo-800'}`}>
                                                     {idx + 1}
                                                 </span>
                                                 <span className="text-[11px] truncate font-medium">{item.description}</span>
+                                                {item.is_retention && (
+                                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase bg-amber-100 text-amber-900 border border-amber-300 shrink-0">
+                                                        Optional
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="flex items-center gap-1.5 shrink-0">
                                                 {rowComments.length > 0 && (
-                                                    <span 
+                                                    <span
                                                         className={`px-1.5 py-0.5 rounded text-[10px] font-bold flex items-center gap-0.5 ${
                                                             rowPendingCount > 0
                                                                 ? 'bg-red-100 text-red-800 border border-red-300'
@@ -2493,7 +2998,86 @@ export const PPMPDetailPage = ({
                         )}
                     </div>
 
-                    {/* Create / Generate APP (Annual Procurement Plan) Button — Only visible to OPPMO Reviewer during post-TWG OPPMO_REVIEW, or once OPPMO has generated APP and approved the PPMP */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 flex flex-col gap-2.5">
+                        <div className="flex items-center gap-2.5">
+                            <div className={`w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 ${
+                                hasMarketScopingForm
+                                    ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                                    : 'bg-teal-50 border-teal-200 text-teal-600'
+                            }`}>
+                                <ClipboardCheck className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                                        Market Scoping Checklist
+                                    </h4>
+                                    {marketScopingComments.length > 0 && (
+                                        <span
+                                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                marketScopingPendingCount > 0
+                                                    ? 'bg-red-100 text-red-800 border border-red-300'
+                                                    : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                            }`}
+                                            title={`${marketScopingComments.length} remark(s) in Market Scoping (${marketScopingPendingCount} pending, ${marketScopingCompliedCount} complied)`}
+                                        >
+                                            <MessageSquare className="w-3 h-3 text-red-600" />
+                                            {marketScopingPendingCount > 0 ? (
+                                                <span>{marketScopingPendingCount} Pending</span>
+                                            ) : (
+                                                <span>{marketScopingComments.length} Complied</span>
+                                            )}
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-[11px] text-slate-500">
+                                    Official NGPA Market Scoping Checklist (RA 12009)
+                                </p>
+                            </div>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => setIsMarketScopingView(true)}
+                            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition shadow-sm cursor-pointer ${
+                                hasMarketScopingForm
+                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                    : 'bg-teal-600 hover:bg-teal-700 text-white'
+                            }`}
+                            title="Create or view the official NGPA Market Scoping Checklist"
+                        >
+                            <ClipboardCheck className="w-4 h-4" />
+                            <span>
+                                {hasMarketScopingForm
+                                    ? 'View Market Scoping'
+                                    : (isContinuationSupplemental ? 'Create New Market Scoping' : 'Create Market Scoping')}
+                            </span>
+                            {marketScopingComments.length > 0 && (
+                                <span
+                                    className={`ml-1.5 px-2 py-0.5 rounded-full text-white text-[10px] font-mono font-black flex items-center gap-1 shadow-sm ring-2 ${
+                                        marketScopingPendingCount > 0
+                                            ? 'bg-red-600 ring-white/70'
+                                            : 'bg-emerald-500 ring-white/80'
+                                    }`}
+                                >
+                                    {marketScopingComments.length}
+                                </span>
+                            )}
+                        </button>
+
+                        {isContinuationSupplemental && hasOldParentMarketScoping && (
+                            <button
+                                type="button"
+                                onClick={() => setSelectedMarketScopingPpmp(ppmp.parent)}
+                                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 transition shadow-2xs cursor-pointer"
+                                title="View preserved Old Market Scoping from the baseline PPMP"
+                            >
+                                <History className="w-3.5 h-3.5 text-teal-700" />
+                                <span>View Old Market Scoping</span>
+                            </button>
+                        )}
+                    </div>
+
                     {(canOppmoGenerateApp || canViewApprovedApp) && (
                         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 flex flex-col gap-2.5">
                             <div className="flex items-center gap-2">
@@ -2510,7 +3094,6 @@ export const PPMPDetailPage = ({
                                 </div>
                             </div>
 
-                            {/* Action / View Button */}
                             {canOppmoGenerateApp ? (
                                 <button
                                     type="button"
@@ -2557,7 +3140,6 @@ export const PPMPDetailPage = ({
                         </div>
                     )}
 
-                    {/* Letter of Request for Supplemental / Amendment Panel (Always on Top of Supporting Documents) */}
                     {requestLetterInfo && (
                         <div className="bg-white rounded-lg border border-amber-300 shadow-sm p-5 bg-gradient-to-br from-amber-50/40 to-white">
                             <div className="flex items-center justify-between pb-3 border-b border-amber-200/80 mb-3.5">
@@ -2579,7 +3161,6 @@ export const PPMPDetailPage = ({
                                 </span>
                             </div>
 
-                            {/* Justification Text */}
                             <div className="p-3 bg-white rounded-lg border border-amber-200/80 text-xs text-slate-700 mb-3">
                                 <span className="font-bold text-amber-950 block text-[11px] uppercase tracking-wider mb-1">
                                     Justification / Purpose:
@@ -2594,7 +3175,6 @@ export const PPMPDetailPage = ({
                                 )}
                             </div>
 
-                            {/* Attached Official Request Letter File */}
                             {requestLetterInfo.attachment ? (
                                 <div className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg shadow-2xs hover:border-amber-400 transition">
                                     <div className="flex items-center gap-2.5 overflow-hidden">
@@ -2640,7 +3220,6 @@ export const PPMPDetailPage = ({
                         </div>
                     )}
 
-                    {/* Private Attachments */}
                     <AttachmentUploader
                         ppmp={ppmp}
                         historicalPpmps={historicalPpmps}
@@ -2650,11 +3229,6 @@ export const PPMPDetailPage = ({
                         requestLetterAttachmentId={requestLetterInfo?.attachment?.id || requestLetterInfo?.attachment?.uuid}
                     />
 
-
-
-
-
-                    {/* Routing History Timeline */}
                     <RoutingTimeline
                         routes={ppmp.routes || []}
                         reviews={ppmp.reviews || []}
@@ -2686,7 +3260,6 @@ export const PPMPDetailPage = ({
                 </div>
             </div>
 
-            {/* FULL & WIDE MODAL FOR REVIEWING PROCUREMENT ITEMS & SCHEDULE */}
             {isItemsModalOpen && (
                 <div className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-xs transition-all ${
                     isItemsModalFullScreen ? 'p-0' : 'p-1 sm:p-3 md:p-4'
@@ -2696,45 +3269,56 @@ export const PPMPDetailPage = ({
                             ? 'w-screen h-screen max-w-none max-h-none rounded-none'
                             : 'w-full max-w-[98vw] h-[96vh] max-h-[96vh] rounded-2xl'
                     }`}>
-                        {/* Modal Top Header */}
-                        <div className="bg-slate-900 text-white px-3 sm:px-5 py-2 sm:py-2.5 flex items-center justify-between border-b border-slate-800 shrink-0 gap-2">
-                            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+
+                        <div className="bg-slate-900 text-white px-3 sm:px-5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 shrink-0 gap-2">
+                            <div className="flex items-start sm:items-center justify-between gap-2 sm:gap-3 min-w-0">
+                                <div className="flex items-start sm:items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsItemsModalFullScreen(!isItemsModalFullScreen)}
+                                        className="p-1.5 sm:p-2 mt-0.5 sm:mt-0 bg-blue-600 hover:bg-blue-500 rounded-lg text-white transition cursor-pointer shrink-0 shadow-xs"
+                                        title={isItemsModalFullScreen ? "Exit Fullscreen" : "Expand to Fullscreen"}
+                                    >
+                                        {isItemsModalFullScreen ? <Minimize2 className="w-4 h-4 sm:w-5 sm:h-5" /> : <Maximize2 className="w-4 h-4 sm:w-5 sm:h-5" />}
+                                    </button>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                                            <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wide text-white leading-snug">
+                                                Procurement Items & Schedule — Full Wide Review
+                                            </h2>
+                                            <span className="font-mono text-[10px] sm:text-xs font-semibold px-1.5 py-0.5 bg-blue-900 text-blue-100 rounded border border-blue-700 shrink-0">
+                                                PPMP No. {ppmp.ppmp_number}
+                                            </span>
+                                            <span className="font-mono text-[10px] sm:text-xs font-semibold px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded border border-slate-700 shrink-0" title="Tracking Number">
+                                                Tracker No.: {ppmp.tracking_number || ppmp.ppmp_number}
+                                            </span>
+                                            {canViewCellComments && visibleCellComments.length > 0 && (
+                                                <span className={`inline-flex items-center gap-1 font-mono text-[10px] sm:text-xs font-bold px-1.5 py-0.5 rounded border shrink-0 ${
+                                                    pendingCellComments.length > 0
+                                                        ? 'bg-red-950/70 text-red-200 border-red-500/60'
+                                                        : 'bg-emerald-900/60 text-emerald-200 border-emerald-500/50'
+                                                }`} title={`${pendingCellComments.length} pending reviewer comments`}>
+                                                    💬 {visibleCellComments.length} ({pendingCellComments.length} pending)
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-[11px] text-slate-400 mt-0.5 truncate max-w-xl">
+                                            {ppmp.title}
+                                        </p>
+                                    </div>
+                                </div>
+
                                 <button
                                     type="button"
-                                    onClick={() => setIsItemsModalFullScreen(!isItemsModalFullScreen)}
-                                    className="p-1.5 sm:p-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white transition cursor-pointer shrink-0 shadow-xs"
-                                    title={isItemsModalFullScreen ? "Exit Fullscreen" : "Expand to Fullscreen"}
+                                    onClick={() => setIsItemsModalOpen(false)}
+                                    className="sm:hidden p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shrink-0"
+                                    title="Close modal"
                                 >
-                                    {isItemsModalFullScreen ? <Minimize2 className="w-4 h-4 sm:w-5 sm:h-5" /> : <Maximize2 className="w-4 h-4 sm:w-5 sm:h-5" />}
+                                    <X className="w-5 h-5" />
                                 </button>
-                                <div className="min-w-0">
-                                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                                        <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wide text-white truncate">
-                                            Procurement Items & Schedule — Full Wide Review
-                                        </h2>
-                                        <span className="font-mono text-[10px] sm:text-xs font-semibold px-1.5 py-0.5 bg-blue-900 text-blue-100 rounded border border-blue-700 shrink-0">
-                                            PPMP No. {ppmp.ppmp_number}
-                                        </span>
-                                        <span className="font-mono text-[10px] sm:text-xs font-semibold px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded border border-slate-700 shrink-0" title="Tracking Number">
-                                            Tracker No.: {ppmp.tracking_number || ppmp.ppmp_number}
-                                        </span>
-                                        {canViewCellComments && visibleCellComments.length > 0 && (
-                                            <span className={`inline-flex items-center gap-1 font-mono text-[10px] sm:text-xs font-bold px-1.5 py-0.5 rounded border shrink-0 ${
-                                                pendingCellComments.length > 0
-                                                    ? 'bg-red-950/70 text-red-200 border-red-500/60'
-                                                    : 'bg-emerald-900/60 text-emerald-200 border-emerald-500/50'
-                                            }`} title={`${pendingCellComments.length} pending reviewer comments`}>
-                                                💬 {visibleCellComments.length} ({pendingCellComments.length} pending)
-                                            </span>
-                                        )}
-                                    </div>
-                                    <p className="text-[11px] text-slate-400 mt-0.5 truncate max-w-xl">
-                                        {ppmp.title}
-                                    </p>
-                                </div>
                             </div>
 
-                            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                            <div className="flex items-center justify-end gap-2 sm:gap-3 shrink-0 flex-wrap">
                                 <div className="hidden lg:flex items-center gap-3 bg-slate-800 px-3 py-1 rounded-lg border border-slate-700 text-xs">
                                     <div>
                                         <span className="text-slate-400 block text-[9px] uppercase font-bold">Total Budget</span>
@@ -2750,7 +3334,6 @@ export const PPMPDetailPage = ({
                                     </div>
                                 </div>
 
-                                {/* Action button in modal header: Print if READY_TO_PRINT, otherwise Edit PPMP if editable */}
                                 {isReadyToPrint ? (
                                     <div className="flex items-center gap-1.5 sm:gap-2">
                                         <button
@@ -2831,7 +3414,7 @@ export const PPMPDetailPage = ({
                                 <button
                                     type="button"
                                     onClick={() => setIsItemsModalOpen(false)}
-                                    className="p-1.5 sm:p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                                    className="hidden sm:inline-flex p-1.5 sm:p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
                                     title="Close modal"
                                 >
                                     <X className="w-5 h-5" />
@@ -2839,10 +3422,10 @@ export const PPMPDetailPage = ({
                             </div>
                         </div>
 
-                        {/* Modal Body: Complete Form Layout matching the Official Print Document */}
                         <div className="p-2 sm:p-4 md:p-6 overflow-y-auto flex-1 bg-slate-200">
+                            <ResponsivePrintDocument paperWidth={1220}>
                             <div className="bg-white rounded-lg border border-slate-400 shadow-lg p-3 sm:p-5 md:p-6 max-w-[1500px] mx-auto text-black">
-                                {/* Top Toolbar: Tracker No. & Collapse/Expand Header Toggle */}
+
                                 <div className="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-slate-200">
                                     <div className="text-xs font-mono font-bold text-slate-800">
                                         Tracker No.: <span className="font-bold text-black">{ppmp?.tracking_number || ppmp?.ppmp_number || '—'}</span>
@@ -2880,7 +3463,7 @@ export const PPMPDetailPage = ({
                                     </div>
                                 ) : (
                                     <>
-                                        {/* Official Header with Seal matching Print View */}
+
                                         <table className="w-full border-collapse mb-2">
                                             <tbody>
                                                 <tr>
@@ -2939,19 +3522,19 @@ export const PPMPDetailPage = ({
                                                                 onComplyCellComment={handleComplyCellComment}
                                                                 onUncomplyCellComment={handleUncomplyCellComment}
                                                                 onUpdateCellValue={(newVal) => handleUpdateCellValue('plan_type', newVal, null, null, 'Plan Type (INDICATIVE / FINAL)')}
-                                                                className="inline-flex items-center justify-center gap-8 text-xs font-bold px-3 py-1 rounded"
+                                                                className="inline-flex items-center justify-center gap-8 text-xs font-bold px-3 py-1 rounded whitespace-nowrap"
                                                             >
-                                                                <label className="flex items-center gap-1.5 cursor-default">
-                                                                    <span className={`w-3.5 h-3.5 border border-black inline-flex items-center justify-center text-[10px] leading-none ${ppmp.plan_type === 'INDICATIVE' ? 'bg-black text-white font-black' : 'bg-white'}`}>
+                                                                <label className="inline-flex items-center gap-1.5 cursor-default whitespace-nowrap shrink-0">
+                                                                    <span className={`w-3.5 h-3.5 shrink-0 border border-black inline-flex items-center justify-center text-[10px] leading-none ${ppmp.plan_type === 'INDICATIVE' ? 'bg-black text-white font-black' : 'bg-white'}`}>
                                                                         {ppmp.plan_type === 'INDICATIVE' ? '✓' : ''}
                                                                     </span>
-                                                                    <span>INDICATIVE</span>
+                                                                    <span className="whitespace-nowrap">INDICATIVE</span>
                                                                 </label>
-                                                                <label className="flex items-center gap-1.5 cursor-default">
-                                                                    <span className={`w-3.5 h-3.5 border border-black inline-flex items-center justify-center text-[10px] leading-none ${ppmp.plan_type === 'FINAL' ? 'bg-black text-white font-black' : 'bg-white'}`}>
+                                                                <label className="inline-flex items-center gap-1.5 cursor-default whitespace-nowrap shrink-0">
+                                                                    <span className={`w-3.5 h-3.5 shrink-0 border border-black inline-flex items-center justify-center text-[10px] leading-none ${ppmp.plan_type === 'FINAL' ? 'bg-black text-white font-black' : 'bg-white'}`}>
                                                                         {ppmp.plan_type === 'FINAL' ? '✓' : ''}
                                                                     </span>
-                                                                    <span>FINAL</span>
+                                                                    <span className="whitespace-nowrap">FINAL</span>
                                                                 </label>
                                                             </CommentableCell>
                                                         </div>
@@ -2961,7 +3544,6 @@ export const PPMPDetailPage = ({
                                             </tbody>
                                         </table>
 
-                                        {/* Fiscal Year & End-User Subheaders */}
                                         <div className="text-xs mb-3 border-b border-black pb-2">
                                             <div className="flex items-center justify-between flex-wrap gap-2">
                                                 <CommentableCell
@@ -3039,7 +3621,6 @@ export const PPMPDetailPage = ({
                                     </>
                                 )}
 
-                                {/* Full Procurement Plan Table with 12 Columns & Delivery Rows */}
                                 <ProcurementPlanTable
                                     items={ppmp.items || []}
                                     isEditable={false}
@@ -3064,23 +3645,26 @@ export const PPMPDetailPage = ({
                                     onUpdateCellValue={handleUpdateCellValue}
                                 />
 
-                                {/* Official 4-Box Signature Section */}
                                 <div className="mt-6">
                                     <SignatureSection ppmp={ppmp} isPrintMode={true} />
                                 </div>
                             </div>
+                            </ResponsivePrintDocument>
                         </div>
 
-                        {/* Modal Footer */}
-                        <div className="px-4 sm:px-6 py-2 sm:py-2.5 bg-white border-t border-slate-300 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-700 shrink-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-bold text-slate-900">Total Budget:</span>
-                                <span className="font-mono text-xs sm:text-sm font-extrabold text-blue-900">
-                                    {formatCurrency(ppmp.total_budget)}
-                                </span>
-                                <span className="mx-1 sm:mx-2 text-slate-300">|</span>
-                                <span className="font-bold text-slate-900">Status:</span>
-                                <StatusBadge status={ppmp.status} />
+                        <div className="px-3.5 sm:px-6 py-2.5 bg-white border-t border-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-700 shrink-0">
+                            <div className="flex items-center justify-between sm:justify-start gap-2 flex-wrap">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-slate-900">Total Budget:</span>
+                                    <span className="font-mono text-xs sm:text-sm font-extrabold text-blue-900">
+                                        {formatCurrency(ppmp.total_budget)}
+                                    </span>
+                                </div>
+                                <span className="hidden sm:inline mx-1 text-slate-300">|</span>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-slate-900">Status:</span>
+                                    <StatusBadge status={ppmp.status} />
+                                </div>
                             </div>
 
                             <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
@@ -3100,7 +3684,7 @@ export const PPMPDetailPage = ({
                                 <button
                                     type="button"
                                     onClick={() => setIsItemsModalOpen(false)}
-                                    className="px-4 sm:px-5 py-1.5 sm:py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider rounded-lg transition cursor-pointer"
+                                    className="w-full sm:w-auto px-4 sm:px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider rounded-lg transition cursor-pointer"
                                 >
                                     Close Modal
                                 </button>
@@ -3110,11 +3694,10 @@ export const PPMPDetailPage = ({
                 </div>
             )}
 
-            {/* HISTORICAL / PREVIOUS / ANNUAL PPMP FULL CONTENT REVIEW MODAL */}
             {selectedReviewPpmp && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-6 backdrop-blur-xs no-print">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[96vw] max-h-[94vh] flex flex-col border border-slate-300 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                        {/* Header */}
+
                         <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-indigo-600 rounded-lg text-white">
@@ -3202,15 +3785,13 @@ export const PPMPDetailPage = ({
                             </div>
                         </div>
 
-                        {/* Modal Body: Complete Form Layout matching the Active PPMP Official Print / Modal Layout */}
                         <div className="p-4 md:p-8 overflow-y-auto overflow-x-auto flex-1 bg-slate-200">
                             <div className="bg-white rounded-lg border border-slate-400 shadow-lg p-6 md:p-8 max-w-[1500px] mx-auto text-black">
-                                {/* Top-left Tracker No. */}
+
                                 <div className="text-xs font-mono font-bold text-slate-800 mb-1">
                                     Tracker No.: <span className="font-bold text-black">{selectedReviewPpmp?.tracking_number || selectedReviewPpmp?.ppmp_number || '—'}</span>
                                 </div>
 
-                                {/* Official Header with Seal matching Print View */}
                                 <table className="w-full border-collapse mb-2">
                                     <tbody>
                                         <tr>
@@ -3230,18 +3811,18 @@ export const PPMPDetailPage = ({
                                                 <div className="text-sm font-bold tracking-tight mt-0.5">
                                                     PROJECT PROCUREMENT MANAGEMENT PLAN (PPMP) NO. <span className="font-mono">{selectedReviewPpmp.ppmp_number}</span>
                                                 </div>
-                                                <div className="flex items-center justify-center gap-10 text-xs font-bold mt-1">
-                                                    <label className="flex items-center gap-1.5 cursor-default">
-                                                        <span className={`w-3.5 h-3.5 border border-black inline-flex items-center justify-center text-[10px] leading-none ${selectedReviewPpmp.plan_type === 'INDICATIVE' ? 'bg-black text-white font-black' : 'bg-white'}`}>
+                                                <div className="flex items-center justify-center gap-10 text-xs font-bold mt-1 whitespace-nowrap">
+                                                    <label className="inline-flex items-center gap-1.5 cursor-default whitespace-nowrap shrink-0">
+                                                        <span className={`w-3.5 h-3.5 shrink-0 border border-black inline-flex items-center justify-center text-[10px] leading-none ${selectedReviewPpmp.plan_type === 'INDICATIVE' ? 'bg-black text-white font-black' : 'bg-white'}`}>
                                                             {selectedReviewPpmp.plan_type === 'INDICATIVE' ? '✓' : ''}
                                                         </span>
-                                                        <span>INDICATIVE</span>
+                                                        <span className="whitespace-nowrap">INDICATIVE</span>
                                                     </label>
-                                                    <label className="flex items-center gap-1.5 cursor-default">
-                                                        <span className={`w-3.5 h-3.5 border border-black inline-flex items-center justify-center text-[10px] leading-none ${selectedReviewPpmp.plan_type === 'FINAL' ? 'bg-black text-white font-black' : 'bg-white'}`}>
+                                                    <label className="inline-flex items-center gap-1.5 cursor-default whitespace-nowrap shrink-0">
+                                                        <span className={`w-3.5 h-3.5 shrink-0 border border-black inline-flex items-center justify-center text-[10px] leading-none ${selectedReviewPpmp.plan_type === 'FINAL' ? 'bg-black text-white font-black' : 'bg-white'}`}>
                                                             {selectedReviewPpmp.plan_type === 'FINAL' ? '✓' : ''}
                                                         </span>
-                                                        <span>FINAL</span>
+                                                        <span className="whitespace-nowrap">FINAL</span>
                                                     </label>
                                                 </div>
                                             </td>
@@ -3250,7 +3831,6 @@ export const PPMPDetailPage = ({
                                     </tbody>
                                 </table>
 
-                                {/* Fiscal Year & End-User Subheaders */}
                                 <div className="text-xs mb-3 border-b border-black pb-2">
                                     <div className="flex items-center justify-between">
                                         <div className="font-bold">
@@ -3269,7 +3849,6 @@ export const PPMPDetailPage = ({
                                     </div>
                                 </div>
 
-                                {/* Full Procurement Plan Table with 12 Columns & Delivery Rows */}
                                 <ProcurementPlanTable
                                     items={selectedReviewPpmp.items || []}
                                     isEditable={false}
@@ -3282,14 +3861,12 @@ export const PPMPDetailPage = ({
                                     warrantyAndOtherTerms={selectedReviewPpmp.warranty_and_other_terms}
                                 />
 
-                                {/* Official 4-Box Signature Section */}
                                 <div className="mt-6">
                                     <SignatureSection ppmp={selectedReviewPpmp} isPrintMode={true} />
                                 </div>
                             </div>
                         </div>
 
-                        {/* Modal Footer */}
                         <div className="px-6 py-3 bg-white border-t border-slate-300 flex items-center justify-between text-xs text-slate-700 shrink-0">
                             <div className="flex items-center gap-2">
                                 <span className="font-bold text-slate-900">Baseline Budget:</span>
@@ -3316,10 +3893,8 @@ export const PPMPDetailPage = ({
                 </div>
             )}
 
-
-            {/* Request Supplemental / Amend Modal */}
             {isAmendModalOpen && (
-                <div 
+                <div
                     className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-hidden"
                     onClick={(e) => {
                         if (e.target === e.currentTarget && !submittingAmend) {
@@ -3328,7 +3903,7 @@ export const PPMPDetailPage = ({
                     }}
                 >
                     <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                        {/* Header (Sticky / Shrink-0) */}
+
                         <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0 border-b border-slate-800">
                             <div className="flex items-center gap-2.5">
                                 <div className="p-2 bg-amber-500/20 text-amber-400 rounded-lg">
@@ -3353,7 +3928,6 @@ export const PPMPDetailPage = ({
                             </button>
                         </div>
 
-                        {/* Body Form with Flex Column and Scrollable Content */}
                         <form onSubmit={handleAmendSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
                             <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1 min-h-0">
                                 {amendError && (
@@ -3362,7 +3936,6 @@ export const PPMPDetailPage = ({
                                     </div>
                                 )}
 
-                                {/* Readonly Info: Tracker Number, PPMP No, Project Title */}
                                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
                                     <div className="flex items-center justify-between gap-2 flex-wrap">
                                         <div className="flex items-center gap-2">
@@ -3386,7 +3959,6 @@ export const PPMPDetailPage = ({
                                     </div>
                                 </div>
 
-                                {/* Component to Change Selection */}
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
                                         What to Change <span className="text-rose-500">*</span>
@@ -3439,7 +4011,6 @@ export const PPMPDetailPage = ({
                                     </div>
                                 </div>
 
-                                {/* Option Selection: Supplemental vs Amend (Shown only when PPMP / APP is selected) */}
                                 {scopePpmpApp && (
                                     <div className="p-3.5 bg-amber-50/40 border border-amber-200 rounded-xl space-y-2 animate-in fade-in duration-150">
                                         <label className="block text-xs font-bold text-amber-950 uppercase tracking-wider">
@@ -3489,7 +4060,6 @@ export const PPMPDetailPage = ({
                                             </label>
                                         </div>
 
-                                        {/* Supplemental Sub-options: For continuation vs Other */}
                                         {amendType === 'SUPPLEMENTAL' && (
                                             <div className="mt-3 pt-3 border-t border-amber-200/80 space-y-2">
                                                 <label className="block text-[11px] font-bold text-amber-950 uppercase tracking-wider">
@@ -3542,28 +4112,11 @@ export const PPMPDetailPage = ({
                                                         </div>
                                                     </label>
                                                 </div>
-
-                                                {supplementalPurpose === 'OTHER' && (
-                                                    <div className="mt-2 animate-in fade-in duration-150">
-                                                        <label className="block text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-1">
-                                                            Specify Details / Reason <span className="text-rose-500">*</span>
-                                                        </label>
-                                                        <input
-                                                            type="text"
-                                                            required
-                                                            value={supplementalSpecify}
-                                                            onChange={(e) => setSupplementalSpecify(e.target.value)}
-                                                            placeholder="Specify reason for Other supplemental request..."
-                                                            className="w-full text-xs px-3 py-2 bg-white border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none text-slate-800 placeholder:text-slate-400 font-medium"
-                                                        />
-                                                    </div>
-                                                )}
                                             </div>
                                         )}
                                     </div>
                                 )}
 
-                                {/* Reason / Justification */}
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                                         Reason / Justification <span className="text-rose-500">*</span>
@@ -3573,12 +4126,15 @@ export const PPMPDetailPage = ({
                                         required
                                         value={amendReason || ''}
                                         onChange={(e) => setAmendReason(e.target.value)}
-                                        placeholder="State the official justification for this supplemental or amendment request..."
+                                        placeholder={
+                                            scopePpmpApp && amendType === 'SUPPLEMENTAL' && supplementalPurpose === 'OTHER'
+                                                ? 'Specify the reason and official justification for this Other supplemental request...'
+                                                : 'State the official justification for this supplemental or amendment request...'
+                                        }
                                         className="w-full text-xs p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none transition resize-none"
                                     />
                                 </div>
 
-                                {/* Attach PDF Request Letter */}
                                 <div>
                                     <div className="flex items-center justify-between mb-1.5">
                                         <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
@@ -3651,7 +4207,6 @@ export const PPMPDetailPage = ({
                                         )}
                                     </div>
 
-                                    {/* Security advisory note */}
                                     <div className="mt-2 p-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] text-slate-500 flex items-start gap-1.5">
                                         <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.2" />
                                         <span>
@@ -3661,7 +4216,6 @@ export const PPMPDetailPage = ({
                                 </div>
                             </div>
 
-                            {/* Modal Footer (Sticky / Shrink-0) */}
                             <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5 shrink-0">
                                 <button
                                     type="button"
@@ -3694,7 +4248,6 @@ export const PPMPDetailPage = ({
                 </div>
             )}
 
-            {/* Admin Disapproval Modal */}
             {showRejectModal && (
                 <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
                     <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -3755,7 +4308,121 @@ export const PPMPDetailPage = ({
                     </div>
                 </div>
             )}
-            {/* Reviewer Assignment & Submission Modal */}
+
+            {isEditTrackerModalOpen && (
+                <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Edit3 className="w-4 h-4 text-blue-400" />
+                                <h3 className="text-sm font-bold">Edit Tracker Number</h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsEditTrackerModalOpen(false)}
+                                className="p-1 text-slate-400 hover:text-white rounded cursor-pointer"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSaveTrackerNumber}>
+                            <div className="p-6 space-y-4">
+                                <div className="text-xs text-slate-600 leading-relaxed">
+                                    Update the official Tracker No. for this PPMP. Each Tracker No. must be unique across all procurement packages (amendments and supplementals of the same PPMP share its Tracker No.).
+                                </div>
+
+                                <div>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                                            Tracker No. <span className="text-rose-500">*</span>
+                                        </label>
+                                        {trackerCheck.checking && (
+                                            <span className="text-[11px] font-semibold text-blue-600 flex items-center gap-1">
+                                                <Loader2 className="w-3 h-3 animate-spin" />
+                                                Checking availability...
+                                            </span>
+                                        )}
+                                        {!trackerCheck.checking && trackerCheck.exists && (
+                                            <span className="text-[10px] font-bold text-rose-700 bg-rose-100 border border-rose-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                <AlertCircle className="w-3 h-3 text-rose-600" />
+                                                Already Exists (Duplicate)
+                                            </span>
+                                        )}
+                                        {!trackerCheck.checking && !trackerCheck.exists && trackerInput?.trim() && (
+                                            <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                <CheckCircle className="w-3 h-3 text-emerald-600" />
+                                                Available
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <input
+                                        type="text"
+                                        required
+                                        autoFocus
+                                        value={trackerInput || ''}
+                                        onChange={(e) => {
+                                            setTrackerInput(e.target.value.toUpperCase());
+                                            setTrackerError('');
+                                        }}
+                                        placeholder="e.g. PMOGOODS-2026-000001"
+                                        className={`w-full text-xs font-mono font-bold p-3 border rounded-xl outline-none transition ${
+                                            trackerCheck.exists || trackerError
+                                                ? 'border-rose-400 bg-rose-50/40 text-rose-950 focus:ring-2 focus:ring-rose-500'
+                                                : 'border-slate-300 text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
+                                        }`}
+                                    />
+
+                                    {(trackerError || trackerCheck.exists) ? (
+                                        <div className="mt-2 p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-[11px] text-rose-800 flex items-start gap-2">
+                                            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                                            <div>
+                                                <div className="font-bold">Duplicate Tracker No. Detected</div>
+                                                <div>{trackerError || trackerCheck.message}</div>
+                                            </div>
+                                        </div>
+                                    ) : trackerCheck.message ? (
+                                        <div className="mt-1.5 text-[11px] text-emerald-700 font-medium flex items-center gap-1">
+                                            <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                            <span>{trackerCheck.message}</span>
+                                        </div>
+                                    ) : null}
+                                </div>
+                            </div>
+
+                            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5">
+                                <button
+                                    type="button"
+                                    disabled={savingTracker}
+                                    onClick={() => setIsEditTrackerModalOpen(false)}
+                                    className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 rounded-lg transition cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={savingTracker || trackerCheck.checking || trackerCheck.exists || !trackerInput?.trim()}
+                                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-xs transition disabled:opacity-50 cursor-pointer"
+                                >
+                                    {savingTracker ? (
+                                        <>
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                            <span>Saving...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <CheckCircle className="w-3.5 h-3.5" />
+                                            <span>Save Tracker No.</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             <ReviewerAssignmentModal
                 isOpen={isAssignReviewerModalOpen}
                 onClose={() => setIsAssignReviewerModalOpen(false)}
@@ -3770,7 +4437,18 @@ export const PPMPDetailPage = ({
                 }}
             />
 
-            {/* 1. If PIMS is INACTIVE: Show PIMS Publish Confirmation & Procurement Input Modal (NO Generate PR modal) */}
+            {isAdminUser && (
+                <AdminEditStatusModal
+                    isOpen={isEditStatusModalOpen}
+                    onClose={() => setIsEditStatusModalOpen(false)}
+                    ppmp={ppmp}
+                    onUpdated={async (updatedPpmp) => {
+                        if (updatedPpmp) setLocalPpmp(updatedPpmp);
+                        if (onReload) await onReload();
+                    }}
+                />
+            )}
+
             {!isPimsActive && (
                 <PimsPublishModal
                     isOpen={isPimsPublishModalOpen}
@@ -3783,7 +4461,6 @@ export const PPMPDetailPage = ({
                 />
             )}
 
-            {/* 2. If PIMS is ACTIVE: Show Generate Purchase Request (PR) Popup */}
             {isPimsActive && (
                 <GeneratePurchaseRequestModal
                     isOpen={isGeneratePrModalOpen}

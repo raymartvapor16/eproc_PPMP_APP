@@ -37,9 +37,6 @@ export const SYSTEM_METADATA = {
     },
 };
 
-/**
- * Normalize a view name or URL path to its canonical system path
- */
 export const resolveCanonicalSystemPath = (pathOrView) => {
     const raw = String(pathOrView || '').trim().replace(/\/+$/, '').toLowerCase();
     if (['dashboard', 'ppmps', 'create', 'edit', 'detail', '/eprocrementppmpapp', '/eprocurementppmpapp', '/dashboard', '/ppmps'].includes(raw) || raw.startsWith('/ppmps/')) {
@@ -57,9 +54,6 @@ export const resolveCanonicalSystemPath = (pathOrView) => {
     return raw;
 };
 
-/**
- * Find the matching portal system record from the catalog list
- */
 export const findPortalSystemByPathOrView = (portalSystems, pathOrView) => {
     if (!Array.isArray(portalSystems) || portalSystems.length === 0) return null;
     const canonical = resolveCanonicalSystemPath(pathOrView);
@@ -71,25 +65,19 @@ export const findPortalSystemByPathOrView = (portalSystems, pathOrView) => {
     }) || null;
 };
 
-/**
- * Check if a portal system is active in the catalog (defaults to true if not found)
- */
 export const isPortalSystemActive = (portalSystems, pathOrView) => {
     const matched = findPortalSystemByPathOrView(portalSystems, pathOrView);
     if (!matched) return true;
     return matched.status !== 'inactive';
 };
 
-/**
- * Helper to check if a user is permitted to access a given system route
- */
 export const canUserAccessSystem = (user, systemUrl) => {
     if (!user) return false;
-    // Admins and Super Admins have universal system access
+
     if (user.role === 'super_admin' || user.role === 'admin') return true;
 
     const raw = (systemUrl || '').trim();
-    // External websites / public destinations do not require internal permission checks
+
     if (/^https?:\/\//i.test(raw) || (!raw.startsWith('/') && !raw.startsWith('#') && raw.includes('.'))) {
         return true;
     }
@@ -108,8 +96,7 @@ export const canUserAccessSystem = (user, systemUrl) => {
     if (accessible.includes('*')) return true;
 
     const target = (systemUrl || '').replace(/\/+$/, '').toLowerCase();
-    
-    // If accessible_systems has been explicitly configured, strictly respect what is checked!
+
     if (accessible.length > 0) {
         return accessible.some(sys => {
             const item = (sys || '').replace(/\/+$/, '').toLowerCase();
@@ -134,7 +121,6 @@ export const canUserAccessSystem = (user, systemUrl) => {
         });
     }
 
-    // Only for legacy accounts with no accessible_systems configured:
     if (user.role === 'monitor') {
         return target === '/monitoringsystem' || target.startsWith('/monitoring');
     }
@@ -158,12 +144,11 @@ export const UnauthorizedSystemAccessView = ({
         badge: 'Provincial System',
     };
 
-    // Determine which systems this user is permitted to access
     const accessibleList = Object.values(SYSTEM_METADATA).filter(sys => canUserAccessSystem(user, sys.path));
 
     return (
         <div className="min-h-screen bg-slate-950 flex flex-col justify-between font-sans selection:bg-rose-500 selection:text-white">
-            {/* Header Brand Bar */}
+
             <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur-md px-6 py-4">
                 <div className="max-w-5xl mx-auto flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -210,10 +195,9 @@ export const UnauthorizedSystemAccessView = ({
                 </div>
             </header>
 
-            {/* Main Restricted Message Container */}
             <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-8">
                 <div className="max-w-xl w-full bg-slate-900/90 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden p-6 sm:p-8 backdrop-blur-xl animate-in fade-in zoom-in-95">
-                    {/* Top Alert Badge */}
+
                     <div className="flex items-center justify-center mb-6">
                         <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-rose-500/20 to-amber-500/10 border-2 border-rose-500/40 flex items-center justify-center text-rose-400 shadow-lg shadow-rose-950/50">
                             <ShieldAlert className="w-8 h-8" />
@@ -236,7 +220,6 @@ export const UnauthorizedSystemAccessView = ({
                         </div>
                     </div>
 
-                    {/* Permitted Systems or Empty Notice */}
                     {accessibleList.length > 0 ? (
                         <div className="mb-6 bg-slate-950/60 border border-slate-800 rounded-xl p-4">
                             <div className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
@@ -276,7 +259,6 @@ export const UnauthorizedSystemAccessView = ({
                         </div>
                     )}
 
-                    {/* Face to Face Policy Notice Box */}
                     <div className="bg-gradient-to-r from-blue-950/40 to-slate-950/60 border border-blue-900/50 rounded-xl p-4 text-xs text-slate-300 space-y-2 mb-6">
                         <div className="flex items-center gap-2 text-blue-300 font-bold">
                             <Building2 className="w-4 h-4 text-amber-400 shrink-0" />
@@ -287,7 +269,6 @@ export const UnauthorizedSystemAccessView = ({
                         </p>
                     </div>
 
-                    {/* Bottom Actions */}
                     <div className="flex flex-col sm:flex-row items-center gap-2.5">
                         <button
                             type="button"
@@ -309,7 +290,6 @@ export const UnauthorizedSystemAccessView = ({
                 </div>
             </main>
 
-            {/* Footer */}
             <footer className="border-t border-slate-900 py-4 text-center text-[11px] text-slate-500">
                 © {new Date().getFullYear()} Provincial Government of Davao del Sur • Office of the Provincial Procurement Management Officer (OPPMO)
             </footer>
@@ -317,9 +297,6 @@ export const UnauthorizedSystemAccessView = ({
     );
 };
 
-/**
- * Full-page view shown when a provincial system is marked as "Inactive" in the Portal Systems Catalog
- */
 export const SystemMaintenanceView = ({
     user = null,
     attemptedSystem = '/pims',
@@ -341,7 +318,6 @@ export const SystemMaintenanceView = ({
     const displayName = catalogSystem?.name || meta.name;
     const displayDesc = catalogSystem?.description || meta.desc;
 
-    // Other active systems that the user can access
     const activeAvailableSystems = Object.values(SYSTEM_METADATA).filter((sys) => {
         if (sys.path === canonicalPath) return false;
         if (!isPortalSystemActive(portalSystems, sys.path)) return false;
@@ -364,7 +340,7 @@ export const SystemMaintenanceView = ({
 
     return (
         <div className="min-h-screen bg-slate-950 flex flex-col justify-between font-sans selection:bg-amber-500 selection:text-slate-950">
-            {/* Header Brand Bar */}
+
             <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur-md px-6 py-4">
                 <div className="max-w-5xl mx-auto flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -413,13 +389,11 @@ export const SystemMaintenanceView = ({
                 </div>
             </header>
 
-            {/* Main Maintenance / Inactive Message Container */}
             <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-8">
                 <div className="max-w-xl w-full bg-slate-900/90 border border-amber-500/30 rounded-2xl shadow-2xl overflow-hidden p-6 sm:p-8 backdrop-blur-xl animate-in fade-in zoom-in-95 relative">
-                    {/* Top Accent Bar */}
+
                     <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500" />
 
-                    {/* Top Icon Badge */}
                     <div className="flex items-center justify-center mb-6">
                         <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500/20 to-slate-800 border-2 border-amber-500/40 flex items-center justify-center text-amber-400 shadow-lg shadow-amber-950/40">
                             <Wrench className="w-8 h-8" />
@@ -442,7 +416,6 @@ export const SystemMaintenanceView = ({
                         </p>
                     </div>
 
-                    {/* System Description & Maintenance Notice */}
                     <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-4 text-xs text-slate-300 space-y-2 mb-6">
                         <div className="flex items-center gap-2 text-amber-300 font-bold">
                             <Building2 className="w-4 h-4 text-amber-400 shrink-0" />
@@ -456,7 +429,6 @@ export const SystemMaintenanceView = ({
                         </p>
                     </div>
 
-                    {/* Super Admin Quick Recovery Controls */}
                     {user?.role === 'super_admin' && (
                         <div className="mb-6 bg-blue-950/30 border border-blue-500/30 rounded-xl p-4 space-y-3">
                             <div className="text-xs font-bold text-blue-300 uppercase tracking-wider flex items-center justify-between">
@@ -498,7 +470,6 @@ export const SystemMaintenanceView = ({
                         </div>
                     )}
 
-                    {/* Other Active & Available Systems */}
                     {activeAvailableSystems.length > 0 && (
                         <div className="mb-6 bg-slate-950/60 border border-slate-800 rounded-xl p-4">
                             <div className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
@@ -533,7 +504,6 @@ export const SystemMaintenanceView = ({
                         </div>
                     )}
 
-                    {/* Bottom Actions */}
                     <div className="flex flex-col sm:flex-row items-center gap-2.5">
                         <button
                             type="button"
@@ -557,7 +527,6 @@ export const SystemMaintenanceView = ({
                 </div>
             </main>
 
-            {/* Footer */}
             <footer className="border-t border-slate-900 py-4 text-center text-[11px] text-slate-500">
                 © {new Date().getFullYear()} Provincial Government of Davao del Sur • Office of the Provincial Procurement Management Officer (OPPMO)
             </footer>

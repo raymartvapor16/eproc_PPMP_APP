@@ -156,7 +156,6 @@ class FundSourceManagementTest extends TestCase
             'workflow_route' => 'pacco',
         ]);
 
-        // Verifies existing PPMPs are safely updated to match new name
         $this->assertEquals('New Updated Fund Name', $ppmp->fresh()->source_of_fund);
     }
 

@@ -46,7 +46,6 @@ export const UserSystemAccessModal = ({
     const [error, setError] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
 
-    // Fetch latest portal systems
     useEffect(() => {
         if (!isOpen) return;
         let isMounted = true;
@@ -79,7 +78,6 @@ export const UserSystemAccessModal = ({
         return () => { isMounted = false; };
     }, [isOpen]);
 
-    // Initialize user's current accessible systems
     useEffect(() => {
         if (!isOpen || !targetUser) return;
         setError('');
@@ -88,7 +86,7 @@ export const UserSystemAccessModal = ({
         if (Array.isArray(targetUser.accessible_systems) && targetUser.accessible_systems.length > 0) {
             setSelectedUrls(targetUser.accessible_systems);
         } else {
-            // Default based on role
+
             if (targetUser.role === 'super_admin' || targetUser.role === 'admin' || targetUser.role === 'administrator') {
                 setSelectedUrls(['/eprocrementppmpapp', '/monitoringsystem', '/pims', '/supplierevaluation']);
             } else if (targetUser.role === 'monitor') {
@@ -153,7 +151,7 @@ export const UserSystemAccessModal = ({
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
             <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-                {/* Header */}
+
                 <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 text-white">
                     <div className="flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-300">
@@ -177,9 +175,8 @@ export const UserSystemAccessModal = ({
                     </button>
                 </div>
 
-                {/* Body */}
                 <form onSubmit={handleSave} className="p-6 overflow-y-auto space-y-4 text-xs">
-                    {/* User Profile Card */}
+
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
                         <div>
                             <div className="font-bold text-slate-900 text-sm">
@@ -197,7 +194,6 @@ export const UserSystemAccessModal = ({
                         </span>
                     </div>
 
-                    {/* Notice */}
                     <div className="p-3 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 flex items-start gap-2.5">
                         <Shield className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
                         <div className="text-[11px] leading-relaxed">
@@ -226,7 +222,6 @@ export const UserSystemAccessModal = ({
                         </div>
                     )}
 
-                    {/* Systems Checklist */}
                     <div>
                         <div className="flex items-center justify-between mb-2">
                             <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
@@ -302,7 +297,6 @@ export const UserSystemAccessModal = ({
                         )}
                     </div>
 
-                    {/* Footer Buttons */}
                     <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2.5">
                         <button
                             type="button"

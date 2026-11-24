@@ -6,12 +6,10 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
-        // 1. PPMPs
+
         Schema::create('ppmps', function (Blueprint $table) {
             $table->id();
             $table->uuid('uuid')->unique();
@@ -27,7 +25,6 @@ return new class extends Migration
             $table->string('payment_method')->nullable();
             $table->decimal('total_budget', 18, 2)->default(0.00);
 
-            // Workflow status
             $table->enum('status', [
                 'DRAFT',
                 'HEAD_PENDING',
@@ -54,7 +51,6 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 1.1 PPMP Milestones (Normalized workflow milestone & receipt timestamps)
         Schema::create('ppmp_milestones', function (Blueprint $table) {
             $table->id();
             $table->foreignId('ppmp_id')->unique()->constrained('ppmps')->cascadeOnDelete();
@@ -77,7 +73,6 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 1.2 PPMP Amendments & Supplementals (Normalized amendment & supplemental request details)
         Schema::create('ppmp_amendments', function (Blueprint $table) {
             $table->id();
             $table->foreignId('ppmp_id')->unique()->constrained('ppmps')->cascadeOnDelete();
@@ -93,27 +88,25 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 2. PPMP Items
         Schema::create('ppmp_items', function (Blueprint $table) {
             $table->id();
             $table->foreignId('ppmp_id')->constrained('ppmps')->cascadeOnDelete();
             $table->integer('item_no')->default(1);
             $table->text('description');
-            $table->string('project_type')->nullable(); // Goods, Infrastructure, Consulting Services
+            $table->string('project_type')->nullable();
             $table->string('quantity_size')->nullable();
-            $table->string('procurement_mode')->nullable(); // Public Bidding, Small Value, Shopping, etc.
-            $table->boolean('pre_proc_conference')->default(false); // Yes/No
+            $table->string('procurement_mode')->nullable();
+            $table->boolean('pre_proc_conference')->default(false);
             $table->string('start_date')->nullable();
             $table->string('end_date')->nullable();
             $table->string('delivery_period')->nullable();
-            $table->string('source_of_fund')->nullable(); // General Fund, 20% Dev Fund, SEF, etc.
+            $table->string('source_of_fund')->nullable();
             $table->decimal('estimated_budget', 18, 2)->nullable()->default(null);
             $table->text('supporting_docs_text')->nullable();
             $table->text('remarks')->nullable();
             $table->timestamps();
         });
 
-        // 3. PPMP Attachments (Private Storage)
         Schema::create('ppmp_attachments', function (Blueprint $table) {
             $table->id();
             $table->uuid('uuid')->unique();
@@ -127,7 +120,6 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 4. PPMP Reviews
         Schema::create('ppmp_reviews', function (Blueprint $table) {
             $table->id();
             $table->foreignId('ppmp_id')->constrained('ppmps')->cascadeOnDelete();
@@ -145,14 +137,13 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 5. PPMP Signatures & E-Signature Indicators
         Schema::create('ppmp_signatures', function (Blueprint $table) {
             $table->id();
             $table->foreignId('ppmp_id')->constrained('ppmps')->cascadeOnDelete();
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
             $table->string('role');
-            $table->string('signature_type'); // 'full_esignature' or 'initial_indicator'
-            $table->text('signature_indicator'); // Generated visual or badge representation code
+            $table->string('signature_type');
+            $table->text('signature_indicator');
             $table->string('signer_name');
             $table->string('signer_designation')->nullable();
             $table->timestamp('signed_at');
@@ -160,7 +151,6 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 6. PPMP Routes (Timeline)
         Schema::create('ppmp_routes', function (Blueprint $table) {
             $table->id();
             $table->foreignId('ppmp_id')->constrained('ppmps')->cascadeOnDelete();
@@ -177,7 +167,6 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 7. PPMP Field Change Logs
         Schema::create('ppmp_change_logs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('ppmp_id')->constrained('ppmps')->cascadeOnDelete();
@@ -191,7 +180,6 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 8. Audit Logs
         Schema::create('audit_logs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
@@ -205,7 +193,6 @@ return new class extends Migration
             $table->timestamp('created_at')->useCurrent();
         });
 
-        // 9. System Notifications
         Schema::create('system_notifications', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
@@ -218,9 +205,6 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('system_notifications');

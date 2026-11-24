@@ -6,10 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations to add high-concurrency composite and lookup indexes
-     * for 45-50+ simultaneous users across PPMP, Monitoring, Notifications, and Audit tables.
-     */
+
     public function up(): void
     {
         Schema::table('ppmps', function (Blueprint $table) {
@@ -65,9 +62,6 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::table('ppmps', function (Blueprint $table) {
@@ -123,4 +117,3 @@ return new class extends Migration
         });
     }
 };
-

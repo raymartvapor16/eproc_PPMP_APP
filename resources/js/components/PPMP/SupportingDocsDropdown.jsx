@@ -35,7 +35,6 @@ export const SupportingDocsDropdown = ({
     const triggerRef = useRef(null);
     const menuRef = useRef(null);
 
-    // Calculate menu position relative to viewport
     const updatePosition = useCallback(() => {
         if (!triggerRef.current) return;
         const rect = triggerRef.current.getBoundingClientRect();
@@ -59,7 +58,6 @@ export const SupportingDocsDropdown = ({
         });
     }, []);
 
-    // Toggle dropdown open
     const handleToggleOpen = () => {
         if (disabled) return;
         if (!isOpen) {
@@ -70,7 +68,6 @@ export const SupportingDocsDropdown = ({
         }
     };
 
-    // Close on click outside or escape key
     useEffect(() => {
         if (!isOpen) return;
 
@@ -105,7 +102,6 @@ export const SupportingDocsDropdown = ({
         };
     }, [isOpen, updatePosition]);
 
-    // Active options list
     const docOptions = useMemo(() => {
         if (Array.isArray(documents) && documents.length > 0) {
             return documents;
@@ -113,7 +109,6 @@ export const SupportingDocsDropdown = ({
         return DEFAULT_FALLBACK_DOCS;
     }, [documents]);
 
-    // Parse value into array of selected names
     const selectedList = useMemo(() => {
         if (!value) return [];
         return String(value)
@@ -122,7 +117,6 @@ export const SupportingDocsDropdown = ({
             .filter(Boolean);
     }, [value]);
 
-    // Toggle a document by name
     const handleToggleDoc = (docName) => {
         const trimmed = docName.trim();
         if (!trimmed) return;
@@ -143,7 +137,6 @@ export const SupportingDocsDropdown = ({
         onChange(updated.join(', '));
     };
 
-    // Add custom document
     const handleAddCustom = (e) => {
         if (e) e.preventDefault();
         const trimmed = customInput.trim();
@@ -160,7 +153,6 @@ export const SupportingDocsDropdown = ({
         setCustomInput('');
     };
 
-    // Remove specific item directly
     const handleRemove = (e, itemToRemove) => {
         e.stopPropagation();
         const updated = selectedList.filter(
@@ -169,13 +161,11 @@ export const SupportingDocsDropdown = ({
         onChange(updated.join(', '));
     };
 
-    // Clear all selections
     const handleClearAll = (e) => {
         if (e) e.stopPropagation();
         onChange('');
     };
 
-    // Filtered options based on search query
     const filteredOptions = useMemo(() => {
         const q = searchQuery.trim().toLowerCase();
         if (!q) return docOptions;
@@ -186,7 +176,6 @@ export const SupportingDocsDropdown = ({
         );
     }, [docOptions, searchQuery]);
 
-    // Identify custom selections not in the official options
     const customSelections = useMemo(() => {
         const officialNames = new Set(docOptions.map((d) => d.name.toLowerCase()));
         return selectedList.filter((name) => !officialNames.has(name.toLowerCase()));
@@ -194,7 +183,7 @@ export const SupportingDocsDropdown = ({
 
     return (
         <div className="relative inline-block w-full">
-            {/* Trigger Container */}
+
             <div
                 ref={triggerRef}
                 role="button"
@@ -263,7 +252,6 @@ export const SupportingDocsDropdown = ({
                 </div>
             </div>
 
-            {/* Render Dropdown Menu via Portal into document.body to avoid table overflow clipping and z-index issues */}
             {isOpen && coords && createPortal(
                 <div
                     ref={menuRef}
@@ -278,7 +266,7 @@ export const SupportingDocsDropdown = ({
                     }}
                     className="bg-white rounded-2xl shadow-2xl border border-slate-300 flex flex-col text-xs overflow-hidden animate-in fade-in zoom-in-95 duration-100"
                 >
-                    {/* Header */}
+
                     <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white px-3.5 py-2.5 flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-2">
                             <FileCheck2 className="w-4 h-4 text-blue-400 shrink-0" />
@@ -300,7 +288,6 @@ export const SupportingDocsDropdown = ({
                         </div>
                     </div>
 
-                    {/* Filter & Clear Subheader */}
                     <div className="p-2.5 bg-slate-50/90 border-b border-slate-100 flex items-center gap-2 shrink-0">
                         <div className="relative flex-1">
                             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -323,7 +310,6 @@ export const SupportingDocsDropdown = ({
                         )}
                     </div>
 
-                    {/* Checkbox Options List */}
                     <div className="overflow-y-auto flex-1 p-2 space-y-1 divide-y divide-slate-100">
                         {filteredOptions.length === 0 ? (
                             <div className="py-6 text-center text-slate-400 text-[11px] italic">
@@ -367,7 +353,6 @@ export const SupportingDocsDropdown = ({
                             })
                         )}
 
-                        {/* Any Custom Selections previously typed */}
                         {customSelections.length > 0 && (
                             <div className="pt-2 mt-2">
                                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">
@@ -393,7 +378,6 @@ export const SupportingDocsDropdown = ({
                         )}
                     </div>
 
-                    {/* Add Custom / Other Document Form */}
                     <form
                         onSubmit={handleAddCustom}
                         className="p-2.5 bg-slate-50 border-t border-slate-200/80 flex items-center gap-1.5 shrink-0"
@@ -415,7 +399,6 @@ export const SupportingDocsDropdown = ({
                         </button>
                     </form>
 
-                    {/* Footer Actions */}
                     <div className="px-3.5 py-2 bg-white border-t border-slate-100 flex items-center justify-between shrink-0">
                         <span className="text-[11px] text-slate-500 font-medium">
                             {selectedList.length} of {docOptions.length} checked

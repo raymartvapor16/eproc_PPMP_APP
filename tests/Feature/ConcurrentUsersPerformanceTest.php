@@ -35,21 +35,6 @@ class ConcurrentUsersPerformanceTest extends TestCase
     protected User $adminUser;
     protected User $superAdminUser;
 
-    /**
-     * Provision a realistic 50-user multi-office environment:
-     * - 10 Offices
-     * - 30 End Users (3 per office)
-     * - 10 Office Heads (1 per office)
-     * - 2 Authorized Staff
-     * - 2 Budget Officers
-     * - 1 PACCO Officer
-     * - 1 OPPMO Officer
-     * - 1 BAC-TWG Officer
-     * - 1 Monitoring Officer
-     * - 1 Admin
-     * - 1 Super Admin
-     * Total = 50 concurrent users
-     */
     protected function seedMultiUserEnvironment(): void
     {
         Storage::fake('local');
@@ -115,7 +100,6 @@ class ConcurrentUsersPerformanceTest extends TestCase
             $this->offices[$idx] = $office;
             $this->headUsers[$office->id] = $head;
 
-            // Create 3 End Users per office (30 End Users total)
             for ($u = 1; $u <= 3; $u++) {
                 $this->endUsers[] = User::create([
                     'name' => "EndUser {$def['code']} #{$u}",
@@ -131,7 +115,6 @@ class ConcurrentUsersPerformanceTest extends TestCase
             }
         }
 
-        // 2 Authorized Staff for first 2 offices
         for ($i = 0; $i < 2; $i++) {
             $this->authorizedStaff[] = User::create([
                 'name' => "Authorized Staff #{$i}",
@@ -146,7 +129,6 @@ class ConcurrentUsersPerformanceTest extends TestCase
             ]);
         }
 
-        // 2 Budget Officers
         for ($i = 1; $i <= 2; $i++) {
             $this->budgetOfficers[] = User::create([
                 'name' => "Budget Officer #{$i}",
@@ -207,6 +189,7 @@ class ConcurrentUsersPerformanceTest extends TestCase
             'is_active' => true,
             'approval_status' => 'approved',
             'accessible_systems' => ['/monitoringsystem'],
+            'can_view_all_monitoring_ppmp' => true,
         ]);
 
         $this->adminUser = User::create([
@@ -234,9 +217,6 @@ class ConcurrentUsersPerformanceTest extends TestCase
         ]);
     }
 
-    /**
-     * Attach pre-submission requirements (Attachment List + Market Scoping PDF) to a PPMP
-     */
     protected function fulfillPreSubmissionRequirements(User $user, Ppmp $ppmp): void
     {
         $items = $ppmp->items()->orderBy('item_no')->get();
@@ -278,7 +258,6 @@ class ConcurrentUsersPerformanceTest extends TestCase
     {
         $this->seedMultiUserEnvironment();
 
-        // Confirm 50 total active users provisioned across all roles
         $this->assertSame(50, User::count());
         $this->assertCount(30, $this->endUsers);
 
@@ -288,7 +267,7 @@ class ConcurrentUsersPerformanceTest extends TestCase
         $startTime = hrtime(true);
 
         foreach ($this->endUsers as $index => $endUser) {
-            $isTrustFund = ($index % 5 === 0); // Every 5th user uses Trust Fund (routes to PACCO)
+            $isTrustFund = ($index % 5 === 0);
             $projectType = match ($index % 3) {
                 0 => 'Goods',
                 1 => 'Infrastructure',
@@ -341,15 +320,12 @@ class ConcurrentUsersPerformanceTest extends TestCase
             $trackingNumbers[] = $ppmpData['tracking_number'];
             $ppmp = Ppmp::where('uuid', $ppmpData['uuid'])->firstOrFail();
 
-            // Verify pre-submission guard blocks submission before attachments are ready
             $this->actingAs($endUser)
                 ->postJson("/api/ppmps/{$ppmp->uuid}/submit-for-review")
                 ->assertStatus(422);
 
-            // Fulfill Attachment List & Market Scoping PDF
             $this->fulfillPreSubmissionRequirements($endUser, $ppmp);
 
-            // Submit to Review -> MUST route to TWG_REVIEW first
             $submitRes = $this->actingAs($endUser)
                 ->postJson("/api/ppmps/{$ppmp->uuid}/submit-for-review")
                 ->assertOk();
@@ -361,11 +337,9 @@ class ConcurrentUsersPerformanceTest extends TestCase
 
         $elapsedMs = (hrtime(true) - $startTime) / 1e6;
 
-        // Assert all 30 tracking numbers are 100% unique with zero collisions
         $this->assertCount(30, $trackingNumbers);
         $this->assertCount(30, array_unique($trackingNumbers));
 
-        // Average time per full user flow (Create + Blocked Check + Attachment List + PDF Upload + Submit) should be fast
         $avgPerUserMs = $elapsedMs / 30;
         $this->assertLessThan(500, $avgPerUserMs, "Average full workflow initiation per user took {$avgPerUserMs}ms");
     }
@@ -374,7 +348,6 @@ class ConcurrentUsersPerformanceTest extends TestCase
     {
         $this->seedMultiUserEnvironment();
 
-        // Have 15 End Users create and submit PPMPs concurrently
         $activePpmps = [];
         for ($i = 0; $i < 15; $i++) {
             $endUser = $this->endUsers[$i];
@@ -406,23 +379,17 @@ class ConcurrentUsersPerformanceTest extends TestCase
             $activePpmps[$i] = ['user' => $endUser, 'ppmp' => $ppmp->fresh(), 'is_trust' => $isTrust];
         }
 
-        // Process all 15 PPMPs through the new routing:
-        // Stage 1: BAC-TWG -> (Return subset -> Re-submit) -> Approve to Budget/PACCO
-        // Stage 2: Budget Officer or PACCO -> Approve to OPPMO
-        // Stage 3: OPPMO -> Generates/regenerates APP -> Approves directly to READY_TO_PRINT
         foreach ($activePpmps as $i => $entry) {
-            /** @var User $endUser */
+
             $endUser = $entry['user'];
-            /** @var Ppmp $ppmp */
+
             $ppmp = $entry['ppmp'];
             $isTrust = $entry['is_trust'];
 
-            // Stage 1: TWG Reviewer receives PPMP
             $this->actingAs($this->twgOfficer)
                 ->postJson("/api/ppmps/{$ppmp->uuid}/receive")
                 ->assertOk();
 
-            // Every 3rd PPMP is returned to End-User by TWG for revision, then edited and re-submitted
             if ($i % 3 === 0) {
                 $this->actingAs($this->twgOfficer)
                     ->postJson("/api/ppmps/{$ppmp->uuid}/twg/return", [
@@ -434,7 +401,6 @@ class ConcurrentUsersPerformanceTest extends TestCase
                 $this->assertSame('TWG_RETURNED', $ppmp->status);
                 $this->assertNotNull($ppmp->toArray()['latest_return_remarks']);
 
-                // End-user receives returned PPMP, updates item, updates attachment list, and re-submits
                 $this->actingAs($endUser)
                     ->postJson("/api/ppmps/{$ppmp->uuid}/receive")
                     ->assertOk();
@@ -471,7 +437,6 @@ class ConcurrentUsersPerformanceTest extends TestCase
                     ->assertOk();
             }
 
-            // Stage 1: TWG Approves -> routes to PACCO_REVIEW (if Trust Fund) or BUDGET_OFFICER_REVIEW (if General Fund)
             $expectedStage2Status = $isTrust ? 'PACCO_REVIEW' : 'BUDGET_OFFICER_REVIEW';
             $this->actingAs($this->twgOfficer)
                 ->postJson("/api/ppmps/{$ppmp->uuid}/twg/approve", [
@@ -480,7 +445,6 @@ class ConcurrentUsersPerformanceTest extends TestCase
                 ->assertOk()
                 ->assertJsonPath('ppmp.status', $expectedStage2Status);
 
-            // Stage 2: Budget Officer or PACCO Receives & Approves -> OPPMO_REVIEW
             $stage2Reviewer = $isTrust ? $this->paccoOfficer : $this->budgetOfficers[$i % 2];
             $stage2Prefix = $isTrust ? 'pacco' : 'budget';
 
@@ -495,7 +459,6 @@ class ConcurrentUsersPerformanceTest extends TestCase
                 ->assertOk()
                 ->assertJsonPath('ppmp.status', 'OPPMO_REVIEW');
 
-            // Stage 3: OPPMO Receives, generates official APP, and Approves directly to READY_TO_PRINT
             $this->actingAs($this->oppmoOfficer)
                 ->postJson("/api/ppmps/{$ppmp->uuid}/receive")
                 ->assertOk();
@@ -523,10 +486,8 @@ class ConcurrentUsersPerformanceTest extends TestCase
                 ->assertJsonPath('ppmp.status', 'READY_TO_PRINT');
         }
 
-        // Verify all 15 PPMPs reached READY_TO_PRINT
         $this->assertSame(15, Ppmp::where('status', 'READY_TO_PRINT')->count());
 
-        // Test Amendment & Supplemental requests on an approved PPMP
         $firstEntry = $activePpmps[0];
         $originalTracker = $firstEntry['ppmp']->fresh()->tracking_number;
 
@@ -558,7 +519,6 @@ class ConcurrentUsersPerformanceTest extends TestCase
     {
         $this->seedMultiUserEnvironment();
 
-        // Create 15 READY_TO_PRINT PPMPs and publish them to PIMS
         $publishedProjects = [];
         for ($i = 0; $i < 15; $i++) {
             $endUser = $this->endUsers[$i];
@@ -600,14 +560,11 @@ class ConcurrentUsersPerformanceTest extends TestCase
 
         $this->assertSame(15, MonitoringProject::count());
 
-        // First call syncs any initial state
         $this->actingAs($this->monitorOfficer)
             ->getJson('/api/monitoring/projects')
             ->assertOk()
             ->assertJsonCount(15, 'projects');
 
-        // Second call to /api/monitoring/projects and /api/monitoring/stats MUST NOT execute any UPDATE queries
-        // when no PPMPs have changed (preventing database row lock contention when 15-50 users refresh the dashboard)
         DB::enableQueryLog();
         DB::flushQueryLog();
 
@@ -646,7 +603,6 @@ class ConcurrentUsersPerformanceTest extends TestCase
             'READY_TO_PRINT',
         ];
 
-        // Seed 50 PPMPs across the 30 End Users and 10 Offices with items, attachments, routes, reviews, and notifications
         for ($i = 0; $i < 50; $i++) {
             $endUser = $this->endUsers[$i % count($this->endUsers)];
             $status = $statuses[$i % count($statuses)];
@@ -694,7 +650,6 @@ class ConcurrentUsersPerformanceTest extends TestCase
                 'file_size' => 1024,
             ]);
 
-            // Notify the office head and end user
             $head = $this->headUsers[$endUser->office_id];
             SystemNotification::notify(
                 $head->id,
@@ -712,11 +667,9 @@ class ConcurrentUsersPerformanceTest extends TestCase
             );
         }
 
-        // Warm static caches once (signatories & system settings)
         SystemSetting::getSignatureSettings();
         PpmpSignatory::getActiveSignatories();
 
-        // 1. Benchmark GET /api/ppmps (per_page=50) as Admin viewing all 50 PPMPs
         DB::enableQueryLog();
         DB::flushQueryLog();
         $t0 = hrtime(true);
@@ -729,7 +682,7 @@ class ConcurrentUsersPerformanceTest extends TestCase
         $listQueries = count(DB::getQueryLog());
 
         $this->assertCount(50, $listRes->json('data'));
-        // Even with 50 PPMPs serialized on the page, query count must be strictly bounded (<= 16 queries, zero N+1!)
+
         $this->assertLessThanOrEqual(
             16,
             $listQueries,
@@ -737,12 +690,10 @@ class ConcurrentUsersPerformanceTest extends TestCase
         );
         $this->assertLessThan(650, $listMs, "GET /api/ppmps took {$listMs}ms");
 
-        // 2. Benchmark GET /api/notifications for Office Head (polled every 20s by all 50 users)
         $sampleHead = $this->headUsers[$this->offices[0]->id];
-        // Initial sync pass populates any missing stage notifications once
+
         $this->actingAs($sampleHead)->getJson('/api/notifications')->assertOk();
 
-        // Subsequent 20-second polling requests must be pure read-only with bounded queries and 0 N+1
         DB::flushQueryLog();
         $t1 = hrtime(true);
 
@@ -754,7 +705,7 @@ class ConcurrentUsersPerformanceTest extends TestCase
         $notifQueries = count(DB::getQueryLog());
 
         $this->assertNotEmpty($notifRes->json('notifications'));
-        // Must execute in <= 14 queries regardless of how many office PPMPs or notifications exist
+
         $this->assertLessThanOrEqual(
             14,
             $notifQueries,
@@ -762,7 +713,6 @@ class ConcurrentUsersPerformanceTest extends TestCase
         );
         $this->assertLessThan(150, $notifMs, "GET /api/notifications took {$notifMs}ms");
 
-        // 3. Benchmark GET /api/dashboard across EndUser, Head, BudgetOfficer, and SuperAdmin
         $rolesToBenchmark = [
             'end_user' => ['user' => $this->endUsers[0], 'max_queries' => 16],
             'head' => ['user' => $sampleHead, 'max_queries' => 16],

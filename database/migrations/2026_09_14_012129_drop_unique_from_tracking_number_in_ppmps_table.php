@@ -6,9 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         Schema::table('ppmps', function (Blueprint $table) {
@@ -16,12 +14,9 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        // Only re-add unique constraint if there are no duplicates
+
         $hasDuplicates = \Illuminate\Support\Facades\DB::table('ppmps')
             ->select('tracking_number')
             ->groupBy('tracking_number')

@@ -3,16 +3,6 @@ import { createPortal } from 'react-dom';
 import { Search, ChevronDown, Check, X, Landmark, Shield, Layers, Edit3, Sparkles } from 'lucide-react';
 import { fundSourceService } from '../../services/api';
 
-/**
- * SourceOfFundCombobox:
- * High-performance searchable & directly editable combobox for Provincial Government Sources of Fund.
- * 
- * Key Features:
- * 1. DIRECT CELL CUSTOMIZATION: Users can directly type, edit, and customize the text in the cell at any time.
- * 2. OFFICIAL CATALOG SELECTOR: A dedicated "Catalog" button opens the official catalog (filtered to Budget or PACCO).
- * 3. PORTAL RENDERING: Uses `createPortal(..., document.body)` with floating viewport coordinates (z-[99999]),
- *    guaranteeing zero clipping from table scroll containers (`overflow-x-auto`).
- */
 export const SourceOfFundCombobox = ({
     value = '',
     onChange,
@@ -20,14 +10,14 @@ export const SourceOfFundCombobox = ({
     onSelectId = null,
     fiscalYear = null,
     fundSources = null,
-    workflowRoute = null, // 'budget' | 'pacco' | null
+    workflowRoute = null,
     placeholder = 'Type custom fund or pick from catalog...',
     className = '',
     disabled = false,
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [categoryFilter, setCategoryFilter] = useState('ALL'); // 'ALL' | 'General Fund' | 'Special Fund' | 'Trust Fund'
+    const [categoryFilter, setCategoryFilter] = useState('ALL');
     const [isCustomMode, setIsCustomMode] = useState(false);
     const [customText, setCustomText] = useState(value || '');
 
@@ -42,14 +32,12 @@ export const SourceOfFundCombobox = ({
     const searchInputRef = useRef(null);
     const textareaRef = useRef(null);
 
-    // Resolve fiscal year for placeholder/display substitution
     const currentYear = useMemo(() => {
         if (!fiscalYear) return String(new Date().getFullYear());
         const match = String(fiscalYear).match(/\b(20\d{2}|\d{4})\b/);
         return match ? match[1] : String(fiscalYear).replace(/^CY\s*/i, '').trim();
     }, [fiscalYear]);
 
-    // Format template names by substituting "(customize year e.g, 2026)" with actual fiscal year
     const formatFundName = useCallback((rawName) => {
         if (!rawName) return '';
         return rawName
@@ -58,7 +46,6 @@ export const SourceOfFundCombobox = ({
             .replace(/\bCY\s*2026\b/gi, `CY ${currentYear}`);
     }, [currentYear]);
 
-    // Calculate fixed viewport position for portal dropdown
     const updatePosition = useCallback(() => {
         if (!triggerRef.current) return;
         const rect = triggerRef.current.getBoundingClientRect();
@@ -67,7 +54,6 @@ export const SourceOfFundCombobox = ({
         const estimatedHeight = 360;
         const openUpward = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
 
-        // Desired width matches trigger or at least 360px, bounded by viewport
         const targetWidth = Math.min(Math.max(rect.width, 360), window.innerWidth - 24);
         let left = rect.left;
         if (left + targetWidth > window.innerWidth - 12) {
@@ -89,7 +75,6 @@ export const SourceOfFundCombobox = ({
         });
     }, []);
 
-    // Load fund sources: selectively by workflowRoute if provided
     useEffect(() => {
         if (Array.isArray(fundSources) && fundSources.length > 0) {
             let filtered = fundSources;
@@ -142,7 +127,6 @@ export const SourceOfFundCombobox = ({
         };
     }, [workflowRoute, fundSources]);
 
-    // Handle open/close and positioning
     useEffect(() => {
         if (isOpen) {
             updatePosition();
@@ -150,7 +134,6 @@ export const SourceOfFundCombobox = ({
             window.addEventListener('scroll', handleScrollOrResize, true);
             window.addEventListener('resize', handleScrollOrResize);
 
-            // Focus search input
             setTimeout(() => {
                 if (searchInputRef.current) {
                     searchInputRef.current.focus();
@@ -164,7 +147,6 @@ export const SourceOfFundCombobox = ({
         }
     }, [isOpen, updatePosition]);
 
-    // Close on outside click
     useEffect(() => {
         if (!isOpen) return;
         const handleClickOutside = (e) => {
@@ -179,11 +161,10 @@ export const SourceOfFundCombobox = ({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isOpen]);
 
-    // Filtered list based on search and category
     const filteredSources = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
         return sourcesList.filter(s => {
-            // Category tab filter
+
             if (categoryFilter === 'General Fund') {
                 if (s.workflow_route === 'pacco' || s.category === 'Trust Fund') return false;
             } else if (categoryFilter === 'Special Fund') {
@@ -203,7 +184,6 @@ export const SourceOfFundCombobox = ({
         });
     }, [sourcesList, searchQuery, categoryFilter, formatFundName]);
 
-    // Select a fund from official catalog
     const handleSelectFund = (source) => {
         const formattedName = formatFundName(source.name);
         onChange(formattedName);
@@ -213,13 +193,12 @@ export const SourceOfFundCombobox = ({
         setIsOpen(false);
         setIsCustomMode(false);
         setSearchQuery('');
-        // Focus cell textarea so user can customize immediately if desired
+
         if (textareaRef.current) {
             textareaRef.current.focus();
         }
     };
 
-    // Apply custom manual entry from popover
     const handleApplyCustom = () => {
         const trimmed = (customText || '').trim();
         if (trimmed) {
@@ -242,7 +221,6 @@ export const SourceOfFundCombobox = ({
         }
     };
 
-    // Match selected fund source item
     const matchedSource = useMemo(() => {
         if (selectedId) {
             const foundById = sourcesList.find(s => s.id === selectedId);
@@ -270,7 +248,7 @@ export const SourceOfFundCombobox = ({
 
     return (
         <div className={`relative w-full ${className}`} ref={triggerRef}>
-            {/* Direct Editable Cell Container */}
+
             <div
                 className={`w-full text-xs border rounded-md transition flex flex-col min-h-[46px] ${
                     disabled
@@ -284,9 +262,9 @@ export const SourceOfFundCombobox = ({
                                 : 'border-slate-300 bg-white hover:bg-slate-50'
                 }`}
             >
-                {/* Cell Mini Header: Route badge, Clear, & Catalog button */}
-                <div className="flex items-center justify-between px-2 pt-1 pb-0.5 text-[10px] text-slate-500 border-b border-slate-100 bg-slate-50/70 rounded-t-md">
-                    <div className="flex items-center gap-1 min-w-0">
+
+                <div className="flex items-center justify-between gap-1.5 px-2 pt-1 pb-0.5 text-[10px] text-slate-500 border-b border-slate-100 bg-slate-50/70 rounded-t-md">
+                    <div className="flex items-center gap-1 min-w-0 overflow-hidden">
                         <Landmark className={`w-3 h-3 shrink-0 ${isTrust ? 'text-teal-600' : 'text-blue-600'}`} />
                         {matchedSource ? (
                             <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded shrink-0 ${
@@ -341,7 +319,6 @@ export const SourceOfFundCombobox = ({
                     </div>
                 </div>
 
-                {/* Direct Editable Text Area in the Cell */}
                 <textarea
                     ref={textareaRef}
                     rows={2}
@@ -350,7 +327,7 @@ export const SourceOfFundCombobox = ({
                     onChange={(e) => {
                         const val = e.target.value;
                         onChange(val);
-                        // Check if typed text matches an official source
+
                         const clean = val.trim().toLowerCase();
                         const match = sourcesList.find(s =>
                             s.name.trim().toLowerCase() === clean ||
@@ -365,7 +342,6 @@ export const SourceOfFundCombobox = ({
                 />
             </div>
 
-            {/* Viewport Floating Dropdown Menu (via React Portal to document.body) */}
             {isOpen && coords && createPortal(
                 <div
                     ref={menuRef}
@@ -376,11 +352,11 @@ export const SourceOfFundCombobox = ({
                         top: coords.top !== undefined ? `${coords.top}px` : undefined,
                         bottom: coords.bottom !== undefined ? `${coords.bottom}px` : undefined,
                         maxHeight: `${coords.maxHeight}px`,
-                        zIndex: 99999, // Float above all tables, headers, and modals
+                        zIndex: 99999,
                     }}
                     className="bg-white border border-slate-200 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in duration-100 ring-1 ring-black/5"
                 >
-                    {/* Header: Title & Close */}
+
                     <div className="p-2.5 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
                         <div className="flex items-center gap-2 min-w-0">
                             <Landmark className={`w-4 h-4 shrink-0 ${isPaccoOnly ? 'text-teal-400' : 'text-blue-400'}`} />
@@ -416,7 +392,6 @@ export const SourceOfFundCombobox = ({
                         </button>
                     </div>
 
-                    {/* Mode Toggle: Official Catalog vs Custom Text */}
                     <div className="p-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-1 text-xs">
                         <div className="flex items-center gap-1">
                             <button
@@ -462,7 +437,6 @@ export const SourceOfFundCombobox = ({
                         )}
                     </div>
 
-                    {/* CUSTOM INPUT MODE */}
                     {isCustomMode ? (
                         <div className="p-3 space-y-2.5 flex-1 overflow-y-auto">
                             <label className="block text-[11px] font-bold text-slate-700">
@@ -495,9 +469,9 @@ export const SourceOfFundCombobox = ({
                             </div>
                         </div>
                     ) : (
-                        /* CATALOG LIST MODE */
+
                         <>
-                            {/* Search Bar & Category Filters */}
+
                             <div className="p-2 space-y-1.5 border-b border-slate-100 bg-white">
                                 <div className="relative">
                                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -520,7 +494,6 @@ export const SourceOfFundCombobox = ({
                                     )}
                                 </div>
 
-                                {/* Category Tabs - Route specific */}
                                 <div className="flex items-center gap-1 text-[10px] flex-wrap">
                                     {isBudgetOnly ? (
                                         <>
@@ -608,7 +581,6 @@ export const SourceOfFundCombobox = ({
                                 </div>
                             </div>
 
-                            {/* List of Fund Sources */}
                             <div className="flex-1 overflow-y-auto p-1.5 space-y-1 custom-scrollbar">
                                 {loading ? (
                                     <div className="py-6 text-center text-xs text-slate-400 font-medium">
@@ -689,7 +661,6 @@ export const SourceOfFundCombobox = ({
                         </>
                     )}
 
-                    {/* Footer Tip */}
                     <div className="p-2 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500">
                         <span className="truncate font-medium">
                             {isBudgetOnly

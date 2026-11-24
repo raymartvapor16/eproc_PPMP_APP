@@ -25,6 +25,10 @@ class PpmpSignature extends Model
         'signed_at' => 'datetime',
     ];
 
+    protected $with = [
+        'user',
+    ];
+
     public function ppmp()
     {
         return $this->belongsTo(Ppmp::class, 'ppmp_id');

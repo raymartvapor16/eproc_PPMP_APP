@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { formatCurrency, formatDate } from '../UI/StatusBadge';
-import { Printer, ArrowLeft, Plus, Trash2, Edit3, Loader2, Sparkles, ShieldCheck, Truck, Lock, Leaf, CheckCircle2, ChevronRight, ChevronLeft, Eye, Layers, Copy, Check, Save, AlertTriangle, MessageSquare, CheckCheck, Maximize2 } from 'lucide-react';
+import { Printer, Download, ArrowLeft, Plus, Trash2, Edit3, Loader2, Sparkles, ShieldCheck, Truck, Lock, Leaf, CheckCircle2, ChevronRight, ChevronLeft, Eye, Layers, Copy, Check, Save, AlertTriangle, MessageSquare, CheckCheck, Maximize2 } from 'lucide-react';
 import { ppmpService, procurementConditionService, otherTermService } from '../../services/api';
 import { GreenSpecDropdown } from './GreenSpecDropdown';
-import { useSignatureSettings } from '../../utils/signatureController';
+import { useSignatureSettings, isSignatoryPnpkiActive, resolveSubmittedBySignatory } from '../../utils/signatureController';
 import { CommentableCell } from './CommentableCell';
 import { AttachmentUnitCombobox } from './AttachmentUnitCombobox';
+import { PrintExportDropdown } from '../UI/PrintExportDropdown';
+import { exportElementsToPdf } from '../../utils/pdfExport';
 import {
     BASE_DELIVERY_PERIODS,
     BASE_PLACES_OF_DELIVERY,
@@ -23,10 +25,6 @@ export const POL_TERMS_TEXT = `POL Condition:
 -Staggered Payment: The end-user must ensure that payment is processed within 10 calendar days upon receiving the billing from the supplier/Credit-basis.
 -The supplier reserves the right to discontinue services if payment is not made after two consecutive billings and will resume only after the outstanding obligations are settled.`;
 
-/**
- * Builds initial attachment list records for all procurement rows.
- * Handles both single-item and multiple-item PPMPs, and merges saved data seamlessly.
- */
 export const getInitialAttachmentLists = (ppmp, procurementItems, savedData) => {
     const rawFundSource = ppmp?.items?.find(i => !i.is_header && i.source_of_fund)?.source_of_fund?.trim() || 'General Fund';
     const fiscalYearStr = ppmp?.fiscal_year ? `CY ${ppmp.fiscal_year}` : '';
@@ -49,8 +47,6 @@ export const getInitialAttachmentLists = (ppmp, procurementItems, savedData) => 
             ? `${itemAccountCode} / ${itemFundStr}`
             : (itemAccountCode || itemFundStr || '');
 
-        // Resolve contractual delivery period specification from PPMP or saved attachment list.
-        // Never fall back to item.delivery_period which holds the monthly schedule date (e.g. "10/2026").
         let resolvedDeliveryPeriod = ppmp?.delivery_period || '30 Calendar Days upon receipt of PO';
         const savedDeliveryPeriod = itemSaved?.delivery_period;
         if (savedDeliveryPeriod && !isDateScheduleString(savedDeliveryPeriod) && savedDeliveryPeriod !== item.delivery_period) {
@@ -63,8 +59,6 @@ export const getInitialAttachmentLists = (ppmp, procurementItems, savedData) => 
             ? parseFloat(item.estimated_budget) || 0
             : (procurementItems.length === 1 && ppmp?.total_budget ? parseFloat(ppmp.total_budget) || 0 : (parseFloat(ppmp?.total_budget) || 0));
 
-        // Program/Project Title: Must fetch the Program data from the PPMP (ppmp.program_name).
-        // Fall back to custom saved title only if it is not the item.description (which was the old default bug).
         const savedProjectTitle = itemSaved?.project_title ? String(itemSaved.project_title).trim() : '';
         const itemDesc = item.description ? String(item.description).trim() : '';
         let resolvedProjectTitle = ppmpProgram;
@@ -78,6 +72,8 @@ export const getInitialAttachmentLists = (ppmp, procurementItems, savedData) => 
             itemId: item.id !== undefined && item.id !== null ? item.id : idx,
             itemKey,
             itemNo: item.item_no || idx + 1,
+            isRetention: Boolean(item.is_retention),
+            retentionPercentage: item.retention_percentage ?? null,
             sourceDescription: item.description || '',
             ppmpAllocatedBudget,
             officeName: itemSaved?.office_name || savedData?.office_name || ppmp?.implementing_unit || ppmp?.office?.name || 'Provincial Government of Davao del Sur',
@@ -111,11 +107,6 @@ export const getInitialAttachmentLists = (ppmp, procurementItems, savedData) => 
     });
 };
 
-/**
- * PPMPAttachmentListView:
- * Create & View flow for "PROJECT PROCUREMENT MANAGEMENT PLAN (PPMP) LIST".
- * Supports single-item and multiple-item PPMPs (generating 1 Attachment List per procurement row).
- */
 export const PPMPAttachmentListView = ({
     ppmp,
     user,
@@ -135,6 +126,8 @@ export const PPMPAttachmentListView = ({
 }) => {
     const savedData = ppmp?.attachment_list_data || null;
     const ppmpProgram = (ppmp?.program_name || ppmp?.program || '').trim();
+    const sheetsContainerRef = useRef(null);
+    const [isExportingPdf, setIsExportingPdf] = useState(false);
 
     const [activeCellKey, setActiveCellKey] = useState(null);
 
@@ -156,6 +149,24 @@ export const PPMPAttachmentListView = ({
     };
 
     const getCommentProps = (itemId, itemNo, fieldKey, fieldLabel, cellValue, contextData = null) => {
+        const resolveTargetListIndex = () => {
+            const found = attachmentLists.findIndex(
+                (l) =>
+                    (l.itemId && itemId && String(l.itemId) === String(itemId)) ||
+                    (l.itemNo && itemNo && Number(l.itemNo) === Number(itemNo))
+            );
+            return found >= 0 ? found : activeItemIndex;
+        };
+
+        const updateListFieldByIndex = (targetIdx, field, value) => {
+            setAttachmentLists((prev) => {
+                const next = [...prev];
+                if (!next[targetIdx]) return prev;
+                next[targetIdx] = { ...next[targetIdx], [field]: value };
+                return next;
+            });
+        };
+
         let updateHandler = null;
         if (fieldKey && fieldKey.startsWith('att_r')) {
             const m = fieldKey.match(/^att_r(\d+)_(.+)$/);
@@ -164,11 +175,25 @@ export const PPMPAttachmentListView = ({
                 const subField = m[2];
                 const targetKey = subField === 'unit_cost' ? 'unitCost' : (subField === 'item_no' ? 'itemNo' : subField);
                 updateHandler = async (newVal) => {
-                    const activeRows = attachmentLists[activeItemIndex]?.rows || [];
-                    const rowIdx = activeRows.findIndex(r => (r.itemNo || r.id) == rowNum);
-                    if (rowIdx >= 0) {
-                        handleUpdateRow(rowIdx, targetKey, newVal);
-                    }
+                    const targetIdx = resolveTargetListIndex();
+                    setAttachmentLists((prev) => {
+                        const next = [...prev];
+                        const listObj = next[targetIdx];
+                        if (!listObj) return prev;
+                        const currentRows = [...(listObj.rows || [])];
+                        const rowIdx = currentRows.findIndex((r) => (r.itemNo || r.id) == rowNum);
+                        if (rowIdx >= 0) {
+                            const updatedRow = { ...currentRows[rowIdx], [targetKey]: newVal };
+                            if (targetKey === 'qty' || targetKey === 'unitCost') {
+                                const q = parseFloat(targetKey === 'qty' ? newVal : updatedRow.qty);
+                                const c = parseFloat(targetKey === 'unitCost' ? newVal : updatedRow.unitCost);
+                                updatedRow.totalCost = !isNaN(q) && !isNaN(c) && q >= 0 && c >= 0 ? Math.round(q * c * 100) / 100 : '';
+                            }
+                            currentRows[rowIdx] = updatedRow;
+                            next[targetIdx] = { ...listObj, rows: currentRows };
+                        }
+                        return next;
+                    });
                     if (onUpdateCellValue) {
                         await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
                     }
@@ -176,32 +201,36 @@ export const PPMPAttachmentListView = ({
             }
         } else if (fieldKey === 'att_charges') {
             updateHandler = async (newVal) => {
-                updateActiveField('charges', newVal);
+                updateListFieldByIndex(resolveTargetListIndex(), 'charges', newVal);
                 if (onUpdateCellValue) await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
             };
         } else if (fieldKey === 'att_office_name') {
             updateHandler = async (newVal) => {
-                updateActiveField('officeName', newVal);
+                updateListFieldByIndex(resolveTargetListIndex(), 'officeName', newVal);
                 if (onUpdateCellValue) await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
             };
         } else if (fieldKey === 'att_project_title') {
             updateHandler = async (newVal) => {
-                updateActiveField('projectTitle', newVal);
+                updateListFieldByIndex(resolveTargetListIndex(), 'projectTitle', newVal);
                 if (onUpdateCellValue) await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
             };
         } else if (fieldKey === 'att_delivery_period') {
             updateHandler = async (newVal) => {
-                updateActiveField('deliveryPeriod', newVal);
+                updateListFieldByIndex(resolveTargetListIndex(), 'deliveryPeriod', newVal);
                 if (onUpdateCellValue) await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
             };
         } else if (fieldKey === 'att_place_of_delivery') {
             updateHandler = async (newVal) => {
-                updateActiveField('placeOfDelivery', newVal);
+                updateListFieldByIndex(resolveTargetListIndex(), 'placeOfDelivery', newVal);
                 if (onUpdateCellValue) await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
             };
         } else if (fieldKey === 'att_payment_method') {
             updateHandler = async (newVal) => {
-                updateActiveField('paymentMethod', newVal);
+                updateListFieldByIndex(resolveTargetListIndex(), 'paymentMethod', newVal);
+                if (onUpdateCellValue) await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
+            };
+        } else if (fieldKey === 'att_fiscal_year' || fieldKey === 'att_total_budget') {
+            updateHandler = async (newVal) => {
                 if (onUpdateCellValue) await onUpdateCellValue(fieldKey, newVal, itemId, itemNo, fieldLabel);
             };
         } else if (fieldKey === 'att_other_terms') {
@@ -219,7 +248,7 @@ export const PPMPAttachmentListView = ({
                         dp = parsed.delivery_period ?? parsed.deliveryPeriod;
                     }
                 } catch (e) {
-                    // plain string
+
                 }
                 updateActiveField('otherTerms', ot);
                 if (pod !== null && pod !== undefined) updateActiveField('placeOfDelivery', pod);
@@ -268,7 +297,6 @@ export const PPMPAttachmentListView = ({
         };
     };
 
-    // Filter actual procurement items (excluding account code header rows)
     const procurementItems = useMemo(() => {
         const raw = (ppmp?.items || []).filter(item => !item.is_header && item.description && item.description.trim() !== '');
         if (raw.length > 0) return raw;
@@ -284,7 +312,6 @@ export const PPMPAttachmentListView = ({
         ];
     }, [ppmp]);
 
-    // Permissions
     const isCreator = ppmp?.created_by === user?.id;
     const isCreatorEditable = isCreator && [
         'DRAFT',
@@ -293,12 +320,20 @@ export const PPMPAttachmentListView = ({
         'HEAD_RETURNED',
         'BUDGET_OFFICER_RETURNED',
         'OPPMO_RETURNED',
+        'BUDGET_OFFICER_RETURNED',
+        'BUDGET_HEAD_RETURNED',
+        'PACCO_RETURNED',
+        'PACCO_HEAD_RETURNED',
+        'OPPMO_RETURNED',
+        'OPPMO_HEAD_RETURNED',
         'TWG_RETURNED'
     ].includes(ppmp?.status);
 
     const isReviewerEditable = (
         (user?.role === 'head' && ['HEAD_PENDING', 'HEAD_APPROVED'].includes(ppmp?.status) && user?.office_id === ppmp?.office_id) ||
+        (user?.role === 'head' && ['BUDGET_HEAD_REVIEW', 'PACCO_HEAD_REVIEW', 'OPPMO_HEAD_REVIEW'].includes(ppmp?.status)) ||
         (user?.role === 'budget_officer' && ppmp?.status === 'BUDGET_OFFICER_REVIEW') ||
+        (user?.role === 'pacco' && ppmp?.status === 'PACCO_REVIEW') ||
         (user?.role === 'oppmo' && ppmp?.status === 'OPPMO_REVIEW') ||
         (user?.role === 'twg' && ppmp?.status === 'TWG_REVIEW')
     );
@@ -306,12 +341,10 @@ export const PPMPAttachmentListView = ({
     const isScopeLocked = ppmp?.amendment_scope === 'PPMP_APP' && !['admin', 'super_admin'].includes(user?.role);
     const allowEdit = canEdit && !isScopeLocked && (isCreatorEditable || isReviewerEditable || ['admin', 'super_admin'].includes(user?.role));
 
-    // Multi-attachment list state
     const [attachmentLists, setAttachmentLists] = useState(() => {
         return getInitialAttachmentLists(ppmp, procurementItems, savedData);
     });
 
-    // Active item index
     const [activeItemIndex, setActiveItemIndex] = useState(() => {
         if (initialItemId !== null && initialItemId !== undefined) {
             const foundIdx = procurementItems.findIndex(i => String(i.id) === String(initialItemId));
@@ -320,7 +353,6 @@ export const PPMPAttachmentListView = ({
         return 0;
     });
 
-    // Sync activeItemIndex when parent updates initialItemId
     useEffect(() => {
         if (initialItemId !== null && initialItemId !== undefined) {
             const foundIdx = procurementItems.findIndex(i => String(i.id) === String(initialItemId));
@@ -330,22 +362,19 @@ export const PPMPAttachmentListView = ({
         }
     }, [initialItemId, procurementItems]);
 
-    // Sync with savedData if ppmp updates from server
     useEffect(() => {
         if (savedData && !isEditing) {
             setAttachmentLists(getInitialAttachmentLists(ppmp, procurementItems, savedData));
         }
     }, [ppmp, savedData]);
 
-    // Mode: editing vs official print view
     const [isEditing, setIsEditing] = useState(!savedData && allowEdit);
     const [viewAllMode, setViewAllMode] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [printScope, setPrintScope] = useState('all'); // 'all' or 'current'
+    const [printScope, setPrintScope] = useState('all');
     const [pendingPrint, setPendingPrint] = useState(false);
     const [copiedAllFeedback, setCopiedAllFeedback] = useState(false);
 
-    // Auto-trigger window.print() after state updates for printScope / viewAllMode
     useEffect(() => {
         if (pendingPrint) {
             const timer = setTimeout(() => {
@@ -356,11 +385,9 @@ export const PPMPAttachmentListView = ({
         }
     }, [pendingPrint]);
 
-    // Active list being edited
     const activeList = attachmentLists[activeItemIndex] || attachmentLists[0];
     const activeListItemNo = typeof activeList?.itemNo === 'number' ? activeList.itemNo : (activeItemIndex + 1);
 
-    // Presets from server
     const [conditions, setConditions] = useState([]);
     const [otherTermsList, setOtherTermsList] = useState([]);
 
@@ -388,7 +415,6 @@ export const PPMPAttachmentListView = ({
         return () => { isMounted = false; };
     }, []);
 
-    // Sync delivery period preset if condition was selected on PPMP but was not yet saved or defaulted
     useEffect(() => {
         if (conditions.length > 0) {
             setAttachmentLists(prev => prev.map(list => {
@@ -408,7 +434,6 @@ export const PPMPAttachmentListView = ({
         }
     }, [conditions]);
 
-    // Dropdown options
     const deliveryPeriodOptions = useMemo(() => {
         const pool = [...BASE_DELIVERY_PERIODS];
         conditions.forEach(c => {
@@ -433,11 +458,13 @@ export const PPMPAttachmentListView = ({
         return deduplicateOptions(pool, canonicalizePaymentMethod);
     }, [conditions]);
 
-    // Signatories & Electronic Signature Controller
-    const { isEnabled } = useSignatureSettings();
+    const { isEnabled, isPnpkiEnabled: isGlobalPnpkiEnabled } = useSignatureSettings();
     const isAttachmentSignatureEnabled = ppmp?.signature_settings?.attachment_list !== undefined
         ? Boolean(ppmp.signature_settings.attachment_list)
         : isEnabled('attachment_list');
+    const isPnpkiSystemEnabled = ppmp?.signature_settings?.pnpki_enabled !== undefined
+        ? Boolean(ppmp.signature_settings.pnpki_enabled)
+        : isGlobalPnpkiEnabled;
 
     const isAttachmentAmended = ppmp?.amendment_scope === 'ATTACHMENT_LIST' || ppmp?.amendment_scope === 'ALL';
     const isScopePpmpAppOnly = ppmp?.amendment_scope === 'PPMP_APP';
@@ -447,6 +474,7 @@ export const PPMPAttachmentListView = ({
         || null;
 
     const hasHeadApproved = Boolean(
+        isScopePpmpAppOnly ||
         ppmp?.head_approved_at ||
         ppmp?.status === 'READY_TO_PRINT'
     );
@@ -462,6 +490,23 @@ export const PPMPAttachmentListView = ({
     const twgSig = isAttachmentAmended
         ? (hasTwgApprovedChild ? ppmp?.signatures?.find(s => s.role === 'twg') : null)
         : (ppmp?.signatures?.find(s => s.role === 'twg') || (isScopePpmpAppOnly ? ppmp?.parent?.signatures?.find(s => s.role === 'twg') : null));
+
+    const isPreparedPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(preparedSig, ppmp?.creator);
+    const submittedByResolved = resolveSubmittedBySignatory(ppmp, headSig, [
+        ppmp?.signatures?.find(s => s.role === 'oppmo_head'),
+        ppmp?.signatures?.find(s => s.role === 'budget_head'),
+        ppmp?.signatures?.find(s => s.role === 'pacco_head'),
+        ...(isScopePpmpAppOnly ? [
+            ppmp?.parent?.signatures?.find(s => s.role === 'oppmo_head'),
+            ppmp?.parent?.signatures?.find(s => s.role === 'budget_head'),
+            ppmp?.parent?.signatures?.find(s => s.role === 'pacco_head'),
+        ] : []),
+    ], hasHeadApproved);
+    const submittedByUser = submittedByResolved.user;
+    const submittedBySignedAt = submittedByResolved.signedAt;
+    const isHeadPnpki = isPnpkiSystemEnabled && submittedByResolved.isPnpkiActive;
+    const isTwgPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(twgSig, ppmp?.twg_reviewer || ppmp?.twgReviewer);
+    const hasAnyPnpkiAttachmentSig = isPreparedPnpki || isHeadPnpki || isTwgPnpki;
 
     const resolvedOfficeHeadName = ppmp?.office_head_name || ppmp?.default_signatories?.submitted_by?.name || ppmp?.default_signatories?.head_of_office?.name || ppmp?.office?.head_name || ppmp?.office?.head?.name || '';
     const resolvedOfficeHeadPosition = ppmp?.office_head_designation || ppmp?.default_signatories?.submitted_by?.position || ppmp?.default_signatories?.head_of_office?.position || ppmp?.office?.designation || ppmp?.office?.head?.designation || 'Head of Office';
@@ -494,8 +539,6 @@ export const PPMPAttachmentListView = ({
         return s.includes('CAGAS') || s.includes('GOVERNOR');
     };
 
-    // Approved By (TWG): do NOT hardcode or prefill TWG name/designation.
-    // Fetch dynamically from whichever TWG reviewer approves the PPMP list of attachment.
     const resolvedTwgName = twgSig?.signer_name || twgSig?.user?.name || (user?.role === 'twg' ? user?.name : '');
     const resolvedTwgPosition = twgSig?.signer_designation || twgSig?.user?.designation || (user?.role === 'twg' ? (user?.designation || 'BAC Technical Working Group (TWG) Member') : '');
 
@@ -506,7 +549,6 @@ export const PPMPAttachmentListView = ({
         resolvedTwgPosition || (savedData?.approved_by_position && !isLegacyGovernor(savedData.approved_by_position) ? savedData.approved_by_position : '')
     );
 
-    // Keep dynamically synchronized when TWG approval signature is added or updated
     useEffect(() => {
         if (twgSig?.signer_name || twgSig?.user?.name) {
             setApprovedByName(twgSig.signer_name || twgSig.user?.name);
@@ -514,7 +556,6 @@ export const PPMPAttachmentListView = ({
         }
     }, [twgSig]);
 
-    // Helpers to update active list
     const updateActiveField = (field, value) => {
         setAttachmentLists(prev => {
             const next = [...prev];
@@ -537,7 +578,6 @@ export const PPMPAttachmentListView = ({
         });
     };
 
-    // Helper to copy office, charges, delivery & terms from current active list to all other lists
     const handleCopySettingsToAll = () => {
         setAttachmentLists(prev => {
             return prev.map(list => ({
@@ -689,16 +729,14 @@ export const PPMPAttachmentListView = ({
         return match ? String(match.id) : 'CUSTOM';
     }, [activeList.selectedOtherTermId, activeList.otherTerms, otherTermsList]);
 
-    // Save Single Attachment
     const handleGenerate = async () => {
-        // Validate active attachment list has at least some item description or quantity
+
         const activeHasContent = activeList.rows && activeList.rows.some(r => (r.description && r.description.trim() !== '') || (r.qty && r.qty !== ''));
         if (!activeHasContent) {
             alert('Please add at least one item description or specification to this detailed specification before saving.');
             return;
         }
 
-        // Validate that no detailed specification exceeds the PPMP allocated budget
         for (const list of attachmentLists) {
             const listTotal = (list.rows || []).reduce((sum, r) => sum + (parseFloat(r.totalCost) || 0), 0);
             const listBudget = parseFloat(list.ppmpAllocatedBudget !== undefined ? list.ppmpAllocatedBudget : list.totalBudget) || (parseFloat(ppmp?.total_budget) || 0);
@@ -770,11 +808,9 @@ export const PPMPAttachmentListView = ({
         }
     };
 
-    // Printing
     const isParentApproved = ppmp?.amendment_scope === 'PPMP_APP' && ppmp?.parent?.status === 'READY_TO_PRINT';
     const isReadyToPrint = ppmp?.status === 'READY_TO_PRINT' || isParentApproved || ['admin', 'super_admin'].includes(user?.role);
 
-    // Print all attachment lists sequentially
     const handlePrintAll = () => {
         if (!isReadyToPrint) {
             alert('Printing is only authorized once the PPMP has reached the READY TO PRINT status after full workflow approval.');
@@ -785,7 +821,6 @@ export const PPMPAttachmentListView = ({
         setPendingPrint(true);
     };
 
-    // Print only the active attachment list
     const handlePrintCurrent = () => {
         if (!isReadyToPrint) {
             alert('Printing is only authorized once the PPMP has reached the READY TO PRINT status after full workflow approval.');
@@ -795,7 +830,6 @@ export const PPMPAttachmentListView = ({
         setPendingPrint(true);
     };
 
-    // Calculate totals and PPMP allocated budget for active list
     const activePpmpBudget = parseFloat(activeList.ppmpAllocatedBudget !== undefined ? activeList.ppmpAllocatedBudget : activeList.totalBudget) || (parseFloat(ppmp?.total_budget) || 0);
     const activeCalculatedTotal = activeList.rows.reduce((sum, r) => sum + (parseFloat(r.totalCost) || 0), 0);
     const activeDisplayTotalBudget = activeCalculatedTotal > 0 ? activeCalculatedTotal : (parseFloat(activeList.totalBudget) || activePpmpBudget);
@@ -804,7 +838,6 @@ export const PPMPAttachmentListView = ({
     const activeBudgetRemaining = activePpmpBudget > activeCalculatedTotal ? activePpmpBudget - activeCalculatedTotal : 0;
     const isCoinciding = activePpmpBudget > 0 && Math.abs(activePpmpBudget - activeCalculatedTotal) <= 0.01;
 
-    // Render single official printable attachment sheet
     const renderPrintSheet = (list, listIdx) => {
         const itemCalculatedTotal = list.rows.reduce((sum, r) => sum + (parseFloat(r.totalCost) || 0), 0);
         const itemDisplayTotalBudget = itemCalculatedTotal > 0 ? itemCalculatedTotal : (parseFloat(list.totalBudget) || 0);
@@ -823,7 +856,7 @@ export const PPMPAttachmentListView = ({
                 }`}
                 style={listIdx > 0 ? { breakBefore: 'page', pageBreakBefore: 'always' } : undefined}
             >
-                {/* Multi-list indicator in print preview */}
+
                 {attachmentLists.length > 1 && (
                     <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mb-2 pb-1 border-b border-slate-200 print:border-black/20">
                         <span className="font-bold uppercase text-slate-700 print:text-black">
@@ -835,17 +868,16 @@ export const PPMPAttachmentListView = ({
                     </div>
                 )}
 
-                {/* Header */}
-                <div className="flex items-center justify-center gap-4 mb-4 text-center relative">
+                <div className="flex items-center justify-center gap-4 mb-5 text-center">
                     <img
                         src="/images/logo.png"
                         alt="Provincial Seal"
-                        className="w-16 h-16 object-contain absolute left-4 top-0"
+                        className="w-16 h-16 object-contain shrink-0"
                         onError={(e) => { e.target.style.display = 'none'; }}
                     />
-                    <div>
-                        <div className="text-sm sm:text-base font-bold uppercase tracking-tight">
-                            PROJECT PROCUREMENT MANAGEMENT PLAN (PPMP ) {' '}
+                    <div className="space-y-0.5">
+                        <div className="text-base sm:text-lg font-extrabold uppercase tracking-tight leading-snug">
+                            PROJECT PROCUREMENT MANAGEMENT PLAN (PPMP) {' '}
                             <CommentableCell
                                 as="span"
                                 {...getCommentProps(list.itemId, listItemNo, 'att_fiscal_year', `Detailed Specifications #${listItemNo} • Fiscal Year`, `CY ${ppmp?.fiscal_year || new Date().getFullYear()}`)}
@@ -854,96 +886,94 @@ export const PPMPAttachmentListView = ({
                                 CY {ppmp?.fiscal_year || new Date().getFullYear()}
                             </CommentableCell>
                         </div>
-                        <div className="text-xs sm:text-sm font-semibold tracking-tight mt-0.5">
+                        <div className="text-sm font-bold tracking-tight">
                             Provincial Government of Davao del Sur
                         </div>
-                        <div className="text-xs sm:text-sm font-normal tracking-tight">
+                        <div className="text-sm font-bold tracking-tight">
                             Matti, Digos City
                         </div>
                     </div>
                 </div>
 
-                {/* Metadata details */}
-                <div className="text-xs font-bold space-y-1 mb-3 pt-2">
+                <div className="text-sm font-extrabold space-y-1.5 mb-4 pt-1">
                     <CommentableCell
                         as="div"
                         {...getCommentProps(list.itemId, listItemNo, 'att_office_name', `Detailed Specifications #${listItemNo} • End-User / Implementing Unit`, list.officeName)}
                         className="p-0.5 rounded"
                     >
-                        End User/ Implementing Unit: <span className="font-semibold uppercase">{list.officeName}</span>
+                        End User/ Implementing Unit: <span className="font-bold uppercase">{list.officeName}</span>
                     </CommentableCell>
                     <CommentableCell
                         as="div"
                         {...getCommentProps(list.itemId, listItemNo, 'att_project_title', `Detailed Specifications #${listItemNo} • Program / Project Title`, displayProjectTitle)}
                         className="p-0.5 rounded"
                     >
-                        Program/Project Title: <span className="font-semibold uppercase">{displayProjectTitle}</span>
+                        Program/Project Title: <span className="font-bold uppercase">{displayProjectTitle}</span>
                     </CommentableCell>
                     <CommentableCell
                         as="div"
                         {...getCommentProps(list.itemId, listItemNo, 'att_charges', `Detailed Specifications #${listItemNo} • Charges`, list.charges || '—')}
                         className="p-0.5 rounded"
                     >
-                        Charges: {list.charges || '—'}
+                        Charges: <span className="font-bold">{list.charges || '—'}</span>
                     </CommentableCell>
                 </div>
 
-                {/* Main Table */}
-                <table className="w-full border-collapse border border-black text-[11px]">
+                <table className="w-full table-fixed border-collapse border-2 border-black text-[13px] font-bold">
                     <thead>
-                        <tr className="border border-black font-bold text-center bg-slate-50">
-                            <th className="border border-black px-2 py-1.5 w-14">Item No.</th>
-                            <th className="border border-black px-2 py-1.5 w-24">Unit</th>
-                            <th className="border border-black px-3 py-1.5 text-left">Item and Description</th>
-                            <th className="border border-black px-2 py-1.5 w-16">Qty</th>
-                            <th className="border border-black px-2 py-1.5 w-24">Unit Cost</th>
-                            <th className="border border-black px-2 py-1.5 w-28">Total Cost</th>
+                        <tr className="border-b-2 border-black font-extrabold text-center bg-slate-50">
+                            <th className="border border-black px-1.5 py-2 w-[7%]">Item No.</th>
+                            <th className="border border-black px-1.5 py-2 w-[10%]">Unit</th>
+                            <th className="border border-black px-2.5 py-2 text-left w-[38%]">Item and Description</th>
+                            <th className="border border-black px-1.5 py-2 w-[8%]">Qty</th>
+                            <th className="border border-black px-1.5 py-2 w-[18%]">Unit Cost</th>
+                            <th className="border border-black px-1.5 py-2 w-[19%]">Total Cost</th>
                         </tr>
                     </thead>
                     <tbody>
                         {viewRows.map((row, idx) => {
                             const rowNum = row.itemNo || idx + 1;
                             return (
-                                <tr key={idx} className="h-7 border border-black">
+                                <tr key={idx} className="h-8 border border-black font-bold">
                                     <CommentableCell
                                         as="td"
                                         {...getCommentProps(list.itemId, listItemNo, `att_r${rowNum}_item_no`, `Detailed Specifications #${listItemNo} • Row #${rowNum} Item No.`, row.itemNo)}
-                                        className="border border-black text-center px-1 py-1 font-mono"
+                                        className="border border-black text-center px-1.5 py-1.5 tabular-nums font-extrabold break-words"
                                     >
                                         {row.itemNo}
                                     </CommentableCell>
                                     <CommentableCell
                                         as="td"
                                         {...getCommentProps(list.itemId, listItemNo, `att_r${rowNum}_unit`, `Detailed Specifications #${listItemNo} • Row #${rowNum} Unit`, row.unit)}
-                                        className="border border-black text-center px-1 py-1 text-slate-700"
+                                        className="border border-black text-center px-1.5 py-1.5 font-bold text-black break-words"
                                     >
                                         {row.unit}
                                     </CommentableCell>
                                     <CommentableCell
                                         as="td"
                                         {...getCommentProps(list.itemId, listItemNo, `att_r${rowNum}_description`, `Detailed Specifications #${listItemNo} • Row #${rowNum} Description`, row.description)}
-                                        className="border border-black px-2 py-1 font-medium"
+                                        className="border border-black px-2.5 py-1.5 font-bold text-black break-words"
                                     >
                                         {row.description}
                                     </CommentableCell>
                                     <CommentableCell
                                         as="td"
                                         {...getCommentProps(list.itemId, listItemNo, `att_r${rowNum}_qty`, `Detailed Specifications #${listItemNo} • Row #${rowNum} Quantity`, row.qty)}
-                                        className="border border-black text-center px-1 py-1 font-mono"
+                                        className="border border-black text-center px-1.5 py-1.5 tabular-nums font-bold break-words"
                                     >
                                         {row.qty}
                                     </CommentableCell>
                                     <CommentableCell
                                         as="td"
                                         {...getCommentProps(list.itemId, listItemNo, `att_r${rowNum}_unit_cost`, `Detailed Specifications #${listItemNo} • Row #${rowNum} Unit Cost`, row.unitCost ? formatCurrency(row.unitCost) : '')}
-                                        className="border border-black text-right px-2 py-1 font-mono"
+                                        className="border border-black text-right px-1.5 py-1.5 tabular-nums text-[12px] font-bold break-words"
                                     >
                                         {row.unitCost ? formatCurrency(row.unitCost) : ''}
                                     </CommentableCell>
                                     <CommentableCell
                                         as="td"
                                         {...getCommentProps(list.itemId, listItemNo, `att_r${rowNum}_total_cost`, `Detailed Specifications #${listItemNo} • Row #${rowNum} Total Cost`, row.totalCost !== null && row.totalCost !== undefined && row.totalCost !== '' ? formatCurrency(row.totalCost) : '')}
-                                        className="border border-black text-right px-2 py-1 font-mono"
+                                        className="border border-black text-right px-1.5 py-1.5 tabular-nums text-[12px] font-extrabold break-words"
                                     >
                                         {row.totalCost !== null && row.totalCost !== undefined && row.totalCost !== '' ? formatCurrency(row.totalCost) : ''}
                                     </CommentableCell>
@@ -951,8 +981,7 @@ export const PPMPAttachmentListView = ({
                             );
                         })}
 
-                        {/* Charges & Delivery Info Row */}
-                        <tr className="border border-black">
+                        <tr className="border-t-2 border-black">
                             <td colSpan={2} className="border border-black"></td>
                             <CommentableCell
                                 as="td"
@@ -969,37 +998,37 @@ export const PPMPAttachmentListView = ({
                                         deliveryPeriod: list.deliveryPeriod || 'As Per Demand by the End-User',
                                     }
                                 )}
-                                className="border border-black p-2 font-bold space-y-1.5 text-[11px] align-top"
+                                className="border border-black p-2.5 font-bold space-y-1.5 text-xs align-top break-words"
                             >
                                 {list.otherTerms ? (
-                                    <div className="mb-1.5 pb-1 border-b border-dashed border-black/30 font-normal whitespace-pre-wrap">
+                                    <div className="mb-1.5 pb-1.5 border-b border-dashed border-black/40 font-bold whitespace-pre-wrap leading-relaxed">
                                         {list.otherTerms}
                                     </div>
                                 ) : null}
 
                                 {!listIsPol && list.placeOfDelivery ? (
                                     <div className="mt-1">
-                                        Place of Delivery: <span className="font-normal">{list.placeOfDelivery}</span>
+                                        Place of Delivery: <span className="font-bold">{list.placeOfDelivery}</span>
                                     </div>
                                 ) : null}
                                 {!listIsPol && list.paymentMethod ? (
                                     <div>
-                                        Payment Method: <span className="font-normal">{list.paymentMethod}</span>
+                                        Payment Method: <span className="font-bold">{list.paymentMethod}</span>
                                     </div>
                                 ) : null}
                                 {!listIsPol && list.deliveryPeriod ? (
                                     <div>
-                                        Delivery Period: <span className="font-normal">{list.deliveryPeriod}</span>
+                                        Delivery Period: <span className="font-bold">{list.deliveryPeriod}</span>
                                     </div>
                                 ) : null}
                             </CommentableCell>
-                            <td colSpan={2} className="border border-black p-2 text-right font-extrabold uppercase align-top">
+                            <td colSpan={2} className="border border-black p-2.5 text-right text-sm font-extrabold uppercase align-top">
                                 TOTAL
                             </td>
                             <CommentableCell
                                 as="td"
                                 {...getCommentProps(list.itemId, listItemNo, 'att_total_budget', `Detailed Specifications #${listItemNo} • Total Estimated Budget`, formatCurrency(itemCalculatedTotal > 0 ? itemCalculatedTotal : itemDisplayTotalBudget))}
-                                className="border border-black p-2 text-right font-mono font-bold align-top"
+                                className="border border-black px-1.5 py-2.5 text-right text-[13px] tabular-nums font-extrabold align-top break-words"
                             >
                                 {formatCurrency(itemCalculatedTotal > 0 ? itemCalculatedTotal : itemDisplayTotalBudget)}
                             </CommentableCell>
@@ -1007,38 +1036,43 @@ export const PPMPAttachmentListView = ({
                     </tbody>
                 </table>
 
-                {/* Signatures Section */}
-                <div className="mt-4 text-xs bg-white print-signature-box">
-                    <div className="grid grid-cols-2 gap-6 mb-3">
+                <div className="mt-5 text-xs font-bold bg-white print-signature-box">
+                    <div className="grid grid-cols-2 gap-6 mb-4">
                         <div>
-                            <div className="font-bold text-[10px] mb-1">Prepared By:</div>
+                            <div className="font-extrabold text-xs mb-1">Prepared By:</div>
                             <div className="text-center flex flex-col items-center justify-end">
                                 {isAttachmentSignatureEnabled && preparedSig?.user?.signature_path ? (
-                                    <div className="h-8 flex items-center justify-center">
-                                        <img
-                                            src={`/api/users/${preparedSig.user.id}/signature`}
-                                            alt="Signature"
-                                            className="max-h-8 max-w-[120px] object-contain"
-                                        />
-                                    </div>
-                                ) : (isAttachmentSignatureEnabled && preparedSig?.signature_indicator) ? (
-                                    <div className="inline-flex flex-col items-center mb-1">
-                                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-50 border border-emerald-300 rounded text-emerald-800 text-[10px] font-mono">
-                                            <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                                            <span>{preparedSig.signature_indicator}</span>
+                                    <>
+                                        <div className={`h-8 flex items-center justify-center ${!isPreparedPnpki ? 'no-print print:hidden' : ''}`}>
+                                            <img
+                                                src={`/api/users/${preparedSig.user.id}/signature`}
+                                                alt="Signature"
+                                                className="max-h-8 max-w-[120px] object-contain"
+                                            />
                                         </div>
-                                    </div>
+                                        {!isPreparedPnpki && <div className="hidden print:block pdf-export-spacer h-6" />}
+                                    </>
+                                ) : (isAttachmentSignatureEnabled && preparedSig?.signature_indicator) ? (
+                                    <>
+                                        <div className={`inline-flex flex-col items-center mb-1 ${!isPreparedPnpki ? 'no-print print:hidden' : ''}`}>
+                                            <div className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-50 border border-emerald-300 rounded text-emerald-800 text-[10px] font-mono">
+                                                <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                                                <span>{preparedSig.signature_indicator}</span>
+                                            </div>
+                                        </div>
+                                        {!isPreparedPnpki && <div className="hidden print:block pdf-export-spacer h-6" />}
+                                    </>
                                 ) : (
-                                    <div className="h-2" />
+                                    <div className="h-6" />
                                 )}
-                                <div className="font-bold text-xs uppercase underline">
+                                <div className="font-extrabold text-sm uppercase underline whitespace-nowrap leading-snug">
                                     {endUserName}
                                 </div>
-                                <div className="text-[10px] text-slate-600">
+                                <div className="text-xs font-bold text-black whitespace-nowrap mt-0.5">
                                     {endUserPosition}
                                 </div>
                                 {isAttachmentSignatureEnabled && preparedSig?.signed_at && (
-                                    <div className="text-[9px] text-slate-500">
+                                    <div className={`text-[10px] font-bold text-slate-700 ${!isPreparedPnpki ? 'no-print print:hidden' : ''}`}>
                                         Date/Time: {formatDate(preparedSig.signed_at)}
                                     </div>
                                 )}
@@ -1046,81 +1080,64 @@ export const PPMPAttachmentListView = ({
                         </div>
 
                         <div>
-                            <div className="font-bold text-[10px] mb-1">Submitted By:</div>
+                            <div className="font-extrabold text-xs mb-1">Submitted By:</div>
                             <div className="text-center flex flex-col items-center justify-end">
-                                {isAttachmentSignatureEnabled && headSig?.user?.signature_path ? (
-                                    <div className="h-8 flex items-center justify-center">
-                                        <img
-                                            src={`/api/users/${headSig.user.id}/signature`}
-                                            alt="Signature"
-                                            className="max-h-8 max-w-[120px] object-contain"
-                                        />
-                                    </div>
-                                ) : (isAttachmentSignatureEnabled && headSig?.signature_indicator) ? (
-                                    <div className="inline-flex flex-col items-center mb-1">
-                                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 border border-blue-300 rounded text-blue-800 text-[10px] font-mono">
-                                            <ShieldCheck className="w-3 h-3 text-blue-600" />
-                                            <span>{headSig.signature_indicator}</span>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="h-2" />
-                                )}
-                                <div className="font-bold text-xs uppercase underline">
+                                <div className="h-8" />
+                                <div className="font-extrabold text-sm uppercase underline whitespace-nowrap leading-snug">
                                     {headName && headName !== 'NAME OF HEAD' ? headName : (resolvedOfficeHeadName || 'NAME OF HEAD')}
                                 </div>
-                                <div className="text-[10px] text-slate-600">
+                                <div className="text-xs font-bold text-black whitespace-nowrap mt-0.5">
                                     {headPosition && headPosition !== 'Head of Office' ? headPosition : (resolvedOfficeHeadPosition || 'Head of Office')}
                                 </div>
-                                {isAttachmentSignatureEnabled && headSig?.signed_at && (
-                                    <div className="text-[9px] text-slate-500">
-                                        Date/Time: {formatDate(headSig.signed_at)}
-                                    </div>
-                                )}
                             </div>
                         </div>
                     </div>
 
                     <div className="pt-2">
                         <div className="text-center flex flex-col items-center justify-end">
-                            <div className="font-bold text-[10px] uppercase mb-1">APPROVED BY (TWG):</div>
+                            <div className="font-extrabold text-xs uppercase mb-1">APPROVED BY (TWG):</div>
                             {isAttachmentSignatureEnabled && twgSig?.user?.signature_path ? (
-                                <div className="h-8 flex items-center justify-center">
-                                    <img
-                                        src={`/api/users/${twgSig.user.id}/signature`}
-                                        alt="Signature"
-                                        className="max-h-8 max-w-[120px] object-contain"
-                                    />
-                                </div>
-                            ) : (isAttachmentSignatureEnabled && twgSig?.signature_indicator) ? (
-                                <div className="inline-flex flex-col items-center mb-1">
-                                    <div className="flex items-center gap-1.5 px-2 py-0.5 bg-cyan-50 border border-cyan-300 rounded text-cyan-800 text-[10px] font-mono">
-                                        <ShieldCheck className="w-3 h-3 text-cyan-600" />
-                                        <span>{twgSig.signature_indicator}</span>
+                                <>
+                                    <div className={`h-8 flex items-center justify-center ${!isTwgPnpki ? 'no-print print:hidden' : ''}`}>
+                                        <img
+                                            src={`/api/users/${twgSig.user.id}/signature`}
+                                            alt="Signature"
+                                            className="max-h-8 max-w-[120px] object-contain"
+                                        />
                                     </div>
-                                </div>
+                                    {!isTwgPnpki && <div className="hidden print:block pdf-export-spacer h-6" />}
+                                </>
+                            ) : (isAttachmentSignatureEnabled && twgSig?.signature_indicator) ? (
+                                <>
+                                    <div className={`inline-flex flex-col items-center mb-1 ${!isTwgPnpki ? 'no-print print:hidden' : ''}`}>
+                                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-cyan-50 border border-cyan-300 rounded text-cyan-800 text-[10px] font-mono">
+                                            <ShieldCheck className="w-3 h-3 text-cyan-600" />
+                                            <span>{twgSig.signature_indicator}</span>
+                                        </div>
+                                    </div>
+                                    {!isTwgPnpki && <div className="hidden print:block pdf-export-spacer h-6" />}
+                                </>
                             ) : (
-                                <div className="h-2" />
+                                <div className="h-6" />
                             )}
-                            <div className="font-bold text-xs uppercase underline">
+                            <div className="font-extrabold text-sm uppercase underline whitespace-nowrap leading-snug">
                                 {twgSig?.signer_name || twgSig?.user?.name || (approvedByName && !isLegacyGovernor(approvedByName) ? approvedByName : '')}
                             </div>
-                            <div className="text-[10px] text-slate-600">
+                            <div className="text-xs font-bold text-black whitespace-nowrap mt-0.5">
                                 {twgSig?.signer_designation || twgSig?.user?.designation || (approvedByPosition && !isLegacyGovernor(approvedByPosition) ? approvedByPosition : (twgSig ? 'BAC TWG' : ''))}
                             </div>
                             {isAttachmentSignatureEnabled && twgSig?.signed_at && (
-                                <div className="text-[9px] text-slate-500">
+                                <div className={`text-[10px] font-bold text-slate-700 ${!isTwgPnpki ? 'no-print print:hidden' : ''}`}>
                                     Date/Time: {formatDate(twgSig.signed_at)}
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* System Generated / E-Signature Validity Notice */}
                     {isAttachmentSignatureEnabled && (
-                        <div className="mt-4 pt-2 border-t border-dotted border-slate-300 text-center">
+                        <div className={`mt-4 pt-2 border-t border-dotted border-slate-300 text-center ${!hasAnyPnpkiAttachmentSig ? 'no-print print:hidden' : ''}`}>
                             <p className="text-[8px] italic text-slate-600 font-sans tracking-wide">
-                                * This is an electronically generated and certified document under the Electronic Procurement Management System. Valid even without a physical or handwritten signature.
+                                * This is an electronically generated document under the Electronic Procurement Management System. Signatures affixed with a valid PNPKI Digital E-Signature are electronically certified; others require a physical/handwritten signature.
                             </p>
                         </div>
                     )}
@@ -1131,7 +1148,7 @@ export const PPMPAttachmentListView = ({
 
     return (
         <div className="bg-slate-100 min-h-screen font-sans text-slate-800">
-            {/* Scoped Portrait Print Stylesheet for PPMP Attachment List */}
+
             <style>{`
                 @media print {
                     @page {
@@ -1192,7 +1209,6 @@ export const PPMPAttachmentListView = ({
                 }
             `}</style>
 
-            {/* Top Navigation / Action Bar */}
             <div className="no-print bg-slate-900 text-white px-4 sm:px-8 py-3.5 flex flex-wrap items-center justify-between gap-3 shadow-md sticky top-0 z-30">
                 <div className="flex items-center gap-3">
                     <button
@@ -1221,7 +1237,7 @@ export const PPMPAttachmentListView = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                    {/* View All / Single Toggle when viewing */}
+
                     {!isEditing && attachmentLists.length > 1 && (
                         <button
                             type="button"
@@ -1291,35 +1307,124 @@ export const PPMPAttachmentListView = ({
                             {isReadyToPrint ? (
                                 <div className="flex items-center gap-2">
                                     {attachmentLists.length > 1 ? (
-                                        <>
-                                            <button
-                                                type="button"
-                                                onClick={handlePrintCurrent}
-                                                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-semibold rounded-lg border border-slate-700 transition cursor-pointer"
-                                                title={`Print only the active sheet (Detailed Specifications #${activeItemIndex + 1})`}
-                                            >
-                                                <Printer className="w-4 h-4 text-slate-300" />
-                                                <span>Print Current (#{activeItemIndex + 1})</span>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={handlePrintAll}
-                                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow transition cursor-pointer"
-                                                title={`Print all ${attachmentLists.length} detailed specifications together in one print job`}
-                                            >
-                                                <Printer className="w-4 h-4" />
-                                                <span>Print All Specifications ({attachmentLists.length})</span>
-                                            </button>
-                                        </>
+                                        <PrintExportDropdown
+                                            label="Print / Download PDF"
+                                            isExporting={isExportingPdf}
+                                            menuWidth={268}
+                                            extraOptions={[
+                                                {
+                                                    key: 'print-current',
+                                                    icon: Printer,
+                                                    iconBg: 'bg-blue-50 text-blue-600',
+                                                    label: `Print Current Sheet (#${activeItemIndex + 1})`,
+                                                    sublabel: 'Open browser print dialog for active sheet',
+                                                    onClick: handlePrintCurrent,
+                                                },
+                                                {
+                                                    key: 'print-all',
+                                                    icon: Printer,
+                                                    iconBg: 'bg-indigo-50 text-indigo-600',
+                                                    label: `Print All Specifications (${attachmentLists.length})`,
+                                                    sublabel: 'Print all sheets in one print job',
+                                                    onClick: handlePrintAll,
+                                                },
+                                                { divider: true },
+                                                {
+                                                    key: 'download-current',
+                                                    icon: Download,
+                                                    iconBg: 'bg-emerald-50 text-emerald-600',
+                                                    label: `Download Current PDF (#${activeItemIndex + 1})`,
+                                                    sublabel: 'Save active specification sheet as .pdf',
+                                                    onClick: async () => {
+                                                        if (!sheetsContainerRef.current || isExportingPdf) return;
+                                                        setIsExportingPdf(true);
+                                                        try {
+                                                            const sheets = Array.from(sheetsContainerRef.current.querySelectorAll('.attachment-sheet'));
+                                                            const targetSheet = viewAllMode ? (sheets[activeItemIndex] || sheets[0]) : sheets[0];
+                                                            const tracker = ppmp?.tracking_number || ppmp?.ppmp_number || ppmp?.uuid || 'PPMP';
+                                                            await exportElementsToPdf({
+                                                                element: targetSheet,
+                                                                filename: `Detailed_Specifications_${tracker}_Item_${activeItemIndex + 1}.pdf`,
+                                                                orientation: 'portrait',
+                                                                format: 'a4',
+                                                                marginMm: 8,
+                                                            });
+                                                        } catch (err) {
+                                                            console.error('Failed to export Detailed Specifications PDF:', err);
+                                                            alert('Failed to generate PDF file. Please try printing and choosing Save as PDF.');
+                                                        } finally {
+                                                            setIsExportingPdf(false);
+                                                        }
+                                                    },
+                                                },
+                                                {
+                                                    key: 'download-all',
+                                                    icon: Download,
+                                                    iconBg: 'bg-teal-50 text-teal-600',
+                                                    label: `Download All PDF (${attachmentLists.length} Sheets)`,
+                                                    sublabel: 'Export all specification sheets into one .pdf',
+                                                    onClick: async () => {
+                                                        if (isExportingPdf) return;
+                                                        const prevViewAll = viewAllMode;
+                                                        const prevScope = printScope;
+                                                        setIsExportingPdf(true);
+                                                        setViewAllMode(true);
+                                                        setPrintScope('all');
+                                                        try {
+                                                            await new Promise((r) => setTimeout(r, 150));
+                                                            const sheets = sheetsContainerRef.current
+                                                                ? Array.from(sheetsContainerRef.current.querySelectorAll('.attachment-sheet'))
+                                                                : [];
+                                                            const tracker = ppmp?.tracking_number || ppmp?.ppmp_number || ppmp?.uuid || 'PPMP';
+                                                            await exportElementsToPdf({
+                                                                elements: sheets,
+                                                                filename: `Detailed_Specifications_${tracker}_All.pdf`,
+                                                                orientation: 'portrait',
+                                                                format: 'a4',
+                                                                marginMm: 8,
+                                                            });
+                                                        } catch (err) {
+                                                            console.error('Failed to export Detailed Specifications PDF:', err);
+                                                            alert('Failed to generate PDF file. Please try printing and choosing Save as PDF.');
+                                                        } finally {
+                                                            setViewAllMode(prevViewAll);
+                                                            setPrintScope(prevScope);
+                                                            setIsExportingPdf(false);
+                                                        }
+                                                    },
+                                                },
+                                            ]}
+                                        />
                                     ) : (
-                                        <button
-                                            type="button"
-                                            onClick={handlePrintCurrent}
-                                            className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow transition cursor-pointer"
-                                        >
-                                            <Printer className="w-4 h-4" />
-                                            <span>Print Detailed Specifications</span>
-                                        </button>
+                                        <PrintExportDropdown
+                                            label="Print / Download PDF"
+                                            printLabel="Print Detailed Specifications"
+                                            printSublabel="Open browser print dialog"
+                                            downloadLabel="Download Specifications (PDF)"
+                                            downloadSublabel="Save Detailed Specifications as .pdf file"
+                                            onPrint={handlePrintCurrent}
+                                            onDownloadPdf={async () => {
+                                                if (!sheetsContainerRef.current || isExportingPdf) return;
+                                                setIsExportingPdf(true);
+                                                try {
+                                                    const sheets = Array.from(sheetsContainerRef.current.querySelectorAll('.attachment-sheet'));
+                                                    const tracker = ppmp?.tracking_number || ppmp?.ppmp_number || ppmp?.uuid || 'PPMP';
+                                                    await exportElementsToPdf({
+                                                        elements: sheets,
+                                                        filename: `Detailed_Specifications_${tracker}.pdf`,
+                                                        orientation: 'portrait',
+                                                        format: 'a4',
+                                                        marginMm: 8,
+                                                    });
+                                                } catch (err) {
+                                                    console.error('Failed to export Detailed Specifications PDF:', err);
+                                                    alert('Failed to generate PDF file. Please try printing and choosing Save as PDF.');
+                                                } finally {
+                                                    setIsExportingPdf(false);
+                                                }
+                                            }}
+                                            isExporting={isExportingPdf}
+                                        />
                                     )}
                                 </div>
                             ) : (
@@ -1333,9 +1438,8 @@ export const PPMPAttachmentListView = ({
                 </div>
             </div>
 
-            {/* Main Content Area */}
             <div className="py-8 px-4 sm:px-6">
-                {/* Multi-Item Tab Selector Header (shown whenever there are 2 or more procurement rows) */}
+
                 {attachmentLists.length > 1 && (
                     <div className="no-print max-w-5xl mx-auto mb-6 bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 mb-3">
@@ -1344,14 +1448,19 @@ export const PPMPAttachmentListView = ({
                                     <Layers className="w-4 h-4" />
                                 </div>
                                 <div>
-                                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2 flex-wrap">
                                         Select Procurement Row Specifications
                                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-mono font-semibold border border-blue-200">
-                                            {attachmentLists.length} items to procure
+                                            {attachmentLists.filter(i => !i.isRetention).length} to procure
                                         </span>
+                                        {attachmentLists.some(i => i.isRetention) && (
+                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 font-mono font-semibold border border-amber-300">
+                                                + {attachmentLists.filter(i => i.isRetention).length} retention (optional)
+                                            </span>
+                                        )}
                                     </h3>
                                     <p className="text-[11px] text-slate-500">
-                                        Each procurement row has its own detailed procurement specifications breakdown.
+                                        Each procurement row has its own detailed specifications. Retention rows are optional — you may create specifications for them or leave them blank.
                                     </p>
                                 </div>
                             </div>
@@ -1376,7 +1485,6 @@ export const PPMPAttachmentListView = ({
                             )}
                         </div>
 
-                        {/* Tabs Bar */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                             {attachmentLists.map((item, idx) => {
                                 const isSelected = !viewAllMode && activeItemIndex === idx;
@@ -1420,7 +1528,14 @@ export const PPMPAttachmentListView = ({
                                         </span>
                                         <div className="min-w-0 flex-1">
                                             <div className="text-xs font-bold text-slate-900 truncate flex items-center justify-between gap-1" title={item.sourceDescription || item.projectTitle}>
-                                                <span className="truncate">{item.sourceDescription || item.projectTitle || `Item #${idx + 1}`}</span>
+                                                <span className="truncate flex items-center gap-1.5">
+                                                    <span className="truncate">{item.sourceDescription || item.projectTitle || `Item #${idx + 1}`}</span>
+                                                    {item.isRetention && (
+                                                        <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase bg-amber-100 text-amber-900 border border-amber-300 shrink-0">
+                                                            Optional
+                                                        </span>
+                                                    )}
+                                                </span>
                                                 {tabPendingCount > 0 ? (
                                                     <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-red-600 text-white shadow-2xs shrink-0 no-print" title={`${tabPendingCount} pending finding(s)`}>
                                                         💬 {tabPendingCount}
@@ -1441,6 +1556,10 @@ export const PPMPAttachmentListView = ({
                                                     <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-0.5">
                                                         <CheckCircle2 className="w-3 h-3" /> Ready
                                                     </span>
+                                                ) : item.isRetention ? (
+                                                    <span className="text-[10px] text-amber-700 font-semibold">
+                                                        Optional
+                                                    </span>
                                                 ) : null}
                                             </div>
                                         </div>
@@ -1451,7 +1570,6 @@ export const PPMPAttachmentListView = ({
                     </div>
                 )}
 
-                {/* Reviewer Cell Comments & Compliance Tracker Banner */}
                 {cellComments && cellComments.length > 0 && (
                     <div className="max-w-5xl mx-auto mb-6 no-print">
                         <div className={`p-4 rounded-xl border text-xs space-y-2.5 transition shadow-2xs ${
@@ -1489,7 +1607,6 @@ export const PPMPAttachmentListView = ({
                                 <span className="text-emerald-800 font-semibold">• Complied: <strong>{compliedCellComments.length}</strong></span>
                             </div>
 
-                            {/* Progress bar */}
                             <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                                 <div
                                     className={`h-2 transition-all duration-300 ${pendingCellComments.length === 0 ? 'bg-emerald-600' : 'bg-red-500'}`}
@@ -1603,9 +1720,9 @@ export const PPMPAttachmentListView = ({
                 )}
 
                 {isEditing ? (
-                    /* CREATE / EDIT FORM VIEW */
+
                     <div className="max-w-5xl mx-auto space-y-6">
-                        {/* Information Banner */}
+
                         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
                             <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold shrink-0 text-xs">
                                 {activeItemIndex + 1}
@@ -1619,7 +1736,6 @@ export const PPMPAttachmentListView = ({
                             </div>
                         </div>
 
-                        {/* Top Header Card */}
                         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-4">
                             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 pb-2 border-b border-slate-100 flex items-center justify-between">
                                 <span>General Project &amp; Allocation Details</span>
@@ -1742,7 +1858,6 @@ export const PPMPAttachmentListView = ({
                             </div>
                         </div>
 
-                        {/* Items Table Card */}
                         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-4">
                             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                                 <div>
@@ -1762,7 +1877,6 @@ export const PPMPAttachmentListView = ({
                                 </button>
                             </div>
 
-                            {/* Over-budget Warning Alert */}
                             {isActiveOverBudget && (
                                 <div className="p-3 bg-rose-50 border-2 border-rose-400 rounded-xl flex items-start gap-3 shadow-xs">
                                     <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
@@ -1935,7 +2049,6 @@ export const PPMPAttachmentListView = ({
                             </div>
                         </div>
 
-                        {/* Delivery, Payment, and Charges Section */}
                         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-4">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
                                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
@@ -1963,7 +2076,6 @@ export const PPMPAttachmentListView = ({
                                 )}
                             </div>
 
-                            {/* Additional Condition Preset Selector */}
                             <div className="bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-slate-50 p-4 rounded-xl border border-blue-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs">
                                 <div className="flex items-center gap-2.5">
                                     <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
@@ -1997,7 +2109,7 @@ export const PPMPAttachmentListView = ({
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                                {/* Other Terms (Full width across 2 columns) */}
+
                                 <CommentableCell
                                     as="div"
                                     {...getCommentProps(activeList.itemId, activeListItemNo, 'att_other_terms', `Detailed Specifications #${activeListItemNo} • Other Terms`, activeList.otherTerms)}
@@ -2054,7 +2166,6 @@ export const PPMPAttachmentListView = ({
                                     />
                                 </CommentableCell>
 
-                                {/* Charges */}
                                 <CommentableCell
                                     as="div"
                                     {...getCommentProps(activeList.itemId, activeListItemNo, 'att_charges', `Detailed Specifications #${activeListItemNo} • Charges`, activeList.charges)}
@@ -2072,7 +2183,6 @@ export const PPMPAttachmentListView = ({
                                     />
                                 </CommentableCell>
 
-                                {/* Place of Delivery */}
                                 <CommentableCell
                                     as="div"
                                     {...getCommentProps(activeList.itemId, activeListItemNo, 'att_place_of_delivery', `Detailed Specifications #${activeListItemNo} • Place of Delivery`, activeList.placeOfDelivery)}
@@ -2122,7 +2232,6 @@ export const PPMPAttachmentListView = ({
                                     />
                                 </CommentableCell>
 
-                                {/* Payment Method */}
                                 <CommentableCell
                                     as="div"
                                     {...getCommentProps(activeList.itemId, activeListItemNo, 'att_payment_method', `Detailed Specifications #${activeListItemNo} • Payment Method`, activeList.paymentMethod)}
@@ -2172,7 +2281,6 @@ export const PPMPAttachmentListView = ({
                                     />
                                 </CommentableCell>
 
-                                {/* Delivery Period */}
                                 <CommentableCell
                                     as="div"
                                     {...getCommentProps(activeList.itemId, activeListItemNo, 'att_delivery_period', `Detailed Specifications #${activeListItemNo} • Delivery Period`, activeList.deliveryPeriod)}
@@ -2224,7 +2332,6 @@ export const PPMPAttachmentListView = ({
                             </div>
                         </div>
 
-                        {/* Signatories Card */}
                         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-4">
                             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 pb-2 border-b border-slate-100">
                                 Signatories &amp; Endorsement
@@ -2284,7 +2391,6 @@ export const PPMPAttachmentListView = ({
                             </div>
                         </div>
 
-                        {/* Navigation / Next / Prev & Save Bar */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-slate-200">
                             <div className="flex items-center gap-2">
                                 {activeItemIndex > 0 && (
@@ -2324,10 +2430,10 @@ export const PPMPAttachmentListView = ({
                         </div>
                     </div>
                 ) : (
-                    /* OFFICIAL PRINTABLE VIEW */
-                    <div className="space-y-8">
+
+                    <div ref={sheetsContainerRef} className="space-y-8">
                         {attachmentLists.map((list, idx) => {
-                            // If in single-sheet view on screen and not printing all, only show activeItemIndex
+
                             if (!viewAllMode && printScope !== 'all' && idx !== activeItemIndex) {
                                 return null;
                             }

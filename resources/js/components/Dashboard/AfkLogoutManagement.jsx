@@ -67,7 +67,6 @@ export const AfkLogoutManagement = () => {
                 message: res.data.message || 'AFK Inactivity Auto-Logout configuration updated successfully.',
             });
 
-            // Dispatch global event for instant propagation to all active tabs
             window.dispatchEvent(new CustomEvent('afk_settings:updated', { detail: payload }));
         } catch (err) {
             setFeedback({
@@ -83,7 +82,7 @@ export const AfkLogoutManagement = () => {
 
     return (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-            {/* Header */}
+
             <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Timer className="w-4 h-4 text-amber-600" />
@@ -102,7 +101,6 @@ export const AfkLogoutManagement = () => {
                 </span>
             </div>
 
-            {/* Content Body */}
             <div className="p-5 sm:p-6 space-y-6">
                 {feedback && (
                     <div
@@ -128,7 +126,7 @@ export const AfkLogoutManagement = () => {
                     </div>
                 ) : (
                     <form onSubmit={handleSave} className="space-y-6">
-                        {/* Master Toggle */}
+
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-slate-200 bg-slate-50/70 gap-4">
                             <div className="flex items-start gap-3">
                                 <div
@@ -173,7 +171,6 @@ export const AfkLogoutManagement = () => {
                             </button>
                         </div>
 
-                        {/* Inactivity Duration Configuration */}
                         <div className={`space-y-4 transition ${enabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
                             <div>
                                 <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
@@ -184,7 +181,6 @@ export const AfkLogoutManagement = () => {
                                     Choose from standard security presets or specify custom inactivity minutes before auto-logout is initiated.
                                 </p>
 
-                                {/* Presets Bar */}
                                 <div className="flex flex-wrap items-center gap-2 mb-3">
                                     {presetMinutes.map((mins) => (
                                         <button
@@ -221,7 +217,6 @@ export const AfkLogoutManagement = () => {
                                 </div>
                             </div>
 
-                            {/* Warning Window Configuration */}
                             <div className="pt-2">
                                 <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
                                     <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
@@ -245,7 +240,6 @@ export const AfkLogoutManagement = () => {
                             </div>
                         </div>
 
-                        {/* Informational Guidance Box */}
                         <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
                             <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                             <div className="space-y-1">
@@ -256,7 +250,6 @@ export const AfkLogoutManagement = () => {
                             </div>
                         </div>
 
-                        {/* Save Actions */}
                         <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
                             <button
                                 type="button"
@@ -290,4 +283,3 @@ export const AfkLogoutManagement = () => {
         </div>
     );
 };
-

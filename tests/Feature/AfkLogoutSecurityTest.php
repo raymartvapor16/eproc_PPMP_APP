@@ -74,13 +74,12 @@ class AfkLogoutSecurityTest extends TestCase
 
     public function test_non_super_admin_cannot_update_afk_logout_settings(): void
     {
-        // 1. Unauthenticated
+
         $this->putJson('/api/system-settings/afk-logout', [
             'enabled' => false,
             'timeout_minutes' => 30,
         ])->assertStatus(401);
 
-        // 2. Regular Admin
         $this->actingAs($this->admin)
             ->putJson('/api/system-settings/afk-logout', [
                 'enabled' => false,
@@ -88,7 +87,6 @@ class AfkLogoutSecurityTest extends TestCase
             ])
             ->assertStatus(403);
 
-        // 3. End User
         $this->actingAs($this->endUser)
             ->putJson('/api/system-settings/afk-logout', [
                 'enabled' => false,
@@ -114,18 +112,15 @@ class AfkLogoutSecurityTest extends TestCase
         $response->assertJsonPath('settings.timeout_minutes', 20);
         $response->assertJsonPath('settings.warning_seconds', 90);
 
-        // Verify database settings persisted
         $this->assertEquals('true', SystemSetting::where('key', 'afk_logout_enabled')->value('value'));
         $this->assertEquals('20', SystemSetting::where('key', 'afk_logout_timeout_minutes')->value('value'));
         $this->assertEquals('90', SystemSetting::where('key', 'afk_logout_warning_seconds')->value('value'));
 
-        // Verify Audit Log recorded
         $this->assertDatabaseHas('audit_logs', [
             'action' => 'AFK_LOGOUT_SETTINGS_UPDATED',
             'user_id' => $this->superAdmin->id,
         ]);
 
-        // Verify public/authenticated fetch reflects new configuration
         $fetchRes = $this->getJson('/api/system-settings/afk-logout');
         $fetchRes->assertOk();
         $this->assertEquals(20, $fetchRes->json('timeout_minutes'));
@@ -136,17 +131,14 @@ class AfkLogoutSecurityTest extends TestCase
     {
         $this->actingAs($this->superAdmin);
 
-        // Invalid timeout (0 or negative)
         $this->putJson('/api/system-settings/afk-logout', [
             'enabled' => true,
             'timeout_minutes' => 0,
         ])->assertStatus(422);
 
-        // Invalid timeout (> 480)
         $this->putJson('/api/system-settings/afk-logout', [
             'enabled' => true,
             'timeout_minutes' => 500,
         ])->assertStatus(422);
     }
 }
-

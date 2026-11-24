@@ -74,7 +74,7 @@ export const UserAccountCodesModal = ({
                 className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]"
                 onClick={(e) => e.stopPropagation()}
             >
-                {/* Header */}
+
                 <div className="px-6 py-4 bg-gradient-to-r from-amber-600 via-amber-700 to-amber-800 text-white flex items-center justify-between shrink-0 shadow-sm">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center border border-white/20">
@@ -99,7 +99,6 @@ export const UserAccountCodesModal = ({
                     </button>
                 </div>
 
-                {/* Sub-Header Notice */}
                 <div className="px-6 py-2.5 bg-amber-50/70 border-b border-amber-200/60 flex items-center justify-between text-xs text-amber-900 shrink-0">
                     <div className="flex items-center gap-2">
                         <Shield className="w-4 h-4 text-amber-700 shrink-0" />
@@ -115,7 +114,6 @@ export const UserAccountCodesModal = ({
                     </div>
                 </div>
 
-                {/* Error Banner */}
                 {error && (
                     <div className="mx-6 mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-xs text-rose-700 shrink-0">
                         <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
@@ -123,7 +121,6 @@ export const UserAccountCodesModal = ({
                     </div>
                 )}
 
-                {/* Body: MultiSelect */}
                 <div className="p-6 overflow-y-auto flex-1">
                     <AccountCodeMultiSelect
                         selectedIds={selectedIds}
@@ -132,7 +129,6 @@ export const UserAccountCodesModal = ({
                     />
                 </div>
 
-                {/* Footer */}
                 <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
                     <div className="text-[11px] text-slate-500">
                         {selectedIds.length === 0 ? (
@@ -176,4 +172,3 @@ export const UserAccountCodesModal = ({
         </div>
     );
 };
-

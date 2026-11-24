@@ -16,14 +16,13 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => RoleMiddleware::class,
         ]);
 
-        // Defensive headers and anti-session-hijacking protection
+        $middleware->append(\App\Http\Middleware\ThreatDetectionMiddleware::class);
+
         $middleware->web(append: [
             \App\Http\Middleware\SecurityHeadersMiddleware::class,
             \App\Http\Middleware\VerifySessionFingerprint::class,
         ]);
 
-        // Note: All state-changing web and api requests require strict CSRF validation.
-        // No exemptions are granted for api/* to prevent CSRF / Session-Riding attacks.
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, \Illuminate\Http\Request $request) {

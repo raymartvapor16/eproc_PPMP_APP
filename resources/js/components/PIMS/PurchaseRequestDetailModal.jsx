@@ -60,7 +60,7 @@ export const PurchaseRequestDetailModal = ({
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl overflow-hidden flex flex-col max-h-[92vh]">
-                {/* Header */}
+
                 <div className="px-6 py-4 bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-300">
@@ -110,9 +110,8 @@ export const PurchaseRequestDetailModal = ({
                     </div>
                 </div>
 
-                {/* Body */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                    {/* General Information Card */}
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs">
                         <div>
                             <span className="text-[10px] text-slate-500 uppercase font-bold block">Department</span>
@@ -132,13 +131,11 @@ export const PurchaseRequestDetailModal = ({
                         </div>
                     </div>
 
-                    {/* Purpose */}
                     <div className="p-4 bg-white border border-slate-200 rounded-xl">
                         <span className="text-[10px] text-slate-500 uppercase font-bold block mb-1">Purpose / Justification</span>
                         <p className="text-xs text-slate-800 font-semibold leading-relaxed">{pr.purpose}</p>
                     </div>
 
-                    {/* Items Breakdown */}
                     <div className="space-y-2">
                         <div className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
                             <Coins className="w-4 h-4 text-emerald-600" />
@@ -182,7 +179,6 @@ export const PurchaseRequestDetailModal = ({
                         </div>
                     </div>
 
-                    {/* Terms & Specifications */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                         <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                             <span className="text-[10px] text-slate-500 uppercase font-bold block">Delivery & Payment Terms</span>
@@ -204,7 +200,6 @@ export const PurchaseRequestDetailModal = ({
                         </div>
                     </div>
 
-                    {/* Routing History Timeline */}
                     {routes.length > 0 && (
                         <div className="space-y-2">
                             <div className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
@@ -239,7 +234,6 @@ export const PurchaseRequestDetailModal = ({
                     )}
                 </div>
 
-                {/* Footer */}
                 <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
                     <button
                         type="button"
@@ -253,4 +247,3 @@ export const PurchaseRequestDetailModal = ({
         </div>
     );
 };
-

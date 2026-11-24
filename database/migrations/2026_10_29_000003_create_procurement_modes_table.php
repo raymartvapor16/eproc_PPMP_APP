@@ -7,9 +7,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         Schema::create('procurement_modes', function (Blueprint $table) {
@@ -22,7 +20,6 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // Seed the 14 standard Philippine RA 12009 Modes of Procurement
         $modes = [
             [
                 'name' => 'Competitive Bidding (RA 12009)',
@@ -133,9 +130,6 @@ return new class extends Migration
         DB::table('procurement_modes')->insert($modes);
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('procurement_modes');

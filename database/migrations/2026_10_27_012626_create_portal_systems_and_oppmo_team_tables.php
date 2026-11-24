@@ -7,9 +7,7 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         Schema::create('portal_systems', function (Blueprint $table) {
@@ -20,7 +18,7 @@ return new class extends Migration
             $table->string('badge')->nullable();
             $table->string('icon')->nullable()->default('FileSpreadsheet');
             $table->string('color')->nullable()->default('blue');
-            $table->string('status')->default('active'); // active, inactive
+            $table->string('status')->default('active');
             $table->integer('sort_order')->default(0);
             $table->boolean('is_external')->default(false);
             $table->timestamps();
@@ -35,11 +33,10 @@ return new class extends Migration
             $table->string('photo_url')->nullable();
             $table->string('email')->nullable();
             $table->integer('sort_order')->default(0);
-            $table->string('status')->default('active'); // active, inactive
+            $table->string('status')->default('active');
             $table->timestamps();
         });
 
-        // Seed default systems
         DB::table('portal_systems')->insert([
             [
                 'name' => 'E-Procurement PPMP & APP System',
@@ -70,9 +67,6 @@ return new class extends Migration
         ]);
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('oppmo_team_members');

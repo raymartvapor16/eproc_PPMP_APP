@@ -79,13 +79,9 @@ class AmendedAppRegenerationTest extends TestCase
         ]);
     }
 
-    /**
-     * Test AMENDMENT with PPMP_APP scope bypasses BAC-TWG review,
-     * requires APP re-generation with new PPMP data, and preserves old APP.
-     */
     public function test_amendment_ppmp_app_only_bypasses_twg_and_requires_app_regeneration(): void
     {
-        // 1. Create original parent PPMP that is completed (READY_TO_PRINT) with existing APP data
+
         $parentPpmp = Ppmp::create([
             'uuid' => (string) Str::uuid(),
             'tracking_number' => 'ENG-2026-000001',
@@ -121,7 +117,6 @@ class AmendedAppRegenerationTest extends TestCase
             'procurement_mode' => 'Public Bidding',
         ]);
 
-        // 2. Submit amendment request (scope: PPMP_APP only) and approve it
         $parentPpmp->update([
             'amendment_status' => 'PENDING_APPROVAL',
             'amendment_type' => 'AMENDMENT',
@@ -135,7 +130,6 @@ class AmendedAppRegenerationTest extends TestCase
         ]);
         $approveRes->assertStatus(200);
 
-        // Fetch child amended PPMP
         $childPpmp = Ppmp::where('parent_id', $parentPpmp->id)->firstOrFail();
         $this->assertEquals('AMENDMENT', $childPpmp->amendment_type);
         $this->assertEquals('PPMP_APP', $childPpmp->amendment_scope);
@@ -144,7 +138,6 @@ class AmendedAppRegenerationTest extends TestCase
         $this->assertNotEmpty($childPpmp->app_data['old_app']);
         $this->assertEquals(500000.00, $childPpmp->app_data['old_app']['rows'][0]['estimatedBudget']);
 
-        // 3. End User updates the PPMP items with new values
         $updateRes = $this->actingAs($this->endUser)->putJson("/api/ppmps/{$childPpmp->uuid}", [
             'title' => 'Updated Road Maintenance Project',
             'fiscal_year' => '2026',
@@ -161,14 +154,12 @@ class AmendedAppRegenerationTest extends TestCase
         ]);
         $updateRes->assertStatus(200);
 
-        // Verify changes are recorded and old APP is preserved
         $childPpmp->refresh();
         $this->assertTrue($childPpmp->changeLogs()->where('user_id', $this->endUser->id)->exists());
         $this->assertEquals(650000.00, (float)$childPpmp->total_budget);
         $this->assertTrue($childPpmp->app_data['needs_regeneration']);
         $this->assertNotNull($childPpmp->app_data['old_app']);
 
-        // 4. Reviewer (Budget Officer) performs a field-level return with correction
         $childPpmp->update(['status' => 'BUDGET_OFFICER_REVIEW']);
         $childItem = $childPpmp->items()->firstOrFail();
         $budgetReturnRes = $this->actingAs($this->budgetOfficer)->postJson("/api/ppmps/{$childPpmp->uuid}/budget/return", [
@@ -184,7 +175,6 @@ class AmendedAppRegenerationTest extends TestCase
         ]);
         $budgetReturnRes->assertStatus(200);
 
-        // Verify Reviewer change log was created with reviewer role and user id
         $childPpmp->refresh();
         $this->assertTrue(
             $childPpmp->changeLogs()
@@ -194,21 +184,17 @@ class AmendedAppRegenerationTest extends TestCase
                 ->exists()
         );
 
-        // 5. PPMP moves to OPPMO_REVIEW
         $childPpmp->update(['status' => 'OPPMO_REVIEW']);
 
-        // TWG review cannot be performed for this amendment
         $twgFail = $this->actingAs($this->twgUser)->postJson("/api/ppmps/{$childPpmp->uuid}/twg/approve");
         $twgFail->assertStatus(422);
 
-        // OPPMO cannot approve without re-generating the APP
         $oppmoApproveFail = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$childPpmp->uuid}/oppmo/approve", [
             'remarks' => 'Trying to approve without regenerating APP',
         ]);
         $oppmoApproveFail->assertStatus(422);
         $this->assertStringContainsString('Annual Procurement Plan (APP)', $oppmoApproveFail->json('message'));
 
-        // 6. OPPMO re-generates and saves the new APP with the updated PPMP data
         $saveAppRes = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$childPpmp->uuid}/app-data", [
             'fiscal_year' => '2026',
             'plan_version_type' => 'UPDATED',
@@ -224,7 +210,6 @@ class AmendedAppRegenerationTest extends TestCase
         ]);
         $saveAppRes->assertStatus(200);
 
-        // Verify APP state and preservation of old APP
         $childPpmp->refresh();
         $this->assertTrue($childPpmp->hasAppGenerated());
         $this->assertFalse($childPpmp->app_data['needs_regeneration'] ?? true);
@@ -232,7 +217,6 @@ class AmendedAppRegenerationTest extends TestCase
         $this->assertNotNull($childPpmp->app_data['old_app']);
         $this->assertEquals(500000.00, $childPpmp->app_data['old_app']['rows'][0]['estimatedBudget']);
 
-        // Verify OPPMO APP generation was logged to changeLogs
         $this->assertTrue(
             $childPpmp->changeLogs()
                 ->where('user_id', $this->oppmoUser->id)
@@ -241,7 +225,6 @@ class AmendedAppRegenerationTest extends TestCase
                 ->exists()
         );
 
-        // 7. OPPMO approves with generated APP: marks PPMP finalized and READY_TO_PRINT!
         $oppmoApproveSuccess = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$childPpmp->uuid}/oppmo/approve", [
             'remarks' => 'APP regenerated and verified.',
         ]);
@@ -249,13 +232,9 @@ class AmendedAppRegenerationTest extends TestCase
         $this->assertEquals('READY_TO_PRINT', $childPpmp->fresh()->status);
     }
 
-    /**
-     * Test SUPPLEMENTAL allows BAC-TWG to review the PPMP first,
-     * then Budget Officer, then OPPMO which requires APP generation before finalization.
-     */
     public function test_supplemental_ppmp_allows_twg_review_and_requires_app_regeneration(): void
     {
-        // 1. Create original parent PPMP
+
         $parentPpmp = Ppmp::create([
             'uuid' => (string) Str::uuid(),
             'tracking_number' => 'ENG-2026-000002',
@@ -291,7 +270,6 @@ class AmendedAppRegenerationTest extends TestCase
             'procurement_mode' => 'Small Value Procurement',
         ]);
 
-        // 2. Submit SUPPLEMENTAL request (Scope: ALL - reviews PPMP/APP and Attachment List, routing to ALL reviewers including TWG)
         $parentPpmp->update([
             'amendment_status' => 'PENDING_APPROVAL',
             'amendment_type' => 'SUPPLEMENTAL',
@@ -308,25 +286,20 @@ class AmendedAppRegenerationTest extends TestCase
         $childPpmp = Ppmp::where('parent_id', $parentPpmp->id)->firstOrFail();
         $this->assertEquals('SUPPLEMENTAL', $childPpmp->amendment_type);
 
-        // 3. For SUPPLEMENTAL (ALL scope), workflow routes to TWG_REVIEW first!
         $childPpmp->update(['status' => 'TWG_REVIEW']);
 
-        // 4. BAC-TWG conducts technical review and approves -> routes to BUDGET_OFFICER_REVIEW (General Fund)
         $twgApproveRes = $this->actingAs($this->twgUser)->postJson("/api/ppmps/{$childPpmp->uuid}/twg/approve");
         $twgApproveRes->assertStatus(200);
         $this->assertEquals('BUDGET_OFFICER_REVIEW', $childPpmp->fresh()->status);
         $this->assertNotNull($childPpmp->fresh()->twg_approved_at);
 
-        // 5. Budget Officer reviews and approves -> routes to OPPMO_REVIEW
         $budgetApproveRes = $this->actingAs($this->budgetOfficer)->postJson("/api/ppmps/{$childPpmp->uuid}/budget/approve");
         $budgetApproveRes->assertStatus(200);
         $this->assertEquals('OPPMO_REVIEW', $childPpmp->fresh()->status);
 
-        // 6. In OPPMO review, APP must be generated before approving to READY_TO_PRINT
         $oppmoApproveBlocked = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$childPpmp->uuid}/oppmo/approve");
         $oppmoApproveBlocked->assertStatus(422);
 
-        // 7. OPPMO generates the APP
         $saveApp = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$childPpmp->uuid}/app-data", [
             'fiscal_year' => '2026',
             'plan_version_type' => 'UPDATED',
@@ -342,7 +315,6 @@ class AmendedAppRegenerationTest extends TestCase
         ]);
         $saveApp->assertStatus(200);
 
-        // 8. OPPMO now approves and marks READY_TO_PRINT
         $oppmoFinalApprove = $this->actingAs($this->oppmoUser)->postJson("/api/ppmps/{$childPpmp->uuid}/oppmo/approve", [
             'remarks' => 'APP finalized and ready to print.',
         ]);

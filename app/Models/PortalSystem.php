@@ -27,12 +27,6 @@ class PortalSystem extends Model
         'is_external' => 'boolean',
     ];
 
-    /**
-     * Scope a query to only include active portal systems.
-     *
-     * @param Builder $query
-     * @return Builder
-     */
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('status', 'active')->orderBy('sort_order', 'asc');

@@ -7,9 +7,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         $driver = Schema::getConnection()->getDriverName();
@@ -18,14 +16,12 @@ return new class extends Migration
             DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM('end_user', 'head', 'budget_officer', 'oppmo', 'twg', 'super_admin', 'admin', 'authorized_staff', 'pacco', 'monitor', 'pgso', 'presentative_staff') DEFAULT 'end_user'");
         }
 
-        // 1. supplier_evaluation_criteria (formerly evaluation_criteria)
         Schema::create('supplier_evaluation_criteria', function (Blueprint $table) {
             $table->id();
             $table->string('criteria_name');
             $table->timestamps();
         });
 
-        // Seed the 4 official Supplier Evaluation Criteria from the database dump
         DB::table('supplier_evaluation_criteria')->insert([
             ['id' => 1, 'criteria_name' => 'PRICE', 'created_at' => null, 'updated_at' => null],
             ['id' => 2, 'criteria_name' => 'QUALITY/SERVICE LEVEL', 'created_at' => null, 'updated_at' => null],
@@ -33,7 +29,6 @@ return new class extends Migration
             ['id' => 4, 'criteria_name' => 'DELIVERY FULFILLMENT', 'created_at' => null, 'updated_at' => null],
         ]);
 
-        // 2. supplier_evaluations (formerly evaluations)
         Schema::create('supplier_evaluations', function (Blueprint $table) {
             $table->id();
             $table->string('supplier_name')->index();
@@ -50,7 +45,6 @@ return new class extends Migration
             $table->index(['status', 'delete_status', 'period_year'], 'idx_supplier_evals_status_del_year');
         });
 
-        // 3. supplier_criteria_scores (formerly criteria_scores)
         Schema::create('supplier_criteria_scores', function (Blueprint $table) {
             $table->id();
             $table->foreignId('evaluation_id')->constrained('supplier_evaluations')->cascadeOnDelete();
@@ -62,7 +56,6 @@ return new class extends Migration
             $table->index(['evaluation_id', 'criteria_id'], 'idx_supplier_scores_eval_criteria');
         });
 
-        // 4. supplier_purchase_orders (formerly purchase_orders)
         Schema::create('supplier_purchase_orders', function (Blueprint $table) {
             $table->id();
             $table->string('po_no')->nullable()->index();
@@ -77,7 +70,6 @@ return new class extends Migration
             $table->index(['end_user', 'status'], 'idx_supplier_po_enduser_status');
         });
 
-        // 5. supplier_pdfs (formerly pdfs)
         Schema::create('supplier_pdfs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
@@ -88,7 +80,6 @@ return new class extends Migration
             $table->index(['user_id', 'status'], 'idx_supplier_pdfs_user_status');
         });
 
-        // 6. supplier_authorizes (formerly authorizes)
         Schema::create('supplier_authorizes', function (Blueprint $table) {
             $table->id();
             $table->foreignId('evaluation_id')->nullable()->constrained('supplier_evaluations')->cascadeOnDelete();
@@ -98,7 +89,6 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 7. supplier_digital_approvals (formerly digital_approvals)
         Schema::create('supplier_digital_approvals', function (Blueprint $table) {
             $table->id();
             $table->foreignId('evaluation_id')->constrained('supplier_evaluations')->cascadeOnDelete();
@@ -113,7 +103,6 @@ return new class extends Migration
             $table->index(['evaluation_id', 'role'], 'idx_supplier_approvals_eval_role');
         });
 
-        // 8. supplier_evaluation_links (formerly evaluation_links)
         Schema::create('supplier_evaluation_links', function (Blueprint $table) {
             $table->id();
             $table->foreignId('evaluation_id')->constrained('supplier_evaluations')->cascadeOnDelete();
@@ -124,7 +113,6 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 9. supplier_requests (formerly requests)
         Schema::create('supplier_requests', function (Blueprint $table) {
             $table->id();
             $table->foreignId('evaluation_id')->constrained('supplier_evaluations')->cascadeOnDelete();
@@ -141,7 +129,6 @@ return new class extends Migration
             $table->index(['requested_to', 'status'], 'idx_supplier_requests_reqto_status');
         });
 
-        // 10. supplier_activity_logs (formerly activity_logs)
         Schema::create('supplier_activity_logs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->nullable()->constrained('users')->cascadeOnDelete();
@@ -156,7 +143,6 @@ return new class extends Migration
             $table->index('created_at', 'idx_supplier_logs_created_at');
         });
 
-        // Register Supplier Evaluation System in portal_systems if table exists
         if (Schema::hasTable('portal_systems') && !DB::table('portal_systems')->where('link_url', '/supplierevaluation')->exists()) {
             DB::table('portal_systems')->insert([
                 'name' => 'Supplier Evaluation System',
@@ -174,9 +160,6 @@ return new class extends Migration
         }
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('supplier_activity_logs');
@@ -197,4 +180,3 @@ return new class extends Migration
         }
     }
 };
-

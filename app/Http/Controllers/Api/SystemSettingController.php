@@ -10,9 +10,7 @@ use Illuminate\Http\Request;
 
 class SystemSettingController extends Controller
 {
-    /**
-     * Get the developer mode status (Public / Authenticated).
-     */
+
     public function getDeveloperMode(): JsonResponse
     {
         return response()->json([
@@ -20,9 +18,6 @@ class SystemSettingController extends Controller
         ]);
     }
 
-    /**
-     * Update developer mode (Super Admin only).
-     */
     public function updateDeveloperMode(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -52,16 +47,13 @@ class SystemSettingController extends Controller
         );
 
         return response()->json([
-            'message' => $newMode 
-                ? 'Developer Mode has been ENABLED. Inspection and DevTools access are now allowed.' 
+            'message' => $newMode
+                ? 'Developer Mode has been ENABLED. Inspection and DevTools access are now allowed.'
                 : 'Developer Mode has been DISABLED. Inspection and DevTools are strictly restricted.',
             'developer_mode' => $newMode,
         ]);
     }
 
-    /**
-     * Get signature insertion settings for PPMP, APP, and Attachment List.
-     */
     public function getSignatureSettings(): JsonResponse
     {
         $settings = SystemSetting::getSignatureSettings();
@@ -71,9 +63,6 @@ class SystemSettingController extends Controller
         ]);
     }
 
-    /**
-     * Update signature insertion settings (Super Admin only).
-     */
     public function updateSignatureSettings(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -85,6 +74,7 @@ class SystemSettingController extends Controller
         }
 
         $validated = $request->validate([
+            'pnpki_enabled' => 'nullable|boolean',
             'ppmp' => 'nullable|boolean',
             'app' => 'nullable|boolean',
             'attachment_list' => 'nullable|boolean',
@@ -92,6 +82,40 @@ class SystemSettingController extends Controller
 
         $oldSettings = SystemSetting::getSignatureSettings();
 
+        if (array_key_exists('pnpki_enabled', $validated)) {
+            SystemSetting::set('pnpki_enabled', (bool) $validated['pnpki_enabled']);
+
+            if (!(bool) $validated['pnpki_enabled']) {
+                $pnpkiHeadStatuses = [
+                    'BUDGET_HEAD_REVIEW',
+                    'PACCO_HEAD_REVIEW',
+                    'OPPMO_HEAD_REVIEW',
+                    'APP_PREPARER_REVIEW',
+                    'GOVERNOR_REVIEW',
+                ];
+
+                $pendingHeadPpmps = \App\Models\Ppmp::whereIn('status', $pnpkiHeadStatuses)->get();
+                $now = now();
+
+                foreach ($pendingHeadPpmps as $ppmp) {
+                    $ppmp->update([
+                        'status' => 'READY_TO_PRINT',
+                        'ready_to_print_at' => $ppmp->ready_to_print_at ?? $now,
+                        'enduser_received_at' => null,
+                    ]);
+
+                    if ($ppmp->created_by) {
+                        \App\Models\SystemNotification::notify(
+                            $ppmp->created_by,
+                            'PPMP Approved & Ready to Print',
+                            "Your PPMP ({$ppmp->title}) has completed all reviewer approvals and is now automatically READY TO PRINT.",
+                            $ppmp->id,
+                            'success'
+                        );
+                    }
+                }
+            }
+        }
         if (array_key_exists('ppmp', $validated)) {
             SystemSetting::set('signature_insertion_ppmp', (bool) $validated['ppmp']);
         }
@@ -120,9 +144,6 @@ class SystemSettingController extends Controller
         ]);
     }
 
-    /**
-     * Get AFK inactivity auto-logout settings.
-     */
     public function getAfkLogoutSettings(): JsonResponse
     {
         $enabled = SystemSetting::get('afk_logout_enabled', true);
@@ -136,9 +157,6 @@ class SystemSettingController extends Controller
         ]);
     }
 
-    /**
-     * Update AFK inactivity auto-logout settings (Super Admin only).
-     */
     public function updateAfkLogoutSettings(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -188,9 +206,6 @@ class SystemSettingController extends Controller
         ]);
     }
 
-    /**
-     * Get Cloudflare Turnstile security verification status (Public / Authenticated).
-     */
     public function getTurnstileSettings(): JsonResponse
     {
         $enabled = SystemSetting::isTurnstileEnabled();
@@ -204,9 +219,6 @@ class SystemSettingController extends Controller
         ]);
     }
 
-    /**
-     * Enable or disable Cloudflare Turnstile security verification (Super Admin only).
-     */
     public function updateTurnstileSettings(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -243,4 +255,3 @@ class SystemSettingController extends Controller
         ]);
     }
 }
-

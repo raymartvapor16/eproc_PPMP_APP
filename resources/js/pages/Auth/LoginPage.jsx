@@ -1,17 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
+
 import { authService, portalSystemService, systemSettingService } from '../../services/api';
-import { 
-    Shield, 
-    Lock, 
-    Mail, 
-    User as UserIcon, 
-    Building2, 
-    Briefcase, 
-    ArrowRight, 
-    AlertCircle, 
-    CheckCircle2, 
-    Search, 
-    ChevronDown, 
+import { REGISTRATION_ROLE_OPTIONS, getRoleInfo } from '../../utils/roleLabels';
+import {
+    Shield,
+    Lock,
+    Mail,
+    User as UserIcon,
+    Building2,
+    Briefcase,
+    ArrowRight,
+    AlertCircle,
+    CheckCircle2,
+    Search,
+    ChevronDown,
     X,
     Check,
     Phone,
@@ -37,12 +39,12 @@ import { SignaturePadModal } from '../../components/UI/SignaturePadModal';
 import { SpiderParticlesCanvas } from '../../components/UI/SpiderParticlesCanvas';
 import { AccountCodeMultiSelect } from '../../components/UI/AccountCodeMultiSelect';
 import { CloudflareSecurityVerification } from '../../components/UI/CloudflareSecurityVerification';
+import { useSignatureSettings } from '../../utils/signatureController';
 
 export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, initialError = '', targetSystem = 'dashboard' }) => {
-    const [mode, setMode] = useState('login'); // 'login' or 'register'
+    const [mode, setMode] = useState('login');
     const [showPrivacyNotice, setShowPrivacyNotice] = useState(false);
-    
-    // Login state
+
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showLoginPassword, setShowLoginPassword] = useState(false);
@@ -66,7 +68,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
         return () => window.removeEventListener('devtools:unauthorized', handleDevToolsUnauthorized);
     }, []);
 
-    // Register state
     const [showRegisterPassword, setShowRegisterPassword] = useState(false);
     const [showRegisterConfirmPassword, setShowRegisterConfirmPassword] = useState(false);
     const [registerData, setRegisterData] = useState({
@@ -94,7 +95,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
         const filename = String(file.name || '').toLowerCase();
         const isPdfExt = filename.endsWith('.pdf');
 
-        // 1. Strict extension check: reject non-PDFs (like .url, .exe, .bat, etc.)
         if (!isPdfExt) {
             setAuthorizationLetter(null);
             if (inputElement) inputElement.value = '';
@@ -102,7 +102,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
             return;
         }
 
-        // 2. Reject suspicious disguised multi-extensions (e.g. file.php.pdf, file.exe.pdf, file.url.pdf)
         if (/\.(php|exe|bat|cmd|sh|vbs|js|jar|py|pl|url|lnk)\.pdf$/i.test(filename)) {
             setAuthorizationLetter(null);
             if (inputElement) inputElement.value = '';
@@ -110,7 +109,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
             return;
         }
 
-        // 3. File size check (5MB max)
         if (file.size > 5 * 1024 * 1024) {
             setAuthorizationLetter(null);
             if (inputElement) inputElement.value = '';
@@ -118,7 +116,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
             return;
         }
 
-        // 4. Client-side Magic Byte Inspection (%PDF-)
         const reader = new FileReader();
         reader.onloadend = (e) => {
             try {
@@ -130,7 +127,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                     setAuthorizationLetterError(`Security Violation: "${file.name}" does not contain a genuine PDF file signature (%PDF- header). Upload rejected.`);
                     return;
                 }
-                // Validation passed!
+
                 setAuthorizationLetterError('');
                 setAuthorizationLetter(file);
             } catch (err) {
@@ -147,7 +144,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
     const [offices, setOffices] = useState([]);
     const [loadingOffices, setLoadingOffices] = useState(false);
 
-    // Requested Digital Systems State (Multi-select)
     const [availableSystems, setAvailableSystems] = useState([
         {
             id: 1,
@@ -182,7 +178,34 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
     const [isSystemsDropdownOpen, setIsSystemsDropdownOpen] = useState(false);
     const systemsDropdownRef = useRef(null);
 
-    // Cloudflare Turnstile Security Verification State (Login & Register)
+    const [selectedRoles, setSelectedRoles] = useState([]);
+    const [isRolesDropdownOpen, setIsRolesDropdownOpen] = useState(false);
+    const rolesDropdownRef = useRef(null);
+    const [roleSelectionModal, setRoleSelectionModal] = useState(null);
+    const [chosenLoginRole, setChosenLoginRole] = useState('');
+    const [selectingRoleLoading, setSelectingRoleLoading] = useState(false);
+
+    useEffect(() => {
+        if (!isRolesDropdownOpen) return;
+        const handleOutside = (e) => {
+            if (rolesDropdownRef.current && !rolesDropdownRef.current.contains(e.target)) {
+                setIsRolesDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleOutside);
+        return () => document.removeEventListener('mousedown', handleOutside);
+    }, [isRolesDropdownOpen]);
+
+    const toggleRegisterRole = (roleValue) => {
+        setSelectedRoles((prev) => {
+            const next = prev.includes(roleValue)
+                ? prev.filter((r) => r !== roleValue)
+                : [...prev, roleValue];
+            setRegisterData((rd) => ({ ...rd, role: next[0] || '' }));
+            return next;
+        });
+    };
+
     const [turnstileEnabled, setTurnstileEnabled] = useState(() => window.App?.turnstile_enabled !== false);
     const [loginTurnstileToken, setLoginTurnstileToken] = useState('');
     const [loginTurnstileReset, setLoginTurnstileReset] = useState(0);
@@ -216,35 +239,64 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
         };
     }, []);
 
-    // Draw Signature State for Account Registration (Modal-only Freeform Studio)
+    const { isPnpkiEnabled } = useSignatureSettings();
     const [hasSignature, setHasSignature] = useState(false);
     const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
     const [signatureDataUrl, setSignatureDataUrl] = useState(null);
+    const [signatureMeta, setSignatureMeta] = useState({
+        signatureType: 'optional',
+        expirationDate: '',
+        pnpkiProofFile: null,
+        existingProofName: '',
+        captureMethod: 'drawn',
+    });
+
+    useEffect(() => {
+        if (!isPnpkiEnabled && signatureMeta.signatureType === 'pnpki') {
+            setSignatureMeta((prev) => ({
+                ...prev,
+                signatureType: 'optional',
+            }));
+        }
+    }, [isPnpkiEnabled, signatureMeta.signatureType]);
 
     const clearSignature = (e) => {
         if (e) e.stopPropagation();
         setHasSignature(false);
         setSignatureDataUrl(null);
+        setSignatureMeta({
+            signatureType: 'optional',
+            expirationDate: '',
+            pnpkiProofFile: null,
+            existingProofName: '',
+            captureMethod: 'drawn',
+        });
     };
 
-    const handleApplyModalSignature = (dataUrl) => {
+    const handleApplyModalSignature = (dataUrl, meta = null) => {
         if (dataUrl) {
             setSignatureDataUrl(dataUrl);
             setHasSignature(true);
+            if (meta) {
+                setSignatureMeta({
+                    signatureType: meta.signatureType || 'optional',
+                    expirationDate: meta.expirationDate || '',
+                    pnpkiProofFile: meta.pnpkiProofFile || null,
+                    existingProofName: meta.existingProofName || meta.pnpkiProofFile?.name || '',
+                    captureMethod: meta.captureMethod || 'drawn',
+                });
+            }
         } else {
             clearSignature();
         }
     };
 
-    // Searchable Office Dropdown State
     const [officeSearchTerm, setOfficeSearchTerm] = useState('');
     const [isOfficeDropdownOpen, setIsOfficeDropdownOpen] = useState(false);
     const officeDropdownRef = useRef(null);
 
-    // Pending Approval Modal State
     const [showPendingModal, setShowPendingModal] = useState(false);
 
-    // Fetch offices for registration dropdown
     useEffect(() => {
         const fetchOffices = async () => {
             setLoadingOffices(true);
@@ -283,7 +335,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
         fetchSystems();
     }, []);
 
-    // Close dropdown on outside click
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (officeDropdownRef.current && !officeDropdownRef.current.contains(event.target)) {
@@ -297,7 +348,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Filter offices based on search term
     const filteredOffices = offices.filter((off) => {
         if (!officeSearchTerm.trim()) return true;
         const term = officeSearchTerm.toLowerCase();
@@ -322,10 +372,8 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
         setOfficeSearchTerm('');
     };
 
-    // Lockout countdown timer state (in seconds)
     const [lockoutSeconds, setLockoutSeconds] = useState(0);
 
-    // Active countdown timer effect
     useEffect(() => {
         let timer;
         if (lockoutSeconds > 0) {
@@ -361,6 +409,16 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                 password,
                 cf_turnstile_response: loginTurnstileToken,
             });
+            if (res.data?.requires_role_selection && Array.isArray(res.data?.available_roles)) {
+                setRoleSelectionModal({
+                    token: res.data.role_selection_token,
+                    availableRoles: res.data.available_roles,
+                    currentRole: res.data.current_role || res.data.available_roles[0],
+                    userPreview: res.data.user_preview || { email },
+                });
+                setChosenLoginRole(res.data.current_role || res.data.available_roles[0] || '');
+                return;
+            }
             onLoginSuccess(res.data.user);
         } catch (err) {
             const serverMsg = err.response?.data?.message || 'Invalid credentials or inactive account.';
@@ -372,6 +430,29 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
             }
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleConfirmRoleLogin = async (targetRole) => {
+        const roleToUse = targetRole || chosenLoginRole;
+        if (!roleSelectionModal?.token || !roleToUse || selectingRoleLoading) return;
+        setSelectingRoleLoading(true);
+        setError('');
+        try {
+            const res = await authService.login({
+                role_selection_token: roleSelectionModal.token,
+                selected_role: roleToUse,
+            });
+            setRoleSelectionModal(null);
+            setChosenLoginRole('');
+            onLoginSuccess(res.data.user);
+        } catch (err) {
+            const serverMsg = err.response?.data?.message || 'Unable to sign in with the selected role. Please sign in again.';
+            setRoleSelectionModal(null);
+            setError(serverMsg);
+            setLoginTurnstileReset((prev) => prev + 1);
+        } finally {
+            setSelectingRoleLoading(false);
         }
     };
 
@@ -405,8 +486,8 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
             return;
         }
 
-        if (!registerData.role) {
-            setError('Please select your system role.');
+        if (!selectedRoles || selectedRoles.length === 0) {
+            setError('Please select at least one system role.');
             return;
         }
 
@@ -430,7 +511,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
             return;
         }
 
-        if (registerData.role === 'authorized_staff') {
+        if (selectedRoles.includes('authorized_staff')) {
             if (!authorizationLetter) {
                 setError('Please attach the official Authorization Letter (PDF) signed by the Office Head.');
                 return;
@@ -445,15 +526,32 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
             }
         }
 
-        if (registerData.role === 'twg' && (!selectedAccountCodeIds || selectedAccountCodeIds.length === 0)) {
+        if (selectedRoles.includes('twg') && (!selectedAccountCodeIds || selectedAccountCodeIds.length === 0)) {
             setError('Please select at least one assigned Account Code for the BAC-TWG Reviewer role.');
             return;
         }
 
         if (!hasSignature || !signatureDataUrl) {
-            setError('Please draw and capture your official specimen signature.');
+            setError(
+                isPnpkiEnabled
+                    ? 'Please open the Signature Studio to configure your PNPKI or Optional Digital Signature.'
+                    : 'Please open the Signature Studio to configure your Optional Digital Signature.'
+            );
             setIsSignatureModalOpen(true);
             return;
+        }
+
+        if (isPnpkiEnabled && signatureMeta.signatureType === 'pnpki') {
+            if (!signatureMeta.expirationDate) {
+                setError('Please select the expiration date for your PNPKI Digital E-Signature.');
+                setIsSignatureModalOpen(true);
+                return;
+            }
+            if (!signatureMeta.pnpkiProofFile) {
+                setError('Please attach the PDF Proof of Registration of PNPKI (maximum 5MB).');
+                setIsSignatureModalOpen(true);
+                return;
+            }
         }
 
         if (turnstileEnabled && !registerTurnstileToken) {
@@ -469,40 +567,59 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
         setLoading(true);
 
         try {
-            // Extract drawn signature data URL if drawn
+
             const finalSigUrl = hasSignature ? signatureDataUrl : null;
+            const hasMultipartFiles = Boolean(authorizationLetter || signatureMeta.pnpkiProofFile);
 
             let payload;
-            if (authorizationLetter) {
+            if (hasMultipartFiles) {
                 payload = new FormData();
                 Object.keys(registerData).forEach((key) => {
-                    payload.append(key, registerData[key]);
+                    if (key === 'role') {
+                        payload.append('role', selectedRoles[0] || '');
+                    } else {
+                        payload.append(key, registerData[key]);
+                    }
                 });
+                payload.append('roles', JSON.stringify(selectedRoles));
                 payload.append('signature', finalSigUrl || '');
-                payload.append('authorization_letter', authorizationLetter);
+                payload.append('signature_type', signatureMeta.signatureType || 'optional');
+                payload.append('signature_capture_method', signatureMeta.captureMethod || 'drawn');
+                if (signatureMeta.signatureType === 'pnpki') {
+                    payload.append('pnpki_expiration_date', signatureMeta.expirationDate || '');
+                    if (signatureMeta.pnpkiProofFile) {
+                        payload.append('pnpki_proof_pdf', signatureMeta.pnpkiProofFile);
+                    }
+                }
+                if (authorizationLetter) {
+                    payload.append('authorization_letter', authorizationLetter);
+                }
                 payload.append('accessible_systems', JSON.stringify(selectedSystems));
                 payload.append('cf_turnstile_response', registerTurnstileToken);
-                if (registerData.role === 'twg') {
+                if (selectedRoles.includes('twg')) {
                     payload.append('account_code_ids', JSON.stringify(selectedAccountCodeIds));
                 }
             } else {
                 payload = {
                     ...registerData,
+                    role: selectedRoles[0] || '',
+                    roles: selectedRoles,
                     signature: finalSigUrl,
+                    signature_type: signatureMeta.signatureType || 'optional',
+                    signature_capture_method: signatureMeta.captureMethod || 'drawn',
+                    pnpki_expiration_date: signatureMeta.signatureType === 'pnpki' ? signatureMeta.expirationDate : null,
                     accessible_systems: selectedSystems,
-                    account_code_ids: registerData.role === 'twg' ? selectedAccountCodeIds : [],
+                    account_code_ids: selectedRoles.includes('twg') ? selectedAccountCodeIds : [],
                     cf_turnstile_response: registerTurnstileToken,
                 };
             }
 
             await authService.register(payload);
-            
-            // Switch back to Login view
+
             setMode('login');
             setEmail(registerData.email);
             setPassword('');
 
-            // Reset register form data
             setRegisterData({
                 name: '',
                 email: '',
@@ -514,6 +631,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                 password: '',
                 password_confirmation: '',
             });
+            setSelectedRoles([]);
             setSelectedAccountCodeIds([]);
             setSelectedSystems([]);
             setAuthorizationLetter(null);
@@ -522,7 +640,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
             clearSignature();
             setRegisterTurnstileReset((prev) => prev + 1);
 
-            // Open the pending approval popup message
             setShowPendingModal(true);
         } catch (err) {
             setRegisterTurnstileReset((prev) => prev + 1);
@@ -539,31 +656,24 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
 
     return (
         <div className="min-h-screen w-full flex flex-col lg:flex-row bg-slate-950 text-slate-800 antialiased overflow-x-hidden">
-            {/* ========================================================================= */}
-            {/* LEFT PANEL: VISUAL HERO & CINEMATIC CAPITOL BACKGROUND (IMAGE PANEL)       */}
-            {/* ========================================================================= */}
+
             <div className="w-full lg:w-[55%] xl:w-[58%] 2xl:w-[60%] relative flex flex-col justify-between overflow-hidden bg-blue-950 border-b lg:border-b-0 lg:border-r border-blue-900/40 min-h-[480px] sm:min-h-[520px] lg:h-screen lg:max-h-screen">
-                
-                {/* Background Image Layer with Cinematic Slow Pan Effect */}
-                <div 
+
+                <div
                     className="absolute inset-0 bg-cover bg-center animate-slow-zoom"
-                    style={{ 
+                    style={{
                         backgroundImage: `url('/images/bg.jpg')`,
                     }}
                 />
 
-                {/* Bright, Clean, Friendly Civic Gradient Layers (No heavy black) */}
                 <div className="absolute inset-0 bg-gradient-to-t from-blue-950/90 via-blue-900/50 to-transparent" />
                 <div className="absolute inset-0 bg-gradient-to-r from-blue-950/80 via-sky-900/40 to-transparent" />
-                
-                {/* Interactive Spider / Constellation Network Particles Canvas */}
+
                 <SpiderParticlesCanvas className="absolute inset-0 pointer-events-none z-0 opacity-75" />
-                
-                {/* Soft Friendly Ambient Lighting Accents */}
+
                 <div className="absolute -bottom-16 -left-16 w-[500px] h-[500px] bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
                 <div className="absolute top-10 right-10 w-96 h-96 bg-amber-400/15 rounded-full blur-3xl pointer-events-none" />
 
-                {/* Top Bar inside Visual Panel */}
                 <div className="landing-fade-top relative z-10 px-4 sm:px-6 xl:px-8 py-3 xl:py-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-950/70 backdrop-blur-xl border border-white/20 text-white shadow-xl">
@@ -585,21 +695,20 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                             </p>
                         </div>
                         <div className="flex items-center gap-2">
-                            <img 
-                                src="/images/logo.png" 
-                                alt="Davao del Sur Official Seal" 
+                            <img
+                                src="/images/logo.png"
+                                alt="Davao del Sur Official Seal"
                                 className="w-8 h-8 xl:w-9 xl:h-9 object-contain drop-shadow-lg"
                             />
-                            <img 
-                                src="/images/pmo.jpeg" 
-                                alt="OPPMO Seal" 
+                            <img
+                                src="/images/pmo.jpeg"
+                                alt="OPPMO Seal"
                                 className="w-8 h-8 xl:w-9 xl:h-9 object-contain rounded-full border border-white/30 shadow-md drop-shadow-lg"
                             />
                         </div>
                     </div>
                 </div>
 
-                {/* Center Hero Information Card */}
                 <div className="relative z-10 px-4 sm:px-6 xl:px-10 py-2 sm:py-3 xl:py-4 max-w-4xl my-auto w-full">
                     <div className="landing-hero-title inline-flex items-center gap-2 px-3 py-1 bg-amber-500/25 border border-amber-300/40 rounded-lg text-amber-200 text-[11px] xl:text-xs font-mono font-bold tracking-wider uppercase mb-2 backdrop-blur-md shadow-sm soft-glow-badge">
                         <span>Province of Davao Del Sur • Unified Digital Gateway</span>
@@ -613,18 +722,16 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                         Centralized single sign-on authentication and unified governance across Davao del Sur's digital procurement infrastructure, automated PPMP/APP workflows, real-time project implementation monitoring, and provincial supplier evaluations.
                     </p>
 
-                    {/* Single Sign-On Multi-System Badge */}
                     <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-900/50 border border-blue-400/35 text-blue-200 text-[11px] font-semibold backdrop-blur-md shadow-sm">
                         <Lock className="w-3 h-3 text-amber-400 shrink-0" />
                         <span>Unified SSO Credentials • One Account for All 3 Integrated Systems</span>
                     </div>
 
-                    {/* Multi-System Cards Showcase with Proportional Sizing (No Overflow) */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 xl:gap-4 mt-3.5 sm:mt-4 xl:mt-5 perspective-[1000px] w-full">
-                        {/* Card 1: E-Procurement PPMP & APP System */}
+
                         <div className="intro-card-1 relative p-3 sm:p-4 xl:p-5 rounded-2xl bg-gradient-to-b from-blue-950/85 via-slate-900/85 to-slate-950/90 backdrop-blur-xl border border-amber-400/35 hover:border-amber-400 hover:shadow-2xl hover:shadow-amber-500/25 hover:-translate-y-1.5 transition-all duration-300 group overflow-hidden flex flex-col justify-between">
                             <div className="absolute -top-10 -right-10 w-24 h-24 bg-amber-400/15 rounded-full blur-xl group-hover:bg-amber-400/30 transition-colors pointer-events-none" />
-                            
+
                             <div>
                                 <div className="flex items-center justify-between gap-1.5 mb-2">
                                     <div className="w-9 h-9 xl:w-10 xl:h-10 rounded-xl bg-gradient-to-br from-amber-400/30 to-amber-600/20 border border-amber-300/40 flex items-center justify-center text-amber-300 shadow-sm group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
@@ -649,10 +756,9 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                             </div>
                         </div>
 
-                        {/* Card 2: Real-Time Monitoring System */}
                         <div className="intro-card-2 relative p-3 sm:p-4 xl:p-5 rounded-2xl bg-gradient-to-b from-blue-950/85 via-slate-900/85 to-slate-950/90 backdrop-blur-xl border border-sky-400/35 hover:border-sky-400 hover:shadow-2xl hover:shadow-sky-500/25 hover:-translate-y-1.5 transition-all duration-300 group overflow-hidden flex flex-col justify-between">
                             <div className="absolute -top-10 -right-10 w-24 h-24 bg-sky-400/15 rounded-full blur-xl group-hover:bg-sky-400/30 transition-colors pointer-events-none" />
-                            
+
                             <div>
                                 <div className="flex items-center justify-between gap-1.5 mb-2">
                                     <div className="w-9 h-9 xl:w-10 xl:h-10 rounded-xl bg-gradient-to-br from-sky-400/30 to-blue-600/20 border border-sky-300/40 flex items-center justify-center text-sky-200 shadow-sm group-hover:scale-110 group-hover:-rotate-3 transition-all duration-300">
@@ -677,10 +783,9 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                             </div>
                         </div>
 
-                        {/* Card 3: Supplier Evaluation System */}
                         <div className="intro-card-3 relative p-3 sm:p-4 xl:p-5 rounded-2xl bg-gradient-to-b from-blue-950/85 via-slate-900/85 to-slate-950/90 backdrop-blur-xl border border-emerald-400/35 hover:border-emerald-400 hover:shadow-2xl hover:shadow-emerald-500/25 hover:-translate-y-1.5 transition-all duration-300 group overflow-hidden flex flex-col justify-between">
                             <div className="absolute -top-10 -right-10 w-24 h-24 bg-emerald-400/15 rounded-full blur-xl group-hover:bg-emerald-400/30 transition-colors pointer-events-none" />
-                            
+
                             <div>
                                 <div className="flex items-center justify-between gap-1.5 mb-2">
                                     <div className="w-9 h-9 xl:w-10 xl:h-10 rounded-xl bg-gradient-to-br from-emerald-400/30 to-teal-600/20 border border-emerald-300/40 flex items-center justify-center text-emerald-200 shadow-sm group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
@@ -707,7 +812,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                     </div>
                 </div>
 
-                {/* Left Panel Bottom Bar */}
                 <div className="relative z-10 px-4 sm:px-6 xl:px-8 py-2.5 xl:py-3 border-t border-white/15 bg-blue-950/60 backdrop-blur-xl flex flex-wrap items-center justify-between gap-2 text-[10.5px] xl:text-[11px] text-blue-100">
                     <div className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -719,20 +823,14 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                 </div>
             </div>
 
-            {/* ========================================================================= */}
-            {/* RIGHT PANEL: AUTHENTICATION FORM (SIGN IN & REGISTRATION)                 */}
-            {/* ========================================================================= */}
             <div className="w-full lg:w-[45%] xl:w-[42%] 2xl:w-[40%] min-h-screen lg:h-screen flex flex-col justify-between bg-slate-50/95 relative z-20 shadow-2xl overflow-y-auto custom-scrollbar border-t lg:border-t-0 lg:border-l border-slate-200/80">
-                
-                {/* Top Subtle Amber & Navy Accent Line */}
+
                 <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-blue-600 to-indigo-600" />
 
-                {/* Form Card Container (Expanded width) */}
                 <div className="w-full max-w-lg 2xl:max-w-xl mx-auto px-4 sm:px-6 lg:px-7 py-4 sm:py-6 flex-1 flex flex-col justify-center">
-                    
-                    {/* Elevated Content Card (Expanded) with smooth landing transition */}
+
                     <div className="landing-auth-card bg-white rounded-2xl p-5 sm:p-7 shadow-lg shadow-slate-200/50 border border-slate-200/80 w-full my-auto">
-                        
+
                         {onBackToLanding && (
                             <button
                                 type="button"
@@ -743,20 +841,19 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                             </button>
                         )}
 
-                        {/* Header: Logo & Identity */}
                         <div className="mb-4">
                             <div className="flex items-center gap-3 mb-2.5">
                                 <div className="w-10 h-10 rounded-xl p-1 bg-slate-50 border border-slate-200 shadow-sm flex items-center justify-center shrink-0">
-                                    <img 
-                                        src="/images/logo.png" 
-                                        alt="Province of Davao del Sur Seal" 
+                                    <img
+                                        src="/images/logo.png"
+                                        alt="Province of Davao del Sur Seal"
                                         className="w-full h-full object-contain"
                                     />
                                 </div>
                                 <div className="w-10 h-10 rounded-xl p-1 bg-slate-50 border border-slate-200 shadow-sm flex items-center justify-center shrink-0">
-                                    <img 
-                                        src="/images/pmo.jpeg" 
-                                        alt="BAC PMO Seal" 
+                                    <img
+                                        src="/images/pmo.jpeg"
+                                        alt="BAC PMO Seal"
                                         className="w-full h-full object-contain rounded-xl"
                                     />
                                 </div>
@@ -778,7 +875,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                     {mode === 'login' ? 'Unified Portal Access' : 'Create Government Account'}
                                 </h2>
                                 <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 font-medium leading-relaxed">
-                                    {mode === 'login' 
+                                    {mode === 'login'
                                         ? 'Sign in with your provincial credentials to access your authorized digital systems and procurement workspaces.'
                                         : 'Fill in your provincial credentials to register for workspace authorization.'
                                     }
@@ -786,7 +883,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                             </div>
                         </div>
 
-                        {/* Mode Toggle Switcher Tabs */}
                         <div className="flex p-1 bg-slate-100 rounded-xl mb-4 border border-slate-200/80 shadow-inner">
                             <button
                                 type="button"
@@ -820,7 +916,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                             </button>
                         </div>
 
-                        {/* Error and Success Banners */}
                         {error && (
                             <div className="mb-5 p-3.5 bg-rose-50 border border-rose-200/80 text-rose-700 text-xs rounded-xl flex items-start gap-2.5 animate-fade-in-up">
                                 <AlertCircle className="w-4 h-4 shrink-0 text-rose-500 mt-0.5" />
@@ -835,9 +930,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                             </div>
                         )}
 
-                        {/* ========================================================================= */}
-                        {/* FORM: SIGN IN MODE                                                       */}
-                        {/* ========================================================================= */}
                         {mode === 'login' ? (
                             <div className="animate-fade-in-up">
                                 <form className="space-y-3" onSubmit={handleLogin}>
@@ -906,7 +998,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                         </div>
                                     </div>
 
-                                    {/* Cloudflare Security Verification (auto-collapses once secured) */}
                                     {turnstileEnabled && (
                                         <CloudflareSecurityVerification
                                             actionLabel="sign in"
@@ -963,9 +1054,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                 </form>
                             </div>
                         ) : (
-                            /* ========================================================================= */
-                            /* FORM: REGISTRATION MODE                                                   */
-                            /* ========================================================================= */
+
                             <div className="animate-fade-in-up">
                                 <form className="space-y-2.5" onSubmit={handleRegister}>
                                     <div>
@@ -1070,12 +1159,11 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                         </div>
                                     </div>
 
-                                    {/* Searchable Office Dropdown */}
                                     <div className="relative" ref={officeDropdownRef}>
                                         <span className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
                                             Assigned Office / Department <span className="text-rose-500">*</span>
                                         </span>
-                                        
+
                                         <input
                                             type="hidden"
                                             name="office_id"
@@ -1135,7 +1223,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                             </div>
                                         </div>
 
-                                        {/* Dropdown Menu Panel */}
                                         {isOfficeDropdownOpen && (
                                             <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
                                                 <div className="p-2 border-b border-slate-100 bg-slate-50/80">
@@ -1165,8 +1252,8 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                                                     key={off.id}
                                                                     onClick={() => handleSelectOffice(off)}
                                                                     className={`p-2.5 text-xs cursor-pointer flex items-start justify-between transition ${
-                                                                        isSelected 
-                                                                            ? 'bg-blue-50 text-blue-900 font-semibold' 
+                                                                        isSelected
+                                                                            ? 'bg-blue-50 text-blue-900 font-semibold'
                                                                             : 'hover:bg-slate-50 text-slate-700'
                                                                     }`}
                                                                 >
@@ -1206,7 +1293,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                         )}
                                     </div>
 
-                                    {/* Multi-Select Systems Dropdown with Checkboxes */}
                                     <div className="relative" ref={systemsDropdownRef}>
                                         <div className="flex items-center justify-between mb-1">
                                             <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
@@ -1223,7 +1309,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                             )}
                                         </div>
 
-                                        {/* Dropdown Button Trigger */}
                                         <div
                                             id="register-systems-select-btn"
                                             role="button"
@@ -1265,7 +1350,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                             </div>
                                         </div>
 
-                                        {/* Dropdown Menu with Checkboxes */}
                                         {isSystemsDropdownOpen && (
                                             <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100 p-2.5">
                                                 <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 text-[11px]">
@@ -1354,40 +1438,92 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                     </div>
 
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <div>
-                                            <label
-                                                htmlFor="register-role"
-                                                className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1"
-                                            >
-                                                System Role <span className="text-rose-500">*</span>
-                                            </label>
-                                            <div className="relative group">
-                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                                    <Shield className="w-4 h-4 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
-                                                </div>
-                                                <select
-                                                    id="register-role"
-                                                    name="role"
-                                                    required
-                                                    value={registerData.role}
-                                                    onChange={(e) => setRegisterData({ ...registerData, role: e.target.value })}
-                                                    className={`w-full text-xs pl-9 pr-3.5 py-2.5 bg-slate-50 hover:bg-white focus:bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 focus:outline-none transition shadow-sm font-medium ${
-                                                        !registerData.role ? 'text-slate-400' : 'text-slate-800'
-                                                    }`}
+                                        <div ref={rolesDropdownRef} className="relative">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label
+                                                    htmlFor="register-role-btn"
+                                                    className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider"
                                                 >
-                                                    <option value="" disabled className="text-slate-400">
-                                                        Please select user system role...
-                                                    </option>
-                                                    <option value="end_user" className="text-slate-800">End User (Preparer)</option>
-                                                    <option value="head" className="text-slate-800">Office Head / Approver</option>
-                                                    <option value="authorized_staff" className="text-slate-800">Authorize Staff</option>
-                                                    <option value="budget_officer" className="text-slate-800">Budget Officer</option>
-                                                    <option value="oppmo" className="text-slate-800">OPPMO Reviewer</option>
-                                                    <option value="twg" className="text-slate-800">BAC-TWG Reviewer</option>
-                                                    <option value="pacco" className="text-slate-800">PACCO Reviewer (Provincial Accounting)</option>
-                                                    <option value="admin" className="text-slate-800">Administrator</option>
-                                                </select>
+                                                    System Role(s) <span className="text-rose-500">*</span>
+                                                </label>
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                                                    {selectedRoles.length} {selectedRoles.length === 1 ? 'role' : 'roles'} selected
+                                                </span>
                                             </div>
+                                            <button
+                                                id="register-role-btn"
+                                                type="button"
+                                                onClick={() => setIsRolesDropdownOpen((prev) => !prev)}
+                                                className={`w-full text-xs pl-9 pr-8 py-2.5 bg-slate-50 hover:bg-white focus:bg-white border rounded-xl focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600 focus:outline-none transition shadow-sm font-medium text-left relative cursor-pointer truncate ${
+                                                    isRolesDropdownOpen ? 'border-blue-600 ring-2 ring-blue-600/20 bg-white' : 'border-slate-300'
+                                                } ${selectedRoles.length === 0 ? 'text-slate-400' : 'text-slate-800'}`}
+                                            >
+                                                <Shield className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                                <span className="block truncate">
+                                                    {selectedRoles.length === 0
+                                                        ? 'Select one or more system roles...'
+                                                        : selectedRoles.map((r) => getRoleInfo(r).shortLabel).join(', ')}
+                                                </span>
+                                                <ChevronDown className={`w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 transition-transform ${isRolesDropdownOpen ? 'rotate-180 text-blue-600' : ''}`} />
+                                            </button>
+
+                                            {selectedRoles.length > 0 && (
+                                                <div className="flex flex-wrap gap-1 mt-1.5">
+                                                    {selectedRoles.map((r) => (
+                                                        <span
+                                                            key={r}
+                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-blue-800 text-[10px] font-bold"
+                                                        >
+                                                            {getRoleInfo(r).shortLabel}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => toggleRegisterRole(r)}
+                                                                className="hover:text-rose-600 cursor-pointer"
+                                                                title={`Remove ${getRoleInfo(r).label}`}
+                                                            >
+                                                                <X className="w-2.5 h-2.5" />
+                                                            </button>
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {isRolesDropdownOpen && (
+                                                <div className="absolute left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto z-50 p-1.5 space-y-0.5">
+                                                    <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                                        Check all roles that apply to this account
+                                                    </div>
+                                                    {REGISTRATION_ROLE_OPTIONS.map((opt) => {
+                                                        const checked = selectedRoles.includes(opt.value);
+                                                        return (
+                                                            <button
+                                                                key={opt.value}
+                                                                type="button"
+                                                                onClick={() => toggleRegisterRole(opt.value)}
+                                                                className={`w-full flex items-start gap-2.5 px-2.5 py-2 rounded-lg text-left transition cursor-pointer ${
+                                                                    checked
+                                                                        ? 'bg-blue-50 text-blue-900 border border-blue-200'
+                                                                        : 'hover:bg-slate-50 text-slate-700 border border-transparent'
+                                                                }`}
+                                                            >
+                                                                <span
+                                                                    className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center shrink-0 border transition ${
+                                                                        checked
+                                                                            ? 'bg-blue-600 border-blue-600 text-white'
+                                                                            : 'bg-white border-slate-300'
+                                                                    }`}
+                                                                >
+                                                                    {checked && <Check className="w-3 h-3 stroke-[3]" />}
+                                                                </span>
+                                                                <span className="min-w-0">
+                                                                    <span className="block text-xs font-bold leading-tight">{opt.label}</span>
+                                                                    <span className="block text-[10px] text-slate-500 leading-snug mt-0.5">{opt.desc}</span>
+                                                                </span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div>
@@ -1495,8 +1631,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                         </div>
                                     </div>
 
-                                    {/* Official Authorization Letter (PDF) Card - Shown when role === 'authorized_staff' */}
-                                    {registerData.role === 'authorized_staff' && (
+                                    {selectedRoles.includes('authorized_staff') && (
                                         <div className="p-3.5 bg-blue-50/70 border-2 border-blue-300 rounded-xl space-y-2.5 shadow-sm animate-fade-in-up">
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-1.5">
@@ -1593,7 +1728,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                                 )}
                                             </div>
 
-                                            {/* Security advisory note */}
                                             <div className="p-2 bg-white/90 border border-blue-200 rounded-lg text-[10px] text-slate-600 flex items-start gap-1.5">
                                                 <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.2" />
                                                 <span>
@@ -1610,8 +1744,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                         </div>
                                     )}
 
-                                    {/* BAC-TWG Reviewer Assigned Account Codes - Shown when role === 'twg' */}
-                                    {registerData.role === 'twg' && (
+                                    {selectedRoles.includes('twg') && (
                                         <div className="p-3.5 bg-amber-50/70 border-2 border-amber-300 rounded-xl space-y-2.5 shadow-sm animate-fade-in-up">
                                             <AccountCodeMultiSelect
                                                 selectedIds={selectedAccountCodeIds}
@@ -1622,7 +1755,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                         </div>
                                     )}
 
-                                    {/* Digital E-Signature Specimen Card (Click to Draw in Modal - Required) */}
                                     <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5 shadow-sm">
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-1.5">
@@ -1654,8 +1786,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                             </div>
                                         </div>
 
-                                        {/* Clickable Area to launch Drawing Modal */}
-                                        <div 
+                                        <div
                                             role="button"
                                             tabIndex={0}
                                             onClick={() => setIsSignatureModalOpen(true)}
@@ -1700,7 +1831,10 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                             {hasSignature ? (
                                                 <div className="flex items-center gap-1.5">
                                                     <span className="text-emerald-600 font-bold flex items-center gap-1">
-                                                        <Check className="w-3 h-3" /> Signature captured
+                                                        <Check className="w-3 h-3" />
+                                                        {signatureMeta.signatureType === 'pnpki'
+                                                            ? 'PNPKI E-Sig Captured'
+                                                            : 'Optional E-Sig Captured'}
                                                     </span>
                                                     <button
                                                         type="button"
@@ -1716,9 +1850,48 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                                 </span>
                                             )}
                                         </div>
+
+                                        {hasSignature && (
+                                            <div
+                                                className={`p-2.5 rounded-lg border text-[11px] flex flex-wrap items-center justify-between gap-2 ${
+                                                    signatureMeta.signatureType === 'pnpki'
+                                                        ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                                                        : 'bg-blue-50/70 border-blue-200 text-blue-900'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-1.5 font-bold">
+                                                    {signatureMeta.signatureType === 'pnpki' ? (
+                                                        <>
+                                                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                                            <span>PNPKI Digital E-Signature</span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <PenTool className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                                            <span>Optional Digital Signature</span>
+                                                        </>
+                                                    )}
+                                                </div>
+                                                {signatureMeta.signatureType === 'pnpki' ? (
+                                                    <div className="flex items-center gap-2 text-[10px] font-semibold text-emerald-800 flex-wrap">
+                                                        <span className="px-1.5 py-0.5 rounded bg-white border border-emerald-200">
+                                                            Expires: {signatureMeta.expirationDate}
+                                                        </span>
+                                                        {signatureMeta.pnpkiProofFile && (
+                                                            <span className="px-1.5 py-0.5 rounded bg-white border border-emerald-200 truncate max-w-[160px]" title={signatureMeta.pnpkiProofFile.name}>
+                                                                PDF: {signatureMeta.pnpkiProofFile.name}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-[10px] font-medium text-blue-700">
+                                                        {signatureMeta.captureMethod === 'uploaded' ? 'Attached Image' : 'Freeform Drawn'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
 
-                                    {/* Cloudflare Security Verification (auto-collapses once secured) */}
                                     {turnstileEnabled && (
                                         <CloudflareSecurityVerification
                                             actionLabel="register"
@@ -1782,7 +1955,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                     </div>
                 </div>
 
-                {/* Right Panel Footer / Legal text */}
                 <div className="w-full px-6 sm:px-10 py-4 border-t border-slate-200/60 bg-white/70 flex items-center justify-between text-[11px] text-slate-400">
                     <span>© {new Date().getFullYear()} Province of Davao del Sur</span>
                     <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-semibold border border-slate-200">
@@ -1791,15 +1963,10 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                 </div>
             </div>
 
-            {/* ========================================================================= */}
-            {/* MODALS: PRIVACY NOTICE & PENDING APPROVAL DIALOGS                          */}
-            {/* ========================================================================= */}
-            
-            {/* Data Privacy Notice Pop-up Modal */}
             {showPrivacyNotice && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in-up">
                     <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-                        {/* Header */}
+
                         <div className="p-5 bg-gradient-to-r from-slate-900 to-blue-950 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
                             <div className="flex items-center gap-2.5">
                                 <div className="p-2 rounded-xl bg-blue-600/30 border border-blue-400/40 text-blue-300">
@@ -1823,7 +1990,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                             </button>
                         </div>
 
-                        {/* Modal Body / Notice Content */}
                         <div className="p-6 overflow-y-auto space-y-4 text-xs text-slate-600 leading-relaxed custom-scrollbar">
                             <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-xl text-blue-900 font-medium leading-relaxed">
                                 The <strong className="text-blue-950">Provincial Government of Davao del Sur</strong> is committed to protecting and respecting your personal data privacy in compliance with Republic Act No. 10173, also known as the <em>Data Privacy Act of 2012</em>.
@@ -1867,7 +2033,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                             </div>
                         </div>
 
-                        {/* Footer Actions */}
                         <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
                             <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
                                 <button
@@ -1896,7 +2061,6 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                 </div>
             )}
 
-            {/* Pending Approval Pop-up Modal */}
             {showPendingModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-fade-in-up">
                     <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 sm:p-7 border border-slate-200 text-center relative">
@@ -1925,14 +2089,116 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                 </div>
             )}
 
-            {/* Freeform Signature Drawing Studio Modal */}
+            {roleSelectionModal && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden">
+                        <div className="bg-slate-900 text-white px-6 py-5 flex items-start justify-between gap-3">
+                            <div>
+                                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-200 text-[10px] font-extrabold uppercase tracking-wider mb-2">
+                                    <ShieldCheck className="w-3.5 h-3.5" />
+                                    Multi-Role Account Detected
+                                </div>
+                                <h3 className="text-base font-extrabold tracking-tight">
+                                    Select Role Perspective
+                                </h3>
+                                <p className="text-xs text-slate-300 mt-1">
+                                    Welcome back, <strong className="text-white">{roleSelectionModal.userPreview?.name || email}</strong>. Choose which role you want to log in as:
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                disabled={selectingRoleLoading}
+                                onClick={() => setRoleSelectionModal(null)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="p-5 space-y-2.5 max-h-[60vh] overflow-y-auto">
+                            {(roleSelectionModal.availableRoles || []).map((roleKey) => {
+                                const info = getRoleInfo(roleKey);
+                                const isSelected = chosenLoginRole === roleKey;
+                                return (
+                                    <button
+                                        key={roleKey}
+                                        type="button"
+                                        disabled={selectingRoleLoading}
+                                        onClick={() => setChosenLoginRole(roleKey)}
+                                        onDoubleClick={() => handleConfirmRoleLogin(roleKey)}
+                                        className={`w-full p-3.5 rounded-xl border-2 text-left transition flex items-start gap-3 cursor-pointer ${
+                                            isSelected
+                                                ? 'border-blue-600 bg-blue-50/70 shadow-sm'
+                                                : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        <div
+                                            className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                                                isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                                            }`}
+                                        >
+                                            <Shield className="w-4 h-4" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="text-sm font-extrabold text-slate-900">
+                                                    {info.label}
+                                                </span>
+                                                {isSelected && (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+                                                        <Check className="w-3 h-3" /> Selected
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-0.5 leading-snug">
+                                                {info.desc}
+                                            </p>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <div className="px-5 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5">
+                            <button
+                                type="button"
+                                disabled={selectingRoleLoading}
+                                onClick={() => setRoleSelectionModal(null)}
+                                className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                disabled={!chosenLoginRole || selectingRoleLoading}
+                                onClick={() => handleConfirmRoleLogin(chosenLoginRole)}
+                                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold uppercase tracking-wider shadow-md transition cursor-pointer disabled:opacity-50"
+                            >
+                                {selectingRoleLoading ? (
+                                    <>
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                        Signing In...
+                                    </>
+                                ) : (
+                                    <>
+                                        <span>Continue as {chosenLoginRole ? getRoleInfo(chosenLoginRole).shortLabel : 'Role'}</span>
+                                        <ArrowRight className="w-3.5 h-3.5" />
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <SignaturePadModal
                 isOpen={isSignatureModalOpen}
                 onClose={() => setIsSignatureModalOpen(false)}
                 onSave={handleApplyModalSignature}
                 initialDataUrl={signatureDataUrl}
-                title="Draw Specimen Official Signature"
-                description="Sign freely inside this large high-resolution studio. You can choose ink color, thickness, and undo strokes."
+                initialMeta={signatureMeta}
+                title="Official Specimen Signature Studio"
+                description="Sign freely inside this large high-resolution studio or attach an official e-signature image."
             />
         </div>
     );

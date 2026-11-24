@@ -13,6 +13,8 @@ class PpmpItem extends Model
         'ppmp_id',
         'item_no',
         'description',
+        'is_retention',
+        'retention_percentage',
         'project_type',
         'quantity_size',
         'procurement_mode',
@@ -28,6 +30,8 @@ class PpmpItem extends Model
     ];
 
     protected $casts = [
+        'is_retention' => 'boolean',
+        'retention_percentage' => 'decimal:2',
         'pre_proc_conference' => 'boolean',
         'estimated_budget' => 'decimal:2',
     ];

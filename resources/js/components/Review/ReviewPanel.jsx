@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ppmpService } from '../../services/api';
 import { isAwaitingReceive } from '../../utils/workflowHelpers';
 import { showConfirm } from '../../utils/modalAlert';
+import { useSignatureSettings } from '../../utils/signatureController';
 import { CheckCircle2, RotateCcw, Edit3, AlertCircle, Maximize2, Inbox, Loader2 } from 'lucide-react';
 
 export const ReviewPanel = ({
@@ -21,6 +22,10 @@ export const ReviewPanel = ({
     const [showRemarksModal, setShowRemarksModal] = useState(false);
     const [remarks, setRemarks] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
+    const { isPnpkiEnabled: isGlobalPnpkiEnabled } = useSignatureSettings();
+    const isPnpkiSystemEnabled = ppmp?.signature_settings?.pnpki_enabled !== undefined
+        ? Boolean(ppmp.signature_settings.pnpki_enabled)
+        : isGlobalPnpkiEnabled;
 
     const pendingCellComments = React.useMemo(() => {
         return (cellComments || []).filter(c => c.status === 'pending');
@@ -41,31 +46,49 @@ export const ReviewPanel = ({
         setShowRemarksModal(true);
     };
 
-    // Field-level correction state
     const [fieldModifications, setFieldModifications] = useState([]);
     const [returnTarget, setReturnTarget] = useState('end_user');
 
-    // Determine target reviewer role for current PPMP status
     const targetStageRole = (
         ppmp.status === 'HEAD_PENDING' ? 'head' :
         ppmp.status === 'BUDGET_OFFICER_REVIEW' ? 'budget_officer' :
+        ppmp.status === 'BUDGET_HEAD_REVIEW' ? 'budget_head' :
         ppmp.status === 'PACCO_REVIEW' ? 'pacco' :
+        ppmp.status === 'PACCO_HEAD_REVIEW' ? 'pacco_head' :
         ppmp.status === 'OPPMO_REVIEW' ? 'oppmo' :
+        ppmp.status === 'OPPMO_HEAD_REVIEW' ? 'oppmo_head' :
+        ppmp.status === 'APP_PREPARER_REVIEW' ? 'app_preparer' :
+        ppmp.status === 'GOVERNOR_REVIEW' ? 'governor' :
         ppmp.status === 'TWG_REVIEW' ? 'twg' : null
     );
 
     const isAdmin = ['admin', 'super_admin'].includes(userRole) || ['admin', 'super_admin'].includes(user?.role);
-    let effectiveRole = isAdmin && targetStageRole ? targetStageRole : userRole;
+    const isPostOppmoSignatoryStage = ['budget_head', 'pacco_head', 'oppmo_head', 'app_preparer', 'governor'].includes(targetStageRole);
+    let effectiveRole = isPostOppmoSignatoryStage
+        ? targetStageRole
+        : (isAdmin && targetStageRole ? targetStageRole : userRole);
     if (effectiveRole === 'authorized_staff') {
         effectiveRole = 'head';
     }
+
+    const normalizedUserName = (user?.name || '').trim().toUpperCase();
+    const appPreparerName = (ppmp?.default_signatories?.app_prepared_by?.name || 'GINA MAE B. CARBAQUEL').trim().toUpperCase();
+    const governorName = (ppmp?.default_signatories?.app_approved_by?.name || ppmp?.default_signatories?.approved_by?.name || 'HON. YVONNE R. CAGAS').trim().toUpperCase();
+    const isCurrentUserAppPreparer = ppmp.status === 'APP_PREPARER_REVIEW' && normalizedUserName === appPreparerName;
+    const isCurrentUserGovernor = ppmp.status === 'GOVERNOR_REVIEW' && normalizedUserName === governorName;
+
+    const isReviewOfficeHeadStatus = ['BUDGET_HEAD_REVIEW', 'PACCO_HEAD_REVIEW', 'OPPMO_HEAD_REVIEW'].includes(ppmp.status);
+    const isTargetReviewOfficeHead = userRole === 'head' && isReviewOfficeHeadStatus && (!ppmp.current_stage_office_id || Number(user?.office_id) === Number(ppmp.current_stage_office_id));
 
     const isAssignedReviewer = Boolean(
         isAdmin ||
         (userRole === 'twg' && (!ppmp.twg_reviewer_id || ppmp.twg_reviewer_id === user?.id)) ||
         ((userRole === 'budget_officer' || userRole === 'pacco') && (!ppmp.budget_reviewer_id || ppmp.budget_reviewer_id === user?.id)) ||
         (userRole === 'oppmo' && (!ppmp.oppmo_reviewer_id || ppmp.oppmo_reviewer_id === user?.id)) ||
-        ((userRole === 'head' || userRole === 'authorized_staff') && (user?.office_id === ppmp.office_id || !ppmp.office_id))
+        isTargetReviewOfficeHead ||
+        isCurrentUserAppPreparer ||
+        isCurrentUserGovernor ||
+        ((userRole === 'head' || userRole === 'authorized_staff') && ppmp.status === 'HEAD_PENDING' && (user?.office_id === ppmp.office_id || !ppmp.office_id))
     );
 
     const isUnassignedReviewerForCurrentStage = Boolean(
@@ -86,6 +109,9 @@ export const ReviewPanel = ({
     const canReview = Boolean(
         targetStageRole && isAssignedReviewer && (
             ((userRole === 'head' || userRole === 'authorized_staff') && ppmp.status === 'HEAD_PENDING' && (user?.office_id === ppmp.office_id || !ppmp.office_id)) ||
+            isTargetReviewOfficeHead ||
+            isCurrentUserAppPreparer ||
+            isCurrentUserGovernor ||
             (userRole === 'budget_officer' && ppmp.status === 'BUDGET_OFFICER_REVIEW') ||
             (userRole === 'pacco' && ppmp.status === 'PACCO_REVIEW') ||
             (userRole === 'oppmo' && ppmp.status === 'OPPMO_REVIEW') ||
@@ -99,7 +125,6 @@ export const ReviewPanel = ({
         ppmp?.items?.some(i => i.source_of_fund && i.source_of_fund.toLowerCase().includes('trust'))
     );
 
-    // Compute available return destinations based on current status and assigned reviewers
     const returnDestinations = React.useMemo(() => {
         const list = [
             {
@@ -111,8 +136,7 @@ export const ReviewPanel = ({
             }
         ];
 
-        // If at Budget/PACCO review or OPPMO review or Admin: can return to BAC-TWG reviewer
-        if (['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW'].includes(ppmp.status) || isAdmin) {
+        if (['BUDGET_OFFICER_REVIEW', 'BUDGET_HEAD_REVIEW', 'PACCO_REVIEW', 'PACCO_HEAD_REVIEW', 'OPPMO_REVIEW', 'OPPMO_HEAD_REVIEW', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW'].includes(ppmp.status) || isAdmin) {
             const twgName = ppmp.twg_reviewer?.name || ppmp.twgReviewer?.name || (ppmp.twg_reviewer_id ? `Assigned TWG (#${ppmp.twg_reviewer_id})` : 'Assigned BAC-TWG Reviewer');
             list.push({
                 id: 'twg',
@@ -123,8 +147,7 @@ export const ReviewPanel = ({
             });
         }
 
-        // If at OPPMO review or Admin: can return to Budget Officer / PACCO
-        if (ppmp.status === 'OPPMO_REVIEW' || isAdmin) {
+        if (['OPPMO_REVIEW', 'OPPMO_HEAD_REVIEW', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW'].includes(ppmp.status) || isAdmin) {
             const budgetRoleLabel = isTrustFund ? 'PACCO Reviewer' : 'Budget Officer';
             const budgetName = ppmp.budget_reviewer?.name || ppmp.budgetReviewer?.name || (ppmp.budget_reviewer_id ? `Assigned Reviewer (#${ppmp.budget_reviewer_id})` : `Assigned ${budgetRoleLabel}`);
             list.push({
@@ -139,7 +162,6 @@ export const ReviewPanel = ({
         return list;
     }, [ppmp, isAdmin, isTrustFund]);
 
-    // Check if document requires receiving before acting
     const awaitingReceive = user ? isAwaitingReceive(ppmp, user) : false;
 
     const isTwgSkipped = Boolean(
@@ -160,6 +182,22 @@ export const ReviewPanel = ({
         let confirmText = 'Are you sure you want to APPROVE this PPMP?';
         if (effectiveRole === 'head') {
             confirmText = 'Are you sure you want to approve this PPMP? Official electronic signature indicator will be generated and this PPMP will be finalized and marked READY TO PRINT.';
+        } else if (effectiveRole === 'budget_head' || effectiveRole === 'pacco_head') {
+            confirmText = isPnpkiSystemEnabled
+                ? 'Are you sure you want to approve this PPMP and affix your PNPKI Digital E-Signature? The system will check the next required signatories (OPPMO Head, APP Preparer, Provincial Governor) with active PNPKI E-Signatures before marking READY TO PRINT.'
+                : 'Are you sure you want to approve this PPMP? Since PNPKI Digital E-Signature is disabled, this PPMP and APP will automatically be finalized and marked READY TO PRINT.';
+        } else if (effectiveRole === 'oppmo_head') {
+            confirmText = isPnpkiSystemEnabled
+                ? 'Are you sure you want to approve this PPMP and affix your PNPKI Digital E-Signature? The system will check if the APP Preparer or Provincial Governor has an active PNPKI E-Signature before marking READY TO PRINT.'
+                : 'Are you sure you want to approve this PPMP? Since PNPKI Digital E-Signature is disabled, this PPMP and APP will automatically be finalized and marked READY TO PRINT.';
+        } else if (effectiveRole === 'app_preparer') {
+            confirmText = isPnpkiSystemEnabled
+                ? 'Are you sure you want to approve this APP/PPMP and affix your PNPKI Digital E-Signature? It will be forwarded to the Provincial Governor if they have an active PNPKI E-Signature, otherwise it will be marked READY TO PRINT.'
+                : 'Are you sure you want to approve this APP/PPMP? Since PNPKI Digital E-Signature is disabled, this PPMP and APP will automatically be finalized and marked READY TO PRINT.';
+        } else if (effectiveRole === 'governor') {
+            confirmText = isPnpkiSystemEnabled
+                ? 'Are you sure you want to grant final approval and affix your PNPKI Digital E-Signature? This PPMP and APP will be finalized and marked READY TO PRINT.'
+                : 'Are you sure you want to grant final approval? This PPMP and APP will automatically be finalized and marked READY TO PRINT.';
         } else if (effectiveRole === 'budget_officer') {
             confirmText = 'Are you sure you want to certify budgetary requirements? Initial indicator will be affixed and this PPMP will automatically route to OPPMO for APP generation and final review.';
         } else if (effectiveRole === 'pacco') {
@@ -169,7 +207,9 @@ export const ReviewPanel = ({
                 alert('Annual Procurement Plan (APP) Required:\n\nPlease generate or regenerate the Annual Procurement Plan (APP) using the "Generate APP Now" button before approving.');
                 return;
             }
-            confirmText = 'Are you sure you want to approve this PPMP? The generated Annual Procurement Plan (APP) will be approved and this PPMP will be finalized and marked READY TO PRINT.';
+            confirmText = isPnpkiSystemEnabled
+                ? 'Are you sure you want to approve this PPMP and APP? The system will check if the Budgetary Requirement / OPPMO-BAC Secretariat Head accounts have active non-expired PNPKI E-Signatures and route accordingly before marking READY TO PRINT.'
+                : 'Are you sure you want to approve this PPMP and APP? Since PNPKI Digital E-Signature is disabled, this PPMP and APP will automatically be finalized and marked READY TO PRINT.';
         } else if (effectiveRole === 'twg') {
             const isTrustFund = Boolean(
                 (ppmp?.source_of_fund && ppmp.source_of_fund.toLowerCase().includes('trust')) ||
@@ -177,7 +217,9 @@ export const ReviewPanel = ({
             );
             const isScopeAttachmentOnly = ppmp?.amendment_scope === 'ATTACHMENT_LIST';
             confirmText = isScopeAttachmentOnly
-                ? 'Are you sure you want to approve this PPMP? The updated Detailed Specifications will be approved and marked READY TO PRINT.'
+                ? (isPnpkiSystemEnabled
+                    ? 'Are you sure you want to approve this PPMP? The updated Detailed Specifications will be certified by BAC-TWG and forwarded to the End-User Office Head (if registered with an active PNPKI E-Signature) or marked READY TO PRINT.'
+                    : 'Are you sure you want to approve this PPMP? The updated Detailed Specifications will be certified by BAC-TWG and automatically marked READY TO PRINT.')
                 : (isTrustFund
                     ? 'Are you sure you want to approve this PPMP? BAC-TWG technical review will be certified and this PPMP will automatically route to PACCO for trust fund certification.'
                     : 'Are you sure you want to approve this PPMP? BAC-TWG technical review will be certified and this PPMP will automatically route to the Provincial Budget Office for budget certification.');
@@ -198,6 +240,16 @@ export const ReviewPanel = ({
         try {
             if (effectiveRole === 'head') {
                 await ppmpService.headApprove(ppmp.uuid);
+            } else if (effectiveRole === 'budget_head') {
+                await ppmpService.budgetHeadApprove(ppmp.uuid);
+            } else if (effectiveRole === 'pacco_head') {
+                await ppmpService.paccoHeadApprove(ppmp.uuid);
+            } else if (effectiveRole === 'oppmo_head') {
+                await ppmpService.oppmoHeadApprove(ppmp.uuid);
+            } else if (effectiveRole === 'app_preparer') {
+                await ppmpService.appPreparerApprove(ppmp.uuid);
+            } else if (effectiveRole === 'governor') {
+                await ppmpService.governorApprove(ppmp.uuid);
             } else if (effectiveRole === 'budget_officer') {
                 await ppmpService.budgetApprove(ppmp.uuid);
             } else if (effectiveRole === 'pacco') {
@@ -415,7 +467,6 @@ export const ReviewPanel = ({
                 )}
             </div>
 
-            {/* Modal for UPDATE / REMARKS */}
             {showRemarksModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
                     <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
@@ -428,7 +479,7 @@ export const ReviewPanel = ({
                         </p>
 
                         <form onSubmit={handleReturnSubmit}>
-                            {/* Destination Selection if multiple destinations available */}
+
                             {returnDestinations.length > 1 && (
                                 <div className="mb-4">
                                     <label className="block text-xs font-bold text-slate-700 uppercase mb-1.5">

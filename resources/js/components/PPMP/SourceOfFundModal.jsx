@@ -60,7 +60,7 @@ export const SourceOfFundModal = ({ isOpen, onClose, onSelect }) => {
 
     return (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-            {/* Backdrop */}
+
             <div
                 className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
                 onClick={onClose}
@@ -71,7 +71,7 @@ export const SourceOfFundModal = ({ isOpen, onClose, onSelect }) => {
                     className="relative transform overflow-hidden rounded-2xl bg-white text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200"
                     onClick={(e) => e.stopPropagation()}
                 >
-                    {/* Header */}
+
                     <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 px-6 py-5 text-white">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -97,7 +97,6 @@ export const SourceOfFundModal = ({ isOpen, onClose, onSelect }) => {
                         </div>
                     </div>
 
-                    {/* Content: Only the 2 routing options */}
                     <div className="p-6 space-y-4 bg-slate-50/50">
                         <p className="text-xs text-slate-600 font-medium">
                             Please select the review route for this PPMP. The table input search will automatically filter the appropriate funds catalog:
@@ -180,7 +179,6 @@ export const SourceOfFundModal = ({ isOpen, onClose, onSelect }) => {
                                             </div>
                                         </div>
 
-                                        {/* Review Routing Flow Diagram */}
                                         <div className="mt-3.5 pt-3 border-t border-slate-200/70">
                                             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
                                                 Review Routing Flow:
@@ -204,7 +202,6 @@ export const SourceOfFundModal = ({ isOpen, onClose, onSelect }) => {
                         </div>
                     </div>
 
-                    {/* Footer */}
                     <div className="bg-slate-100/80 px-6 py-4 flex items-center justify-end gap-3 border-t border-slate-200">
                         <button
                             type="button"

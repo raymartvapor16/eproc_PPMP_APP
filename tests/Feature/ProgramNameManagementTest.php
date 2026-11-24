@@ -72,7 +72,6 @@ class ProgramNameManagementTest extends TestCase
             'last_page',
         ]);
 
-        // Stats endpoint
         $resStats = $this->actingAs($this->superAdminUser)->getJson('/api/program-names/stats');
         $resStats->assertOk();
         $resStats->assertJsonStructure(['total', 'active', 'inactive', 'sectors', 'total_ppmps_linked']);
@@ -95,7 +94,6 @@ class ProgramNameManagementTest extends TestCase
             'sector' => 'I. GENERAL PUBLIC SERVICES',
         ]);
 
-        // Duplicate insertion must fail with 422
         $dupRes = $this->actingAs($this->adminUser)->postJson('/api/program-names', $payload);
         $dupRes->assertStatus(422);
     }
@@ -113,7 +111,6 @@ class ProgramNameManagementTest extends TestCase
         $this->assertEquals('UPDATED SUPPORT TO LOCAL FINANCE COMMITTEE', $this->program->fresh()->name);
         $this->assertEquals(5, $this->program->fresh()->display_order);
 
-        // Toggle status
         $toggleRes = $this->actingAs($this->adminUser)->patchJson("/api/program-names/{$this->program->id}/toggle-status");
         $toggleRes->assertOk();
         $this->assertFalse($this->program->fresh()->is_active);
@@ -140,14 +137,12 @@ class ProgramNameManagementTest extends TestCase
             'total_budget' => 50000,
         ]);
 
-        // Trying to delete must be blocked with 422
         $delRes = $this->actingAs($this->adminUser)->deleteJson("/api/program-names/{$this->program->id}");
         $delRes->assertStatus(422);
         $delRes->assertJsonFragment([
             'message' => "Cannot delete program \"{$this->program->name}\" because it is currently linked to 1 PPMP record(s). You can deactivate it instead to prevent new selections."
         ]);
 
-        // Unlink PPMP, now delete succeeds
         $ppmp->update(['program_name_id' => null]);
         $delSuccessRes = $this->actingAs($this->adminUser)->deleteJson("/api/program-names/{$this->program->id}");
         $delSuccessRes->assertOk();
@@ -170,13 +165,12 @@ class ProgramNameManagementTest extends TestCase
 
     public function test_end_user_can_fetch_dropdown_and_ppmp_links_program(): void
     {
-        // End user fetches active programs for dropdown
+
         $res = $this->actingAs($this->endUser)->getJson('/api/program-names?dropdown=1');
         $res->assertOk();
         $this->assertIsArray($res->json());
         $this->assertTrue(collect($res->json())->contains('id', $this->program->id));
 
-        // Create PPMP with program_name_id
         $createRes = $this->actingAs($this->endUser)->postJson('/api/ppmps', [
             'title' => 'PPMP Catering for LFC Meetings',
             'program_name_id' => $this->program->id,
@@ -199,13 +193,11 @@ class ProgramNameManagementTest extends TestCase
         $this->assertNotEmpty($ppmpUuid, 'Failed to retrieve PPMP UUID from response: ' . $createRes->getContent());
         $ppmp = Ppmp::where('uuid', $ppmpUuid)->firstOrFail();
 
-        // Verify normalized relationship!
         $this->assertEquals($this->program->id, $ppmp->program_name_id);
         $this->assertEquals($this->program->name, $ppmp->program_name);
         $this->assertNotNull($ppmp->programNameRef);
         $this->assertEquals('1999-25', $ppmp->programNameRef->responsibility_center);
 
-        // Now update and remove program_name by sending null
         $updateRes = $this->actingAs($this->endUser)->putJson("/api/ppmps/{$ppmpUuid}", [
             'fiscal_year' => '2026',
             'plan_type' => 'INDICATIVE',
@@ -232,4 +224,3 @@ class ProgramNameManagementTest extends TestCase
         $this->assertNull($ppmp->program_name_id, 'Program name ID should be removed (null).');
     }
 }
-

@@ -7,9 +7,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         Schema::create('fund_sources', function (Blueprint $table) {
@@ -23,7 +21,6 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // Seed initial default choices
         DB::table('fund_sources')->insert([
             [
                 'name' => 'General Fund and etc..',
@@ -48,9 +45,6 @@ return new class extends Migration
         ]);
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('fund_sources');

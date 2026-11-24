@@ -7,15 +7,12 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         $driver = Schema::getConnection()->getDriverName();
         $isMysql = in_array($driver, ['mysql', 'mariadb'], true);
 
-        // 1. Drop foreign keys on supplier tables that reference supplier_users or supplier_offices
         if ($isMysql) {
             $oldFKs = [
                 ['supplier_evaluations', 'supplier_evaluations_office_id_foreign'],
@@ -34,12 +31,11 @@ return new class extends Migration
                     try {
                         DB::statement("ALTER TABLE `{$tbl}` DROP FOREIGN KEY `{$fk}`");
                     } catch (\Throwable $e) {
-                        // Ignored if foreign key doesn't exist
+
                     }
                 }
             }
 
-            // 2. Drop unique constraint on offices.code to allow sub-divisions/offices sharing codes
             if (Schema::hasTable('offices')) {
                 $indices = DB::select("SHOW INDEX FROM offices WHERE Key_name = 'offices_code_unique'");
                 if (!empty($indices)) {
@@ -48,13 +44,11 @@ return new class extends Migration
                 }
             }
 
-            // 3. Ensure users.role ENUM includes all procurement and evaluation roles
             if (Schema::hasTable('users')) {
                 DB::statement("ALTER TABLE users MODIFY COLUMN role ENUM('end_user', 'head', 'budget_officer', 'oppmo', 'twg', 'super_admin', 'admin', 'administrator', 'authorized_staff', 'presentative_staff', 'pacco', 'monitor', 'pgso') DEFAULT 'end_user'");
             }
         }
 
-        // 4. Migrate supplier_offices -> offices table
         if (Schema::hasTable('supplier_offices') && Schema::hasTable('offices')) {
             $supplierOffices = DB::table('supplier_offices')->orderBy('id')->get();
             foreach ($supplierOffices as $so) {
@@ -83,19 +77,18 @@ return new class extends Migration
             }
         }
 
-        // 5. Migrate supplier_users -> users table (AVOIDING DUPLICATES WITH SAME EMAIL)
         if (Schema::hasTable('supplier_users') && Schema::hasTable('users')) {
             $existingUsers = DB::table('users')->get()->keyBy(fn ($u) => strtolower(trim($u->email)));
             $existingUserIds = DB::table('users')->pluck('id')->toArray();
 
             $supplierUsers = DB::table('supplier_users')->orderBy('id')->get();
-            $userIdMap = []; // old_supplier_user_id => new_users_table_id
+            $userIdMap = [];
 
             foreach ($supplierUsers as $su) {
                 $cleanEmail = strtolower(trim($su->email));
 
                 if ($existingUsers->has($cleanEmail)) {
-                    // Avoid duplicate user with same email: enrich existing user
+
                     $existing = $existingUsers->get($cleanEmail);
                     $userIdMap[$su->id] = $existing->id;
 
@@ -116,7 +109,7 @@ return new class extends Migration
                         'updated_at' => now(),
                     ]);
                 } else {
-                    // New user: insert into users table
+
                     $role = $su->role;
                     if ($role === 'administrator') {
                         $role = 'admin';
@@ -157,7 +150,6 @@ return new class extends Migration
                 }
             }
 
-            // 6. Update user foreign key references in supplier tables to match new user IDs
             foreach ($userIdMap as $oldId => $newId) {
                 if ($oldId !== $newId) {
                     if (Schema::hasTable('supplier_digital_approvals')) {
@@ -180,7 +172,6 @@ return new class extends Migration
             }
         }
 
-        // 7. Add foreign key constraints pointing to unified offices and users tables
         if ($isMysql) {
             try {
                 if (Schema::hasTable('supplier_evaluations')) {
@@ -204,17 +195,13 @@ return new class extends Migration
                     DB::statement("ALTER TABLE supplier_requests ADD CONSTRAINT supplier_requests_requested_to_foreign FOREIGN KEY (requested_to) REFERENCES users (id) ON DELETE SET NULL");
                 }
             } catch (\Throwable $e) {
-                // If any foreign key already exists or cannot be created, log/continue
+
             }
         }
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        // Non-destructive down method
+
     }
 };
-

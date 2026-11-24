@@ -20,9 +20,8 @@ export const SupportingDocumentsManagement = () => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
+    const [statusFilter, setStatusFilter] = useState('ALL');
 
-    // Form Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingDoc, setEditingDoc] = useState(null);
     const [formData, setFormData] = useState({
@@ -34,12 +33,10 @@ export const SupportingDocumentsManagement = () => {
     const [saving, setSaving] = useState(false);
     const [modalError, setModalError] = useState('');
 
-    // Delete Modal state
     const [deleteModalDoc, setDeleteModalDoc] = useState(null);
     const [deleting, setDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState('');
 
-    // Feedback notification
     const [feedback, setFeedback] = useState({ type: '', text: '' });
 
     const showFeedback = (type, text) => {
@@ -66,7 +63,6 @@ export const SupportingDocumentsManagement = () => {
         fetchDocuments();
     }, []);
 
-    // Filtered list
     const filteredDocuments = useMemo(() => {
         return documents.filter((doc) => {
             const matchesSearch =
@@ -83,7 +79,6 @@ export const SupportingDocumentsManagement = () => {
         });
     }, [documents, searchQuery, statusFilter]);
 
-    // Open Modal for Add
     const handleOpenAddModal = () => {
         setEditingDoc(null);
         setFormData({
@@ -96,7 +91,6 @@ export const SupportingDocumentsManagement = () => {
         setIsModalOpen(true);
     };
 
-    // Open Modal for Edit
     const handleOpenEditModal = (doc) => {
         setEditingDoc(doc);
         setFormData({
@@ -109,7 +103,6 @@ export const SupportingDocumentsManagement = () => {
         setIsModalOpen(true);
     };
 
-    // Save Doc (Create / Update)
     const handleSaveDoc = async (e) => {
         e.preventDefault();
         if (!formData.name.trim()) {
@@ -152,7 +145,6 @@ export const SupportingDocumentsManagement = () => {
         }
     };
 
-    // Quick toggle active status
     const handleToggleStatus = async (doc) => {
         try {
             await supportingDocumentService.update(doc.id, {
@@ -168,7 +160,6 @@ export const SupportingDocumentsManagement = () => {
         }
     };
 
-    // Confirm Delete
     const handleDelete = async () => {
         if (!deleteModalDoc) return;
         setDeleting(true);
@@ -188,7 +179,7 @@ export const SupportingDocumentsManagement = () => {
 
     return (
         <div className="space-y-6">
-            {/* Feedback Alert */}
+
             {feedback.text && (
                 <div
                     className={`p-4 rounded-xl border flex items-center justify-between shadow-xs transition-all ${
@@ -215,7 +206,6 @@ export const SupportingDocumentsManagement = () => {
                 </div>
             )}
 
-            {/* Header Banner */}
             <div className="bg-gradient-to-r from-blue-950 via-indigo-950 to-slate-900 rounded-2xl p-6 text-white shadow-md border border-blue-900 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                     <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full text-xs font-bold border border-blue-400/30">
@@ -251,7 +241,6 @@ export const SupportingDocumentsManagement = () => {
                 </div>
             </div>
 
-            {/* Filter and Search Bar */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="relative w-full sm:w-80">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -281,7 +270,6 @@ export const SupportingDocumentsManagement = () => {
                 </div>
             </div>
 
-            {/* Documents Table */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs">
@@ -395,7 +383,6 @@ export const SupportingDocumentsManagement = () => {
                 </div>
             </div>
 
-            {/* Modal: Add / Edit Document */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
                     <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col">
@@ -506,7 +493,6 @@ export const SupportingDocumentsManagement = () => {
                 </div>
             )}
 
-            {/* Modal: Confirm Delete */}
             {deleteModalDoc && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
                     <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-sm overflow-hidden p-6 space-y-4">

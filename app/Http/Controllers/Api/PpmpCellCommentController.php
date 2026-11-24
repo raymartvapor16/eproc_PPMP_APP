@@ -10,29 +10,37 @@ use App\Models\PpmpItem;
 use App\Models\PpmpChangeLog;
 use App\Models\PpmpCellComment;
 use App\Models\User;
+use App\Support\ReviewHeadResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class PpmpCellCommentController extends Controller
 {
-    /**
-     * Get all cell comments for a PPMP.
-     */
+    public const MAX_COMMENT_WORDS = 1000;
+
+    protected function countWords(?string $text): int
+    {
+        $trimmed = trim((string) $text);
+        if ($trimmed === '') {
+            return 0;
+        }
+        $words = preg_split('/\s+/u', $trimmed, -1, PREG_SPLIT_NO_EMPTY);
+        return is_array($words) ? count($words) : 0;
+    }
+
     public function index(Request $request, string $uuid): JsonResponse
     {
         $user = $request->user();
         $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
 
         $isSuspended = str_ends_with($ppmp->status, '_RETURNED');
-        $isReviewerOrAdmin = in_array($user?->role, ['head', 'authorized_staff', 'budget_officer', 'pacco', 'oppmo', 'twg', 'admin', 'super_admin']) || ($user && $user->isAdmin());
+        $isReviewerOrAdmin = ($user && $user->hasAnyAssignedRole(['head', 'authorized_staff', 'budget_officer', 'pacco', 'oppmo', 'twg', 'admin', 'super_admin'])) || ($user && $user->isAdmin());
 
         $query = $ppmp->cellComments()
             ->with(['reviewer', 'compliedByUser'])
             ->orderBy('created_at', 'asc');
 
-        // For end-users when PPMP is NOT currently suspended/returned:
-        // Hide unreleased reviewer draft comments (pending), but ALWAYS allow end-users
-        // to view all comments they have already complied with, even after resubmitting to the reviewer.
         if (!$isReviewerOrAdmin && !$isSuspended) {
             $query->where('status', 'complied');
         }
@@ -46,21 +54,16 @@ class PpmpCellCommentController extends Controller
         ]);
     }
 
-    /**
-     * Reviewer adds a comment to a specific cell in the PPMP.
-     */
     public function store(Request $request, string $uuid): JsonResponse
     {
         $user = $request->user();
         $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
 
-        // Ensure user is an authorized reviewer or admin
         $allowedReviewerRoles = ['head', 'budget_officer', 'pacco', 'oppmo', 'twg', 'admin', 'super_admin'];
-        if (!in_array($user->role, $allowedReviewerRoles) && !$user->isAdmin()) {
+        if (!$user->hasAnyAssignedRole($allowedReviewerRoles) && !$user->isAdmin()) {
             return response()->json(['message' => 'Only authorized reviewers and administrators can add review comments.'], 403);
         }
 
-        // Enforce reviewer assignment restrictions
         if (!$user->isAdmin()) {
             if ($user->isTwg() && $ppmp->twg_reviewer_id && $ppmp->twg_reviewer_id !== $user->id) {
                 return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different BAC-TWG reviewer.'], 403);
@@ -72,17 +75,54 @@ class PpmpCellCommentController extends Controller
                 return response()->json(['message' => 'Unauthorized. This PPMP is assigned to a different OPPMO reviewer.'], 403);
             }
             if ($user->isHead() && $ppmp->office_id && $ppmp->office_id !== $user->office_id) {
-                return response()->json(['message' => 'Unauthorized. You may only comment on PPMPs from your assigned office.'], 403);
+                $headStage = ReviewHeadResolver::stageForStatus($ppmp->status);
+                $expectedOfficeId = $headStage ? ReviewHeadResolver::resolveOfficeIdForStage($headStage, $ppmp) : null;
+                if (!$expectedOfficeId || (int) $user->office_id !== $expectedOfficeId) {
+                    return response()->json(['message' => 'Unauthorized. You may only comment on PPMPs from your assigned office.'], 403);
+                }
             }
         }
 
+        $rawCellValue = $request->input('cell_value');
+        if ($rawCellValue !== null && !is_string($rawCellValue)) {
+            $rawCellValue = is_scalar($rawCellValue) ? (string) $rawCellValue : json_encode($rawCellValue);
+        }
+        $rawItemNo = $request->input('item_no');
+        $normalizedItemNo = ($rawItemNo !== null && $rawItemNo !== '' && is_numeric($rawItemNo))
+            ? (int) $rawItemNo
+            : null;
+        $rawItemId = $request->input('item_id');
+        $normalizedItemId = ($rawItemId !== null && $rawItemId !== '' && is_numeric($rawItemId) && PpmpItem::where('id', (int) $rawItemId)->exists())
+            ? (int) $rawItemId
+            : null;
+
+        $request->merge([
+            'item_id' => $normalizedItemId,
+            'item_no' => $normalizedItemNo,
+            'field_key' => Str::limit(trim((string) $request->input('field_key', '')), 60, ''),
+            'field_label' => $request->filled('field_label')
+                ? Str::limit(trim((string) $request->input('field_label')), 100, '')
+                : null,
+            'cell_value' => $rawCellValue,
+        ]);
+
         $validated = $request->validate([
-            'item_id' => 'nullable|exists:ppmp_items,id',
+            'item_id' => 'nullable|integer',
             'item_no' => 'nullable|integer',
             'field_key' => 'required|string|max:60',
             'field_label' => 'nullable|string|max:100',
             'cell_value' => 'nullable|string',
-            'comment' => 'required|string|min:2',
+            'comment' => [
+                'required',
+                'string',
+                'min:1',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    $wordCount = $this->countWords(is_string($value) ? $value : (string) $value);
+                    if ($wordCount > self::MAX_COMMENT_WORDS) {
+                        $fail('The comment must not exceed ' . number_format(self::MAX_COMMENT_WORDS) . " words (currently {$wordCount} words).");
+                    }
+                },
+            ],
         ]);
 
         $roleLabel = match ($user->role) {
@@ -117,18 +157,14 @@ class PpmpCellCommentController extends Controller
         ], 201);
     }
 
-    /**
-     * Reviewer or admin deletes a cell comment.
-     */
     public function destroy(Request $request, string $uuid, int $commentId): JsonResponse
     {
         $user = $request->user();
         $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
         $comment = PpmpCellComment::where('ppmp_id', $ppmp->id)->where('id', $commentId)->firstOrFail();
 
-        // Only author or admin can delete
-        if ($comment->reviewer_id !== $user->id && !$user->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized. You may only remove comments you authored.'], 403);
+        if (!$user->isAdmin()) {
+            return response()->json(['message' => 'Unauthorized. Only Admin and Super Admin can delete reviewer comments.'], 403);
         }
 
         $comment->delete();
@@ -136,9 +172,6 @@ class PpmpCellCommentController extends Controller
         return response()->json(['message' => 'Review comment removed.']);
     }
 
-    /**
-     * Check if a user can edit/comply cell values on this PPMP.
-     */
     protected function checkCanEditCell(Ppmp $ppmp, ?User $user): bool
     {
         if (!$user) return false;
@@ -151,15 +184,22 @@ class PpmpCellCommentController extends Controller
             'HEAD_APPROVED',
             'HEAD_RETURNED',
             'BUDGET_OFFICER_RETURNED',
+            'BUDGET_HEAD_RETURNED',
             'PACCO_RETURNED',
+            'PACCO_HEAD_RETURNED',
             'OPPMO_RETURNED',
+            'OPPMO_HEAD_RETURNED',
             'TWG_RETURNED'
         ], true)) {
             return true;
         }
 
+        $headStage = ReviewHeadResolver::stageForStatus($ppmp->status);
+        $isReviewOfficeHead = $user->isHead() && $headStage && (int) $user->office_id === ReviewHeadResolver::resolveOfficeIdForStage($headStage, $ppmp);
+
         $isReviewer = (
             ($user->isHead() && in_array($ppmp->status, ['HEAD_PENDING', 'HEAD_APPROVED']) && $user->office_id === $ppmp->office_id) ||
+            $isReviewOfficeHead ||
             ($user->isBudgetOfficer() && $ppmp->status === 'BUDGET_OFFICER_REVIEW' && (!$ppmp->budget_reviewer_id || $ppmp->budget_reviewer_id === $user->id)) ||
             ($user->isPacco() && $ppmp->status === 'PACCO_REVIEW' && (!$ppmp->budget_reviewer_id || $ppmp->budget_reviewer_id === $user->id)) ||
             ($user->isOppmo() && $ppmp->status === 'OPPMO_REVIEW' && (!$ppmp->oppmo_reviewer_id || $ppmp->oppmo_reviewer_id === $user->id)) ||
@@ -169,16 +209,12 @@ class PpmpCellCommentController extends Controller
         return (bool) $isReviewer;
     }
 
-    /**
-     * Apply a cell value update to the PPMP database records and record audit trail in ppmp_change_logs.
-     */
     protected function applyCellUpdate(Ppmp $ppmp, User $user, string $fieldKey, ?string $fieldLabel, mixed $newValue, ?int $itemId = null, ?int $itemNo = null): array
     {
         $changeLogsCreated = [];
         $fk = strtolower(trim($fieldKey));
         $fl = trim((string)$fieldLabel);
 
-        // 1. PPMP Item Field
         $item = null;
         if ($itemId) {
             $item = PpmpItem::where('ppmp_id', $ppmp->id)->where('id', $itemId)->first();
@@ -249,55 +285,148 @@ class PpmpCellCommentController extends Controller
             return ['type' => 'item', 'item' => $item->fresh(), 'logs' => $changeLogsCreated];
         }
 
-        // 2. Attachment List Field
         if (str_starts_with($fk, 'att_')) {
             $attData = $ppmp->attachment_list_data;
             if (!is_array($attData)) {
                 $attData = [];
             }
 
+            $findMatchingListKeys = function (array $listsMap) use ($itemId, $itemNo): array {
+                if (empty($listsMap)) return [];
+                $matched = [];
+                foreach ($listsMap as $k => $v) {
+                    $kStr = (string) $k;
+                    if ($itemId && ($kStr === (string) $itemId || str_contains($kStr, (string) $itemId))) {
+                        $matched[] = $k;
+                    } elseif ($itemNo && ($kStr === "item_{$itemNo}" || $kStr === (string) ($itemNo - 1))) {
+                        $matched[] = $k;
+                    }
+                }
+                if (empty($matched) && $itemNo && $itemNo > 0) {
+                    $keys = array_keys($listsMap);
+                    if (isset($keys[$itemNo - 1])) {
+                        $matched[] = $keys[$itemNo - 1];
+                    }
+                }
+                if (empty($matched) && count($listsMap) === 1) {
+                    $matched[] = array_key_first($listsMap);
+                }
+                return array_values(array_unique($matched));
+            };
+
             if (preg_match('/^att_r(\d+)_(.+)$/', $fk, $matches)) {
                 $rowNum = (int) $matches[1];
                 $subField = $matches[2];
                 $targetKey = $subField === 'unit_cost' ? 'unitCost' : ($subField === 'item_no' ? 'itemNo' : ($subField === 'total_cost' ? 'totalCost' : $subField));
 
-                $rows = $attData['rows'] ?? [];
-                $foundIdx = -1;
-                foreach ($rows as $idx => $r) {
-                    if (($r['itemNo'] ?? ($r['id'] ?? null)) == $rowNum) {
-                        $foundIdx = $idx;
-                        break;
+                $oldRVal = '';
+                $updatedAny = false;
+
+                if (isset($attData['attachment_lists']) && is_array($attData['attachment_lists'])) {
+                    $matchedKeys = $findMatchingListKeys($attData['attachment_lists']);
+                    foreach ($matchedKeys as $mKey) {
+                        $listRows = $attData['attachment_lists'][$mKey]['rows'] ?? [];
+                        $foundIdx = -1;
+                        foreach ($listRows as $idx => $r) {
+                            if (($r['itemNo'] ?? ($r['id'] ?? null)) == $rowNum) {
+                                $foundIdx = $idx;
+                                break;
+                            }
+                        }
+                        if ($foundIdx === -1 && isset($listRows[$rowNum - 1])) {
+                            $foundIdx = $rowNum - 1;
+                        }
+                        if ($foundIdx !== -1) {
+                            $oldRVal = $listRows[$foundIdx][$targetKey] ?? '';
+                            $listRows[$foundIdx][$targetKey] = (string) $newValue;
+
+                            if (in_array($targetKey, ['qty', 'unitCost'], true)) {
+                                $q = (float) ($listRows[$foundIdx]['qty'] ?? 0);
+                                $c = (float) ($listRows[$foundIdx]['unitCost'] ?? 0);
+                                $listRows[$foundIdx]['totalCost'] = ($q > 0 && $c > 0) ? (string) round($q * $c, 2) : '';
+                            }
+
+                            $attData['attachment_lists'][$mKey]['rows'] = $listRows;
+                            $listTotal = 0.0;
+                            foreach ($listRows as $lr) {
+                                $listTotal += (float) ($lr['totalCost'] ?? 0);
+                            }
+                            if ($listTotal > 0) {
+                                $attData['attachment_lists'][$mKey]['total_budget'] = round($listTotal, 2);
+                            }
+                            $updatedAny = true;
+                        }
                     }
                 }
 
-                if ($foundIdx !== -1) {
-                    $oldRVal = $rows[$foundIdx][$targetKey] ?? '';
-                    $rows[$foundIdx][$targetKey] = (string)$newValue;
-
-                    if (in_array($targetKey, ['qty', 'unitCost'])) {
-                        $q = (float)($rows[$foundIdx]['qty'] ?? 0);
-                        $c = (float)($rows[$foundIdx]['unitCost'] ?? 0);
-                        $rows[$foundIdx]['totalCost'] = ($q > 0 && $c > 0) ? (string)($q * $c) : '';
+                $rows = $attData['rows'] ?? [];
+                if (is_array($rows) && !empty($rows) && (!$itemNo || $itemNo === 1 || empty($attData['attachment_lists']))) {
+                    $foundIdx = -1;
+                    foreach ($rows as $idx => $r) {
+                        if (($r['itemNo'] ?? ($r['id'] ?? null)) == $rowNum) {
+                            $foundIdx = $idx;
+                            break;
+                        }
+                    }
+                    if ($foundIdx === -1 && isset($rows[$rowNum - 1])) {
+                        $foundIdx = $rowNum - 1;
                     }
 
-                    $attData['rows'] = $rows;
+                    if ($foundIdx !== -1) {
+                        if ($oldRVal === '' && !$updatedAny) {
+                            $oldRVal = $rows[$foundIdx][$targetKey] ?? '';
+                        }
+                        $rows[$foundIdx][$targetKey] = (string) $newValue;
+
+                        if (in_array($targetKey, ['qty', 'unitCost'], true)) {
+                            $q = (float) ($rows[$foundIdx]['qty'] ?? 0);
+                            $c = (float) ($rows[$foundIdx]['unitCost'] ?? 0);
+                            $rows[$foundIdx]['totalCost'] = ($q > 0 && $c > 0) ? (string) round($q * $c, 2) : '';
+                        }
+
+                        $attData['rows'] = $rows;
+                        $updatedAny = true;
+                    }
+                }
+
+                if ($updatedAny) {
                     $ppmp->update(['attachment_list_data' => $attData]);
 
-                    $log = PpmpChangeLog::create([
+                    if (trim((string) $oldRVal) !== trim((string) $newValue)) {
+                        $specPrefix = $itemNo ? "Detailed Specifications #{$itemNo} • " : "Detailed Specifications • ";
+                        $log = PpmpChangeLog::create([
+                            'ppmp_id' => $ppmp->id,
+                            'user_id' => $user->id,
+                            'role' => $user->role,
+                            'field_name' => "{$specPrefix}Row #{$rowNum} " . ucwords(str_replace('_', ' ', $subField)),
+                            'old_value' => (string) $oldRVal !== '' ? (string) $oldRVal : '(empty)',
+                            'new_value' => (string) $newValue !== '' ? (string) $newValue : '(empty)',
+                            'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                        ]);
+                        $changeLogsCreated[] = $log;
+                    }
+                }
+            } elseif ($fk === 'att_fiscal_year') {
+                $oldFy = $ppmp->fiscal_year ?? '';
+                $cleanFy = preg_replace('/^CY\s*/i', '', trim((string) $newValue));
+                $ppmp->update(['fiscal_year' => $cleanFy]);
+                if ((string) $oldFy !== (string) $cleanFy) {
+                    $changeLogsCreated[] = PpmpChangeLog::create([
                         'ppmp_id' => $ppmp->id,
                         'user_id' => $user->id,
                         'role' => $user->role,
-                        'field_name' => "Attachment List • Row #{$rowNum} " . ucwords($subField),
-                        'old_value' => (string)$oldRVal ?: '(empty)',
-                        'new_value' => (string)$newValue ?: '(empty)',
+                        'field_name' => $fl ?: 'Detailed Specifications • Fiscal Year',
+                        'old_value' => (string) $oldFy ?: '(empty)',
+                        'new_value' => (string) $cleanFy ?: '(empty)',
                         'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
                     ]);
-                    $changeLogsCreated[] = $log;
                 }
             } else {
                 $hdrMap = [
                     'att_office_name' => 'office_name',
                     'att_project_title' => 'project_title',
+                    'att_charges' => 'charges',
+                    'att_total_budget' => 'total_budget',
                     'att_warranty_terms' => 'other_terms',
                     'att_other_terms' => 'other_terms',
                     'att_additional_condition' => 'additional_condition',
@@ -412,30 +541,45 @@ class PpmpCellCommentController extends Controller
 
                     $hKey = $hdrMap[$fk];
                     $oldHVal = $attData[$hKey] ?? '';
-                    $attData[$hKey] = (string)$newValue;
+                    $valToStore = $hKey === 'total_budget'
+                        ? (float) preg_replace('/[^0-9.]/', '', (string) $newValue)
+                        : (string) $newValue;
+                    $attData[$hKey] = $valToStore;
+
+                    if (isset($attData['attachment_lists']) && is_array($attData['attachment_lists'])) {
+                        $matchedKeys = $findMatchingListKeys($attData['attachment_lists']);
+                        foreach ($matchedKeys as $mKey) {
+                            if (isset($attData['attachment_lists'][$mKey][$hKey]) && $oldHVal === '') {
+                                $oldHVal = $attData['attachment_lists'][$mKey][$hKey];
+                            }
+                            $attData['attachment_lists'][$mKey][$hKey] = $valToStore;
+                        }
+                    }
+
                     $ppmpUpdates = ['attachment_list_data' => $attData];
                     if (in_array($hKey, ['warranty_and_other_terms', 'additional_condition', 'place_of_delivery', 'payment_method', 'delivery_period'])) {
-                        $ppmpUpdates[$hKey] = (string)$newValue;
+                        $ppmpUpdates[$hKey] = (string) $newValue;
                     }
                     $ppmp->update($ppmpUpdates);
 
-                    $log = PpmpChangeLog::create([
-                        'ppmp_id' => $ppmp->id,
-                        'user_id' => $user->id,
-                        'role' => $user->role,
-                        'field_name' => $fl ?: ucwords(str_replace(['att_', '_'], ['', ' '], $fk)),
-                        'old_value' => (string)$oldHVal ?: '(empty)',
-                        'new_value' => (string)$newValue ?: '(empty)',
-                        'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
-                    ]);
-                    $changeLogsCreated[] = $log;
+                    if (trim((string)$oldHVal) !== trim((string)$newValue)) {
+                        $log = PpmpChangeLog::create([
+                            'ppmp_id' => $ppmp->id,
+                            'user_id' => $user->id,
+                            'role' => $user->role,
+                            'field_name' => $fl ?: ucwords(str_replace(['att_', '_'], ['', ' '], $fk)),
+                            'old_value' => (string)$oldHVal !== '' ? (string)$oldHVal : '(empty)',
+                            'new_value' => (string)$newValue !== '' ? (string)$newValue : '(empty)',
+                            'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                        ]);
+                        $changeLogsCreated[] = $log;
+                    }
                 }
             }
 
-            return ['type' => 'attachment', 'attachment_data' => $attData, 'logs' => $changeLogsCreated];
+            return ['type' => 'attachment', 'attachment_data' => $attData, 'ppmp' => $ppmp->fresh(['items']), 'logs' => $changeLogsCreated];
         }
 
-        // 3. PPMP Category / Program Name & Account Code
         $isCombinedCategoryField = $fk === 'category' ||
             ($fk === 'program_name' && (str_contains((string)$newValue, '•') || str_contains(strtolower((string)$fl), 'account code')));
 
@@ -445,7 +589,7 @@ class PpmpCellCommentController extends Controller
                 $newProg = trim($parts[0]);
                 $newAcct = trim($parts[1]);
             } else {
-                // If single string, check whether it is an account code or program name
+
                 if (preg_match('/[0-9]-[0-9]{2}-[0-9]{2}-[0-9]{3}/', (string)$newValue)) {
                     $newProg = '';
                     $newAcct = trim((string)$newValue);
@@ -503,8 +647,8 @@ class PpmpCellCommentController extends Controller
             return ['type' => 'category', 'ppmp' => $ppmp->fresh(['items']), 'logs' => $changeLogsCreated];
         }
 
-        // 4. PPMP Header Field
         $ppmpFieldMap = [
+            'tracking_number' => 'tracking_number',
             'title' => 'title',
             'ppmp_number' => 'ppmp_number',
             'source_of_fund' => 'source_of_fund',
@@ -523,6 +667,28 @@ class PpmpCellCommentController extends Controller
         if (array_key_exists($fk, $ppmpFieldMap)) {
             $col = $ppmpFieldMap[$fk];
             $oldVal = $ppmp->{$col};
+            if ($col === 'tracking_number') {
+                $normalizedTracker = Ppmp::normalizeTrackingNumber((string) $newValue);
+                if ($normalizedTracker === '') {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'tracking_number' => ['Tracker No. cannot be empty.'],
+                    ]);
+                }
+                $familyIds = $ppmp->getFamilyIds();
+                if (Ppmp::isTrackingNumberTaken($normalizedTracker, $familyIds)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'tracking_number' => ["Tracker No. \"{$normalizedTracker}\" already exists. Duplicate tracker numbers are not allowed."],
+                    ]);
+                }
+                $newValue = $normalizedTracker;
+                $otherFamilyIds = array_values(array_diff($familyIds, [$ppmp->id]));
+                if (!empty($otherFamilyIds)) {
+                    Ppmp::whereIn('id', $otherFamilyIds)->update(['tracking_number' => $normalizedTracker]);
+                }
+                \App\Models\MonitoringProject::whereIn('ppmp_id', $familyIds)->update(['pr_number' => $normalizedTracker]);
+                \App\Models\PurchaseRequest::whereIn('ppmp_id', $familyIds)->update(['tracker_id' => $normalizedTracker]);
+                \App\Models\MonitoringProject::flushCache();
+            }
             $updatePayload = [$col => (string)$newValue];
             if ($col === 'account_code') {
                 if (preg_match('/[0-9]-[0-9]{2}-[0-9]{2}-[0-9]{3}/', (string)$newValue, $m)) {
@@ -554,12 +720,161 @@ class PpmpCellCommentController extends Controller
             return ['type' => 'header', 'ppmp' => $ppmp->fresh(), 'logs' => $changeLogsCreated];
         }
 
+        if (str_starts_with($fk, 'ms_')) {
+            $scoping = \App\Models\PpmpMarketScoping::firstOrCreate(
+                ['ppmp_id' => $ppmp->id],
+                [
+                    'procuring_entity' => 'PROVINCIAL GOVERNMENT OF DAVAO DEL SUR',
+                    'implementing_unit' => $ppmp->implementing_unit ?: $ppmp->office?->name,
+                    'project_name' => $ppmp->title,
+                    'estimated_budget' => (float) ($ppmp->total_budget ?? 0),
+                    'created_by' => $user->id,
+                    'updated_by' => $user->id,
+                ]
+            );
+
+            $headerMap = [
+                'ms_procuring_entity' => 'procuring_entity',
+                'ms_implementing_unit' => 'implementing_unit',
+                'ms_representative' => 'representative_name_designation',
+                'ms_project_name' => 'project_name',
+                'ms_estimated_budget' => 'estimated_budget',
+                'ms_expected_delivery' => 'expected_delivery_date',
+                'ms_prepared_by_name' => 'prepared_by_name',
+                'ms_prepared_by_position' => 'prepared_by_position',
+                'ms_prepared_by_date' => 'prepared_by_date',
+                'ms_approved_by_name' => 'approved_by_name',
+                'ms_approved_by_position' => 'approved_by_position',
+                'ms_approved_by_date' => 'approved_by_date',
+            ];
+
+            if (isset($headerMap[$fk])) {
+                $col = $headerMap[$fk];
+                $oldVal = (string) ($scoping->$col ?? '');
+                $cleanVal = $col === 'estimated_budget'
+                    ? (is_numeric(str_replace([',', '₱', ' '], '', (string) $newValue)) ? (float) str_replace([',', '₱', ' '], '', (string) $newValue) : $scoping->$col)
+                    : trim((string) $newValue);
+                $scoping->update([$col => $cleanVal, 'updated_by' => $user->id]);
+
+                $changeLogsCreated[] = PpmpChangeLog::create([
+                    'ppmp_id' => $ppmp->id,
+                    'user_id' => $user->id,
+                    'role' => $user->role,
+                    'field_name' => $fl ?: 'Market Scoping Field',
+                    'old_value' => $oldVal,
+                    'new_value' => (string) $cleanVal,
+                    'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                ]);
+            } elseif ($fk === 'ms_scoping_period') {
+                $oldVal = trim("{$scoping->scoping_period_from} - {$scoping->scoping_period_to}", ' -');
+                $rawPeriod = trim((string) $newValue);
+                if (preg_match('/from\s+([^\s]+)\s+to\s+([^\s]+)/i', $rawPeriod, $pm)) {
+                    $fromPart = trim($pm[1], '_ ');
+                    $toPart = trim($pm[2], '_ ');
+                } else {
+                    $parts = preg_split('/\s+(?:to|-)\s+/i', $rawPeriod, 2);
+                    $fromPart = trim(preg_replace('/^from\s+/i', '', $parts[0] ?? ''), '_ ');
+                    $toPart = trim($parts[1] ?? $fromPart, '_ ');
+                }
+                $scoping->update([
+                    'scoping_period_from' => $fromPart,
+                    'scoping_period_to' => $toPart,
+                    'updated_by' => $user->id,
+                ]);
+                $changeLogsCreated[] = PpmpChangeLog::create([
+                    'ppmp_id' => $ppmp->id,
+                    'user_id' => $user->id,
+                    'role' => $user->role,
+                    'field_name' => $fl ?: 'Period of Market Scoping',
+                    'old_value' => $oldVal ?: '(empty)',
+                    'new_value' => $rawPeriod ?: '(empty)',
+                    'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                ]);
+            } elseif (preg_match('/^ms_activity_([a-z0-9_]+?)(?:_(custom_text|documentation))?$/', $fk, $am)) {
+                $actCode = $am[1];
+                $actSub = $am[2] ?? 'is_checked';
+                $actRow = \App\Models\PpmpMarketScopingActivity::firstOrCreate(
+                    ['market_scoping_id' => $scoping->id, 'activity_code' => $actCode],
+                    ['is_checked' => false]
+                );
+
+                if ($actSub === 'custom_text') {
+                    $oldVal = (string) ($actRow->custom_activity_text ?? '');
+                    $cleanText = trim((string) $newValue);
+                    $updates = ['custom_activity_text' => $cleanText];
+                    if ($cleanText !== '') {
+                        $updates['is_checked'] = true;
+                    }
+                    $actRow->update($updates);
+                    $newDisplay = $cleanText;
+                } elseif ($actSub === 'documentation') {
+                    $oldVal = (string) ($actRow->documentation_notes ?? '');
+                    $cleanDoc = trim((string) $newValue);
+                    $actRow->update(['documentation_notes' => $cleanDoc]);
+                    $newDisplay = $cleanDoc;
+                } else {
+                    $oldVal = $actRow->is_checked ? 'Checked' : 'Unchecked';
+                    $parsedJson = is_string($newValue) && str_starts_with(trim($newValue), '{')
+                        ? json_decode($newValue, true)
+                        : (is_array($newValue) ? $newValue : null);
+
+                    if (is_array($parsedJson)) {
+                        $isChecked = in_array(strtoupper(trim((string) ($parsedJson['is_checked'] ?? ''))), ['CHECKED', 'YES', '1', 'TRUE'], true) || ($parsedJson['is_checked'] ?? false) === true;
+                        $updates = ['is_checked' => $isChecked];
+                        if (array_key_exists('custom_activity_text', $parsedJson)) {
+                            $updates['custom_activity_text'] = trim((string) $parsedJson['custom_activity_text']);
+                        }
+                        if (array_key_exists('documentation_notes', $parsedJson)) {
+                            $updates['documentation_notes'] = trim((string) $parsedJson['documentation_notes']);
+                        }
+                        $actRow->update($updates);
+                        $newDisplay = $isChecked ? 'Checked' : 'Unchecked';
+                    } else {
+                        $norm = strtoupper(trim((string) $newValue));
+                        $isChecked = in_array($norm, ['CHECKED', 'YES', '1', 'TRUE', '✓'], true) || $newValue === true;
+                        $actRow->update(['is_checked' => $isChecked]);
+                        $newDisplay = $isChecked ? 'Checked' : 'Unchecked';
+                    }
+                }
+
+                $scoping->update(['updated_by' => $user->id]);
+
+                if ($oldVal !== $newDisplay) {
+                    $changeLogsCreated[] = PpmpChangeLog::create([
+                        'ppmp_id' => $ppmp->id,
+                        'user_id' => $user->id,
+                        'role' => $user->role,
+                        'field_name' => $fl ?: "Market Scoping Activity ({$actCode})",
+                        'old_value' => $oldVal !== '' ? $oldVal : '(empty)',
+                        'new_value' => $newDisplay !== '' ? $newDisplay : '(empty)',
+                        'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                    ]);
+                }
+            } elseif (preg_match('/^ms_result_([a-z_]+)_(considered|recommendations)$/', $fk, $m)) {
+                $paramCode = $m[1];
+                $subCol = $m[2];
+                $resultRow = \App\Models\PpmpMarketScopingResult::firstOrCreate(
+                    ['market_scoping_id' => $scoping->id, 'parameter_code' => $paramCode]
+                );
+                $oldVal = (string) ($resultRow->$subCol ?? '');
+                $resultRow->update([$subCol => trim((string) $newValue)]);
+                $changeLogsCreated[] = PpmpChangeLog::create([
+                    'ppmp_id' => $ppmp->id,
+                    'user_id' => $user->id,
+                    'role' => $user->role,
+                    'field_name' => $fl ?: "Market Scoping ({$paramCode})",
+                    'old_value' => $oldVal,
+                    'new_value' => trim((string) $newValue),
+                    'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                ]);
+            }
+
+            return ['type' => 'market_scoping', 'ppmp' => $ppmp->fresh(['marketScoping.activities', 'marketScoping.results']), 'logs' => $changeLogsCreated];
+        }
+
         return ['type' => 'unknown', 'logs' => $changeLogsCreated];
     }
 
-    /**
-     * Direct API endpoint to update a cell value on the PPMP and log changes.
-     */
     public function updateCell(Request $request, string $uuid): JsonResponse
     {
         $user = $request->user();
@@ -595,6 +910,8 @@ class PpmpCellCommentController extends Controller
             'items',
             'signatures.user',
             'attachments',
+            'marketScoping.activities',
+            'marketScoping.results',
             'routes',
             'changeLogs.user',
             'cellComments.reviewer',
@@ -608,22 +925,42 @@ class PpmpCellCommentController extends Controller
         ]);
     }
 
-    /**
-     * End user marks a cell comment as complied.
-     */
     public function comply(Request $request, string $uuid, int $commentId): JsonResponse
     {
         $user = $request->user();
         $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
         $comment = PpmpCellComment::where('ppmp_id', $ppmp->id)->where('id', $commentId)->firstOrFail();
 
+        $rawComplianceNote = $request->input('compliance_note');
+        if ($rawComplianceNote !== null && !is_string($rawComplianceNote)) {
+            $request->merge([
+                'compliance_note' => is_scalar($rawComplianceNote) ? (string) $rawComplianceNote : json_encode($rawComplianceNote),
+            ]);
+        }
+
         $validated = $request->validate([
-            'compliance_note' => 'nullable|string|max:1000',
+            'compliance_note' => [
+                'nullable',
+                'string',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if ($value === null) {
+                        return;
+                    }
+                    $wordCount = $this->countWords(is_string($value) ? $value : (string) $value);
+                    if ($wordCount > self::MAX_COMMENT_WORDS) {
+                        $fail('The compliance note must not exceed ' . number_format(self::MAX_COMMENT_WORDS) . " words (currently {$wordCount} words).");
+                    }
+                },
+            ],
             'updated_cell_value' => 'nullable',
         ]);
 
-        // If updated_cell_value is provided, persist it to the cell and log audit trail
-        if ($request->has('updated_cell_value') && $this->checkCanEditCell($ppmp, $user)) {
+        if ($request->has('updated_cell_value')) {
+            if (!$this->checkCanEditCell($ppmp, $user)) {
+                return response()->json([
+                    'message' => "You do not have permission to modify cells on this PPMP in its current status: {$ppmp->status}.",
+                ], 403);
+            }
             $this->applyCellUpdate(
                 $ppmp,
                 $user,
@@ -650,6 +987,8 @@ class PpmpCellCommentController extends Controller
             'items',
             'signatures.user',
             'attachments',
+            'marketScoping.activities',
+            'marketScoping.results',
             'routes',
             'changeLogs.user',
             'cellComments.reviewer',
@@ -664,9 +1003,6 @@ class PpmpCellCommentController extends Controller
         ]);
     }
 
-    /**
-     * Uncomply / Reopen a cell comment.
-     */
     public function uncomply(Request $request, string $uuid, int $commentId): JsonResponse
     {
         $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
@@ -687,6 +1023,8 @@ class PpmpCellCommentController extends Controller
             'items',
             'signatures.user',
             'attachments',
+            'marketScoping.activities',
+            'marketScoping.results',
             'routes',
             'changeLogs.user',
             'cellComments.reviewer',
@@ -701,4 +1039,3 @@ class PpmpCellCommentController extends Controller
         ]);
     }
 }
-

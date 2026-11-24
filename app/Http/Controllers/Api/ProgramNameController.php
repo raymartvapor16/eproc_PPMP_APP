@@ -12,17 +12,13 @@ use Illuminate\Validation\Rule;
 
 class ProgramNameController extends Controller
 {
-    /**
-     * List program names with pagination, search, and filtering,
-     * OR return a lightweight list for PPMP create/edit searchable dropdowns.
-     */
+
     public function index(Request $request): JsonResponse
     {
-        // 1. Fast dropdown mode for PPMP Create / Edit
+
         if ($request->boolean('dropdown') || $request->boolean('all')) {
             $query = ProgramName::query();
 
-            // Default to only active programs for form dropdowns unless admin requests all
             if (!$request->has('include_inactive')) {
                 $query->active();
             }
@@ -43,7 +39,6 @@ class ProgramNameController extends Controller
             return response()->json($programs);
         }
 
-        // 2. Full Admin Management mode with pagination and filter controls
         $user = $request->user();
         if (!$user || !$user->isAdmin()) {
             return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
@@ -61,7 +56,6 @@ class ProgramNameController extends Controller
                 'status' => $request->query('status', 'all'),
             ]);
 
-        // Sorting
         $sortBy = $request->query('sort_by', 'display_order');
         $sortDir = strtolower($request->query('sort_dir', 'asc')) === 'desc' ? 'desc' : 'asc';
         $allowedSorts = ['id', 'name', 'responsibility_center', 'sector', 'is_active', 'display_order', 'ppmps_count', 'created_at'];
@@ -77,9 +71,6 @@ class ProgramNameController extends Controller
         return response()->json($paginated);
     }
 
-    /**
-     * Get summary KPI statistics for Admin Dashboard.
-     */
     public function stats(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -109,9 +100,6 @@ class ProgramNameController extends Controller
         ]);
     }
 
-    /**
-     * Create a new Program Name (Admin only).
-     */
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -162,18 +150,12 @@ class ProgramNameController extends Controller
         ], 201);
     }
 
-    /**
-     * Show single Program Name details.
-     */
     public function show(Request $request, int $id): JsonResponse
     {
         $program = ProgramName::withCount('ppmps')->findOrFail($id);
         return response()->json(['data' => $program]);
     }
 
-    /**
-     * Update an existing Program Name (Admin only).
-     */
     public function update(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -233,9 +215,6 @@ class ProgramNameController extends Controller
         ]);
     }
 
-    /**
-     * Toggle active/inactive status (Admin only).
-     */
     public function toggleStatus(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -264,9 +243,6 @@ class ProgramNameController extends Controller
         ]);
     }
 
-    /**
-     * Delete a program name (Admin only).
-     */
     public function destroy(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -306,4 +282,3 @@ class ProgramNameController extends Controller
         ]);
     }
 }
-

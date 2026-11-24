@@ -6,9 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
@@ -16,15 +14,11 @@ return new class extends Migration
             $table->text('rejection_reason')->nullable()->after('approval_status');
         });
 
-        // Set existing active users to approved
         \Illuminate\Support\Facades\DB::table('users')
             ->where('is_active', true)
             ->update(['approval_status' => 'approved']);
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {

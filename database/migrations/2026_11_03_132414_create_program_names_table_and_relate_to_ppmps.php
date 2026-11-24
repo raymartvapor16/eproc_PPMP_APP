@@ -6,9 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         if (!Schema::hasTable('program_names')) {
@@ -21,7 +19,6 @@ return new class extends Migration
                 $table->integer('display_order')->default(0);
                 $table->timestamps();
 
-                // Unique index to prevent duplicate entries
                 $table->unique(['name', 'responsibility_center'], 'uniq_prog_name_resp_ctr');
             });
         }
@@ -37,9 +34,6 @@ return new class extends Migration
         }
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         if (Schema::hasTable('ppmps') && Schema::hasColumn('ppmps', 'program_name_id')) {

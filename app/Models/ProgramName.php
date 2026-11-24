@@ -28,25 +28,16 @@ class ProgramName extends Model
         'updated_at' => 'datetime',
     ];
 
-    /**
-     * Relationship to PPMP records.
-     */
     public function ppmps(): HasMany
     {
         return $this->hasMany(Ppmp::class, 'program_name_id');
     }
 
-    /**
-     * Scope: Only active program names.
-     */
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
     }
 
-    /**
-     * Scope: Apply search and sector/status filters.
-     */
     public function scopeFilter(Builder $query, array $filters): Builder
     {
         if (!empty($filters['search'])) {
@@ -70,4 +61,3 @@ class ProgramName extends Model
         return $query;
     }
 }
-

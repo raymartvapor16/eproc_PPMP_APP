@@ -15,9 +15,7 @@ use Illuminate\Support\Facades\DB;
 
 class PimsDashboardController extends Controller
 {
-    /**
-     * Authorize user access to PIMS
-     */
+
     protected function authorizePims(Request $request): void
     {
         $user = $request->user();
@@ -30,18 +28,13 @@ class PimsDashboardController extends Controller
         }
     }
 
-    /**
-     * Main dashboard data endpoint with dynamic filters
-     */
     public function index(Request $request): JsonResponse
     {
         $this->authorizePims($request);
         $user = $request->user();
 
-        // Ensure active PPMPs are synchronized
         MonitoringProject::syncAllActivePpmps();
 
-        // Apply filters
         $year = $request->filled('year') && $request->year !== 'ALL' ? (int)$request->year : null;
         $startDate = $request->filled('start_date') ? Carbon::parse($request->start_date)->startOfDay() : null;
         $endDate = $request->filled('end_date') ? Carbon::parse($request->end_date)->endOfDay() : null;
@@ -49,7 +42,6 @@ class PimsDashboardController extends Controller
         $category = $request->filled('category') && $request->category !== 'ALL' ? $request->category : null;
         $status = $request->filled('status') && $request->status !== 'ALL' ? $request->status : null;
 
-        // Base PPMP Query
         $ppmpQuery = Ppmp::whereDoesntHave('children');
         if ($user->isEndUser() || $user->isHead()) {
             if ($user->office_id) {
@@ -75,7 +67,6 @@ class PimsDashboardController extends Controller
         $allPpmps = $ppmpQuery->with(['office', 'creator', 'items', 'attachments', 'monitoringProjects', 'purchaseRequests'])->get();
         $totalPpmpCount = $allPpmps->count();
 
-        // Published Monitoring Projects
         $mpQuery = MonitoringProject::with(['ppmp', 'office', 'purchaseRequest']);
         if ($user->isEndUser() || $user->isHead()) {
             if ($user->office_id) {
@@ -98,7 +89,6 @@ class PimsDashboardController extends Controller
         $monitoredProjects = $mpQuery->get();
         $monitoredPpmpIds = $monitoredProjects->pluck('ppmp_id')->filter()->unique()->toArray();
 
-        // Base PR Query
         $prQuery = PurchaseRequest::with(['office', 'creator', 'items', 'routes', 'ppmp']);
         if ($user->isEndUser() || $user->isHead()) {
             if ($user->office_id) {
@@ -125,12 +115,10 @@ class PimsDashboardController extends Controller
         $allPrs = $prQuery->orderBy('created_at', 'desc')->get();
         $prPpmpIds = $allPrs->pluck('ppmp_id')->filter()->unique()->toArray();
 
-        // A. Dashboard Summary Cards
         $totalPublishedRequirements = $monitoredProjects->where('pims_status', 'PUBLISHED')->count();
         $pendingMonitoringCount = $allPpmps->whereNotIn('id', $monitoredPpmpIds)->count();
         $monitoringCompletedCount = $monitoredProjects->where('status', 'COMPLETED')->count();
 
-        // Pending PR Generation: Monitored requirements without a generated PR
         $monitoredWithPrIds = $allPrs->pluck('monitoring_project_id')->filter()->unique()->toArray();
         $pendingPrGenerationCount = $monitoredProjects->filter(function ($mp) use ($monitoredWithPrIds, $prPpmpIds) {
             return !in_array($mp->id, $monitoredWithPrIds, true) && (!($mp->ppmp_id && in_array($mp->ppmp_id, $prPpmpIds, true)));
@@ -138,16 +126,11 @@ class PimsDashboardController extends Controller
 
         $generatedPrsCount = $allPrs->count();
 
-        // Total Attachments (supporting documents across eligible PPMPs)
         $totalAttachmentsCount = PpmpAttachment::whereIn('ppmp_id', $allPpmps->pluck('id'))->count();
 
-        // Pending Actions Count:
-        // 1. Pending Monitoring + 2. Pending PR Generation + 3. PRs in review or returned
         $pendingReviewPrsCount = $allPrs->whereIn('status', ['PR_DIVISION_REVIEW', 'BAC_TWG_REVIEW', 'PR_CONTROL_REVIEW', 'RETURNED'])->count();
         $pendingActionsCount = $pendingMonitoringCount + $pendingPrGenerationCount + $pendingReviewPrsCount;
 
-        // B. Dashboard Charts and Analytics
-        // 1. Requirements by Status
         $statusChart = [
             'labels' => ['Published to PIMS', 'Pending Monitoring', 'Monitoring Completed', 'Pending PR Generation', 'PR Generated', 'PR Approved'],
             'data' => [
@@ -161,7 +144,6 @@ class PimsDashboardController extends Controller
             'colors' => ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#06b6d4', '#059669'],
         ];
 
-        // 2. Requirements by Source (PPMP vs APP)
         $ppmpSourceCount = $allPpmps->where('is_annual', false)->count();
         $appSourceCount = $allPpmps->where('is_annual', true)->count();
         $sourceChart = [
@@ -170,7 +152,6 @@ class PimsDashboardController extends Controller
             'colors' => ['#0284c7', '#0d9488'],
         ];
 
-        // 3. Monthly Procurement Activity (Last 12 Months)
         $currentYear = $year ?: (int)date('Y');
         $months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         $monthlySubmitted = array_fill(0, 12, 0);
@@ -205,7 +186,6 @@ class PimsDashboardController extends Controller
             'pr_generated' => $monthlyPrGenerated,
         ];
 
-        // 4. Requirements by Category (Goods, Infra, Consulting)
         $categoryBreakdown = [
             'Goods' => 0,
             'Infrastructure Projects' => 0,
@@ -228,10 +208,8 @@ class PimsDashboardController extends Controller
             'colors' => ['#3b82f6', '#f97316', '#a855f7'],
         ];
 
-        // C. Recent Procurement Activities Table
         $recentActivities = [];
 
-        // Mix PRs and published PPMPs into unified timeline
         foreach ($allPrs->take(30) as $pr) {
             $recentActivities[] = [
                 'id' => $pr->id,
@@ -252,10 +230,8 @@ class PimsDashboardController extends Controller
             ];
         }
 
-        // D. Pending Actions Section
         $pendingActions = [];
 
-        // 1. PPMPs awaiting monitoring
         foreach ($allPpmps->whereNotIn('id', $monitoredPpmpIds)->take(10) as $unmonitored) {
             $pendingActions[] = [
                 'type' => 'AWAITING_MONITORING',
@@ -269,7 +245,6 @@ class PimsDashboardController extends Controller
             ];
         }
 
-        // 2. Monitored requirements ready for PR generation
         foreach ($monitoredProjects->filter(function ($mp) use ($monitoredWithPrIds, $prPpmpIds) {
             return !in_array($mp->id, $monitoredWithPrIds, true) && (!($mp->ppmp_id && in_array($mp->ppmp_id, $prPpmpIds, true)));
         })->take(10) as $readyForPr) {
@@ -286,7 +261,6 @@ class PimsDashboardController extends Controller
             ];
         }
 
-        // 3. PRs in review or returned
         foreach ($allPrs->whereIn('status', ['PR_DIVISION_REVIEW', 'BAC_TWG_REVIEW', 'PR_CONTROL_REVIEW', 'RETURNED'])->take(10) as $inReviewPr) {
             $stageLabel = strtoupper(str_replace('_', ' ', $inReviewPr->current_stage));
             $isReturned = $inReviewPr->status === 'RETURNED';
@@ -302,7 +276,6 @@ class PimsDashboardController extends Controller
             ];
         }
 
-        // Available offices and years for filters
         $offices = Office::orderBy('name')->get(['id', 'name', 'code']);
         $years = Ppmp::selectRaw('DISTINCT fiscal_year')->pluck('fiscal_year')->filter()->sort()->values();
         if ($years->isEmpty()) {
@@ -338,4 +311,3 @@ class PimsDashboardController extends Controller
         ]);
     }
 }
-

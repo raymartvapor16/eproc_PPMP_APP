@@ -76,9 +76,6 @@ class SecurityHardeningTest extends TestCase
         $this->officeB->update(['head_user_id' => $this->headUserB->id]);
     }
 
-    /**
-     * Test defensive HTTP security headers are attached to responses.
-     */
     public function test_defensive_security_headers_are_present(): void
     {
         $response = $this->get('/');
@@ -89,9 +86,6 @@ class SecurityHardeningTest extends TestCase
         $response->assertHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     }
 
-    /**
-     * Test CSRF token endpoint returns fresh token.
-     */
     public function test_csrf_token_endpoint_returns_token(): void
     {
         $response = $this->getJson('/api/csrf-token');
@@ -101,15 +95,11 @@ class SecurityHardeningTest extends TestCase
         $this->assertNotEmpty($response->json('csrf_token'));
     }
 
-    /**
-     * Test session hijacking detection triggers when User-Agent changes mid-session.
-     */
     public function test_session_hijacking_detection_blocks_stolen_session(): void
     {
         $originalAgent = 'LegitimateBrowser/1.0 (Windows NT 10.0)';
         $attackerAgent = 'AttackerScript/2.0 (Linux x86_64)';
 
-        // 1. Legitimate user logs in
         $loginRes = $this->withServerVariables(['HTTP_USER_AGENT' => $originalAgent])
             ->postJson('/api/login', [
                 'email' => 'enduserA@example.test',
@@ -119,20 +109,16 @@ class SecurityHardeningTest extends TestCase
         $loginRes->assertStatus(200);
         $loginRes->assertJsonStructure(['csrf_token', 'user']);
 
-        // 2. Legitimate user can query /api/me with same User-Agent
         $meRes = $this->withServerVariables(['HTTP_USER_AGENT' => $originalAgent])
             ->getJson('/api/me');
         $meRes->assertStatus(200);
 
-        // 3. Attacker using stolen session cookie but different User-Agent
         $hijackRes = $this->withServerVariables(['HTTP_USER_AGENT' => $attackerAgent])
             ->getJson('/api/me');
 
-        // Session must be invalidated and 401 returned
         $hijackRes->assertStatus(401);
         $hijackRes->assertJson(['code' => 'SESSION_HIJACK_PREVENTED']);
 
-        // Audit log must have logged the incident
         $this->assertTrue(
             AuditLog::where('action', 'SESSION_HIJACK_DETECTED')
                 ->where('user_id', $this->endUserA->id)
@@ -140,9 +126,6 @@ class SecurityHardeningTest extends TestCase
         );
     }
 
-    /**
-     * Test IDOR protection: End User from Office B cannot view Office A's draft PPMP.
-     */
     public function test_idor_protection_blocks_unauthorized_ppmp_show(): void
     {
         $endUserB = User::create([
@@ -167,14 +150,10 @@ class SecurityHardeningTest extends TestCase
             'total_budget' => 50000.00,
         ]);
 
-        // End user from Office B attempts to view Office A's draft PPMP
         $res = $this->actingAs($endUserB)->getJson("/api/ppmps/{$ppmpA->uuid}");
         $res->assertStatus(403);
     }
 
-    /**
-     * Test cross-office Head authorization: Head B cannot approve Office A's PPMP.
-     */
     public function test_cross_office_head_cannot_approve_other_office_ppmp(): void
     {
         $ppmpA = Ppmp::create([
@@ -190,19 +169,14 @@ class SecurityHardeningTest extends TestCase
             'total_budget' => 75000.00,
         ]);
 
-        // Head B attempts to approve Office A's PPMP
         $res = $this->actingAs($this->headUserB)->postJson("/api/ppmps/{$ppmpA->uuid}/head/approve");
         $res->assertStatus(403);
 
-        // Head A (correct office) approves successfully
         $headARes = $this->actingAs($this->headUserA)->postJson("/api/ppmps/{$ppmpA->uuid}/head/approve");
         $headARes->assertStatus(200);
         $this->assertEquals('READY_TO_PRINT', $headARes->json('ppmp.status'));
     }
 
-    /**
-     * Test public offices endpoint does not leak office head PII.
-     */
     public function test_public_offices_does_not_leak_head_pii(): void
     {
         $this->headUserA->update([
@@ -217,15 +191,11 @@ class SecurityHardeningTest extends TestCase
         $this->assertNotNull($firstOffice);
         $this->assertArrayHasKey('head', $firstOffice);
 
-        // Sensitive PII must NOT be present
         $this->assertArrayNotHasKey('phone_number', $firstOffice['head'] ?? []);
         $this->assertArrayNotHasKey('address', $firstOffice['head'] ?? []);
         $this->assertArrayNotHasKey('signature_path', $firstOffice['head'] ?? []);
     }
 
-    /**
-     * Test regular user cannot scrape an unrelated end user's signature.
-     */
     public function test_unauthorized_user_cannot_scrape_unrelated_signature(): void
     {
         \Illuminate\Support\Facades\Storage::fake('local');
@@ -242,22 +212,16 @@ class SecurityHardeningTest extends TestCase
             'is_active' => true,
         ]);
 
-        // End user A attempts to download unrelated user's signature
         $res = $this->actingAs($this->endUserA)->get("/api/users/{$unrelatedUser->id}/signature");
         $res->assertStatus(403);
 
-        // Target user can download their own signature
         $selfRes = $this->actingAs($unrelatedUser)->get("/api/users/{$unrelatedUser->id}/signature");
         $selfRes->assertStatus(200);
 
-        // Admin can download it
         $adminRes = $this->actingAs($this->adminUser)->get("/api/users/{$unrelatedUser->id}/signature");
         $adminRes->assertStatus(200);
     }
 
-    /**
-     * Test registration rejects privilege escalation to admin role.
-     */
     public function test_registration_rejects_admin_role_escalation(): void
     {
         $res = $this->postJson('/api/register', [

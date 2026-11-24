@@ -12,6 +12,7 @@ use App\Models\Ppmp;
 use App\Models\PpmpItem;
 use App\Models\PpmpRoute;
 use App\Models\PpmpSignature;
+use App\Support\ReviewHeadResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,37 +20,76 @@ use Illuminate\Support\Str;
 
 class PpmpController extends Controller
 {
-    /**
-     * List PPMPs with server-side filtering, search, and pagination
-     */
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        // Only show active/latest PPMPs in the list (superseded PPMPs that have child PPMPs are folded inside the new PPMP)
         $query = Ppmp::with([
-            'office.head',
-            'creator',
+            'office.head' => fn ($q) => $q->without('pnpkiSignature'),
+            'creator' => fn ($q) => $q->without('pnpkiSignature'),
             'items.fundSource',
             'fundSourceRef',
             'signatures',
             'attachments',
+            'marketScoping',
             'monitoringProjects',
-            'twgReviewer',
-            'budgetReviewer',
-            'oppmoReviewer',
+            'twgReviewer' => fn ($q) => $q->without('pnpkiSignature'),
+            'budgetReviewer' => fn ($q) => $q->without('pnpkiSignature'),
+            'oppmoReviewer' => fn ($q) => $q->without('pnpkiSignature'),
             'amendment',
         ])->whereDoesntHave('children');
 
-        // Scope based on role
         if ($user->isEndUser()) {
-            // End users can see PPMPs created by themselves or in their office
-            $query->where('created_by', $user->id);
+
+            $appStages = ReviewHeadResolver::userAppSignatoryStages($user);
+            if (empty($appStages)) {
+                $query->where('created_by', $user->id);
+            } else {
+                $appStatuses = ['READY_TO_PRINT'];
+                if (in_array('app_preparer', $appStages, true)) {
+                    array_push($appStatuses, 'APP_PREPARER_REVIEW', 'APP_PREPARER_RETURNED', 'GOVERNOR_REVIEW');
+                }
+                if (in_array('governor', $appStages, true)) {
+                    array_push($appStatuses, 'GOVERNOR_REVIEW', 'GOVERNOR_RETURNED');
+                }
+                $appStatuses = array_values(array_unique($appStatuses));
+                $query->where(function ($q) use ($user, $appStatuses) {
+                    $q->where('created_by', $user->id)
+                      ->orWhereIn('status', $appStatuses);
+                });
+            }
         } elseif ($user->isHead()) {
-            // Head sees PPMPs under their office
-            $query->where('office_id', $user->office_id);
+
+            $headStages = ReviewHeadResolver::userStagesForHead($user);
+            $appStages = ReviewHeadResolver::userAppSignatoryStages($user);
+            if (empty($headStages) && empty($appStages)) {
+                $query->where('office_id', $user->office_id);
+            } else {
+                $stageStatuses = [];
+                if (in_array('budget', $headStages, true)) {
+                    array_push($stageStatuses, 'BUDGET_HEAD_REVIEW', 'BUDGET_HEAD_RETURNED', 'OPPMO_HEAD_REVIEW', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW', 'READY_TO_PRINT');
+                }
+                if (in_array('pacco', $headStages, true)) {
+                    array_push($stageStatuses, 'PACCO_HEAD_REVIEW', 'PACCO_HEAD_RETURNED', 'OPPMO_HEAD_REVIEW', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW', 'READY_TO_PRINT');
+                }
+                if (in_array('oppmo', $headStages, true)) {
+                    array_push($stageStatuses, 'OPPMO_HEAD_REVIEW', 'OPPMO_HEAD_RETURNED', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW', 'READY_TO_PRINT');
+                }
+                if (in_array('app_preparer', $appStages, true)) {
+                    array_push($stageStatuses, 'APP_PREPARER_REVIEW', 'APP_PREPARER_RETURNED', 'GOVERNOR_REVIEW', 'READY_TO_PRINT');
+                }
+                if (in_array('governor', $appStages, true)) {
+                    array_push($stageStatuses, 'GOVERNOR_REVIEW', 'GOVERNOR_RETURNED', 'READY_TO_PRINT');
+                }
+                $stageStatuses = array_values(array_unique($stageStatuses));
+                $query->where(function ($q) use ($user, $stageStatuses) {
+                    $q->where('office_id', $user->office_id)
+                      ->orWhereIn('status', $stageStatuses);
+                });
+            }
         } elseif ($user->isBudgetOfficer()) {
-            // Budget officer sees PPMPs that reached review or beyond, and specifically assigned to them (or legacy unassigned, or completed ready to print)
+
             $query->where('status', '!=', 'DRAFT')
                 ->where(function ($q) use ($user) {
                     $q->whereNull('budget_reviewer_id')
@@ -58,7 +98,7 @@ class PpmpController extends Controller
                       ->orWhere('status', 'READY_TO_PRINT');
                 });
         } elseif ($user->isOppmo()) {
-            // OPPMO sees PPMPs past budget/pacco review or historical, specifically assigned to them, or completed ready to print
+
             $query->where(function ($q) use ($user) {
                 $q->where(function ($subQ) {
                     $subQ->whereNotIn('status', ['DRAFT', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED'])
@@ -71,7 +111,7 @@ class PpmpController extends Controller
                 });
             });
         } elseif ($user->isTwg()) {
-            // TWG sees PPMPs reaching TWG review or that they already acted on, specifically assigned to them, or completed ready to print
+
             $query->where(function ($q) use ($user) {
                 $q->where(function ($subQ) {
                     $subQ->whereNotIn('status', ['DRAFT', 'BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED'])
@@ -88,7 +128,7 @@ class PpmpController extends Controller
                 });
             });
         } elseif ($user->isPacco()) {
-            // PACCO reviewer sees PPMPs that reached review or beyond, specifically assigned to them, or completed ready to print
+
             $query->where('status', '!=', 'DRAFT')
                 ->where(function ($q) use ($user) {
                     $q->whereNull('budget_reviewer_id')
@@ -98,7 +138,6 @@ class PpmpController extends Controller
                 });
         }
 
-        // Filters
         if ($request->filled('search')) {
             $search = $request->input('search');
             $query->where(function ($q) use ($search) {
@@ -124,6 +163,25 @@ class PpmpController extends Controller
             $query->where('office_id', $request->input('office_id'));
         }
 
+        if ($request->filled('project_category')) {
+            $category = strtolower(trim((string) $request->input('project_category')));
+            if (in_array($category, ['infrastructure', 'infra'], true)) {
+                $query->where(function ($q) {
+                    $q->where('tracking_number', 'like', '%INFRA-%')
+                      ->orWhereHas('items', function ($iq) {
+                          $iq->where('project_type', 'like', '%Infra%');
+                      });
+                });
+            } elseif (in_array($category, ['goods_consulting', 'goods', 'consulting'], true)) {
+                $query->where(function ($q) {
+                    $q->where('tracking_number', 'not like', '%INFRA-%')
+                      ->whereDoesntHave('items', function ($iq) {
+                          $iq->where('project_type', 'like', '%Infra%');
+                      });
+                });
+            }
+        }
+
         $perPage = min((int) $request->input('per_page', 10), 100);
         $ppmps = $query->latest('id')->paginate($perPage);
 
@@ -145,9 +203,6 @@ class PpmpController extends Controller
         return response()->json($response);
     }
 
-    /**
-     * Create a new PPMP (End User only)
-     */
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -157,6 +212,7 @@ class PpmpController extends Controller
         }
 
         $validated = $request->validate([
+            'tracking_number' => 'nullable|string|max:100',
             'ppmp_number' => 'nullable|string|max:50',
             'title' => 'required|string|max:500',
             'source_of_fund' => 'nullable|string|max:255',
@@ -176,6 +232,8 @@ class PpmpController extends Controller
             'warranty_and_other_terms' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.description' => 'required|string',
+            'items.*.is_retention' => 'nullable|boolean',
+            'items.*.retention_percentage' => 'nullable|numeric|min:0|max:100',
             'items.*.project_type' => 'nullable|string',
             'items.*.quantity_size' => 'nullable|string',
             'items.*.procurement_mode' => 'nullable|string',
@@ -193,16 +251,15 @@ class PpmpController extends Controller
         $officeId = $user->office_id ?? $validated['office_id'] ?? Office::first()->id;
 
         $ppmp = DB::transaction(function () use ($validated, $user, $officeId) {
-            // Resolve Office abbreviation code
+
             $office = Office::find($officeId);
             $rawOfficeCode = $office ? ($office->code ?? 'PPMO') : 'PPMO';
-            // Clean office code to alphanumeric and hyphens, uppercase
+
             $officeCode = strtoupper(preg_replace('/[^A-Za-z0-9\-]/', '', str_replace(' ', '', $rawOfficeCode)));
             if (empty($officeCode)) {
                 $officeCode = 'PPMO';
             }
 
-            // Determine primary project procurement type from submitted items
             $rawType = 'Goods';
             if (!empty($validated['items'])) {
                 foreach ($validated['items'] as $item) {
@@ -222,18 +279,14 @@ class PpmpController extends Controller
                 $typeCode = 'GOODS';
             }
 
-            // Clean and extract 4-digit fiscal year from input (e.g. "CY 2028" -> "2028")
             $rawYear = trim($validated['fiscal_year']);
             $year = preg_match('/\b(20\d{2}|\d{4})\b/', $rawYear, $m) ? $m[1] : preg_replace('/^CY\s*/i', '', $rawYear);
             if (empty($year)) {
                 $year = (string) date('Y');
             }
 
-            // Generate unique Tracker Number: {OFFICE}{TYPE}-{YEAR}-XXXXXX
             $trackerPrefix = "{$officeCode}{$typeCode}-{$year}-";
 
-            // Determine next sequence by finding the highest sequence number among existing trackers
-            // This prevents duplicate or skipped numbers when amendments or supplementals share the same tracker number
             $existingTrackers = Ppmp::where('fiscal_year', $year)
                 ->where('tracking_number', 'like', "{$trackerPrefix}%")
                 ->lockForUpdate()
@@ -251,9 +304,20 @@ class PpmpController extends Controller
             }
 
             $nextSeq = str_pad($maxSeq + 1, 6, '0', STR_PAD_LEFT);
-            $trackingNumber = "{$trackerPrefix}{$nextSeq}";
+            $autoTrackingNumber = "{$trackerPrefix}{$nextSeq}";
 
-            // User input for PPMP Number (e.g. 0, 1, 2, 3...) or fallback to sequential index
+            $customTracker = isset($validated['tracking_number']) ? Ppmp::normalizeTrackingNumber($validated['tracking_number']) : '';
+            if ($customTracker !== '') {
+                if (Ppmp::isTrackingNumberTaken($customTracker)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'tracking_number' => ["Tracker No. \"{$customTracker}\" already exists. Duplicate tracker numbers are not allowed."],
+                    ]);
+                }
+                $trackingNumber = $customTracker;
+            } else {
+                $trackingNumber = $autoTrackingNumber;
+            }
+
             $ppmpNumber = isset($validated['ppmp_number']) && $validated['ppmp_number'] !== ''
                 ? (string) $validated['ppmp_number']
                 : (string) ($maxSeq + 1);
@@ -359,6 +423,8 @@ class PpmpController extends Controller
                     'ppmp_id' => $ppmp->id,
                     'item_no' => $index + 1,
                     'description' => $itemData['description'],
+                    'is_retention' => (bool) ($itemData['is_retention'] ?? false),
+                    'retention_percentage' => isset($itemData['retention_percentage']) && $itemData['retention_percentage'] !== '' ? (float) $itemData['retention_percentage'] : null,
                     'project_type' => $itemData['project_type'] ?? 'Goods',
                     'quantity_size' => $itemData['quantity_size'] ?? '',
                     'procurement_mode' => $itemData['procurement_mode'] ?? 'Public Bidding',
@@ -376,7 +442,6 @@ class PpmpController extends Controller
 
             $ppmp->update(['total_budget' => $total]);
 
-            // Create End User "Prepared By" e-signature indicator
             PpmpSignature::create([
                 'ppmp_id' => $ppmp->id,
                 'user_id' => $user->id,
@@ -388,7 +453,6 @@ class PpmpController extends Controller
                 'signed_at' => now(),
             ]);
 
-            // Initial route record
             $office = $user->office_id ? \App\Models\Office::find($user->office_id) : null;
             PpmpRoute::create([
                 'ppmp_id' => $ppmp->id,
@@ -415,9 +479,6 @@ class PpmpController extends Controller
         ], 201);
     }
 
-    /**
-     * Get single PPMP details with full related information
-     */
     public function show(Request $request, string $uuid): JsonResponse
     {
         $user = $request->user();
@@ -428,6 +489,8 @@ class PpmpController extends Controller
             'items.fundSource',
             'fundSourceRef',
             'attachments.uploader',
+            'marketScoping.activities',
+            'marketScoping.results',
             'reviews.reviewer',
             'signatures.user',
             'routes.fromUser',
@@ -444,16 +507,44 @@ class PpmpController extends Controller
             'parent.items',
             'parent.signatures.user',
             'parent.office.head',
+            'parent.marketScoping.activities',
+            'parent.marketScoping.results',
             'children.items',
         ])->where('uuid', $uuid)->firstOrFail();
 
-        // Enforce strict access control against IDOR / unauthorized viewing
         if (!$user->isAdmin()) {
             if ($user->isEndUser() && $ppmp->created_by !== $user->id && $ppmp->office_id !== $user->office_id) {
-                return response()->json(['message' => 'Unauthorized. You do not have permission to view this PPMP.'], 403);
+                $appStages = ReviewHeadResolver::userAppSignatoryStages($user);
+                $allowedAppView = (
+                    (in_array('app_preparer', $appStages, true) && in_array($ppmp->status, ['APP_PREPARER_REVIEW', 'APP_PREPARER_RETURNED', 'GOVERNOR_REVIEW', 'READY_TO_PRINT'], true)) ||
+                    (in_array('governor', $appStages, true) && in_array($ppmp->status, ['GOVERNOR_REVIEW', 'GOVERNOR_RETURNED', 'READY_TO_PRINT'], true))
+                );
+                if (!$allowedAppView) {
+                    return response()->json(['message' => 'Unauthorized. You do not have permission to view this PPMP.'], 403);
+                }
             }
             if ($user->isHead() && $ppmp->office_id !== $user->office_id) {
-                return response()->json(['message' => 'Unauthorized. You may only view PPMPs from your assigned office.'], 403);
+                $headStages = ReviewHeadResolver::userStagesForHead($user);
+                $appStages = ReviewHeadResolver::userAppSignatoryStages($user);
+                $allowedHeadView = false;
+                if (in_array('budget', $headStages, true) && ($ppmp->budget_head_approved_at || in_array($ppmp->status, ['BUDGET_HEAD_REVIEW', 'BUDGET_HEAD_RETURNED', 'OPPMO_REVIEW', 'OPPMO_HEAD_REVIEW', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW', 'READY_TO_PRINT'], true))) {
+                    $allowedHeadView = true;
+                }
+                if (in_array('pacco', $headStages, true) && ($ppmp->pacco_head_approved_at || in_array($ppmp->status, ['PACCO_HEAD_REVIEW', 'PACCO_HEAD_RETURNED', 'OPPMO_REVIEW', 'OPPMO_HEAD_REVIEW', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW', 'READY_TO_PRINT'], true))) {
+                    $allowedHeadView = true;
+                }
+                if (in_array('oppmo', $headStages, true) && ($ppmp->oppmo_head_approved_at || in_array($ppmp->status, ['OPPMO_HEAD_REVIEW', 'OPPMO_HEAD_RETURNED', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW', 'READY_TO_PRINT'], true))) {
+                    $allowedHeadView = true;
+                }
+                if (in_array('app_preparer', $appStages, true) && in_array($ppmp->status, ['APP_PREPARER_REVIEW', 'APP_PREPARER_RETURNED', 'GOVERNOR_REVIEW', 'READY_TO_PRINT'], true)) {
+                    $allowedHeadView = true;
+                }
+                if (in_array('governor', $appStages, true) && in_array($ppmp->status, ['GOVERNOR_REVIEW', 'GOVERNOR_RETURNED', 'READY_TO_PRINT'], true)) {
+                    $allowedHeadView = true;
+                }
+                if (!$allowedHeadView) {
+                    return response()->json(['message' => 'Unauthorized. You may only view PPMPs from your assigned office.'], 403);
+                }
             }
             if ($user->isBudgetOfficer()) {
                 if ($ppmp->status === 'DRAFT') {
@@ -490,8 +581,6 @@ class PpmpController extends Controller
             }
         }
 
-        // Recursively build full ancestor history from immediate parent down to root annual PPMP
-        // Guarded with cycle detection set and maximum iteration limit to prevent infinite loops
         $history = [];
         $currentParent = $ppmp->parent;
         $visitedIds = [$ppmp->id];
@@ -500,7 +589,7 @@ class PpmpController extends Controller
 
         while ($currentParent && $depth < $maxDepth) {
             if (in_array($currentParent->id, $visitedIds, true)) {
-                break; // Cycle detected, terminate loop immediately
+                break;
             }
             $visitedIds[] = $currentParent->id;
             $depth++;
@@ -508,6 +597,8 @@ class PpmpController extends Controller
             $currentParent->loadMissing([
                 'items.attachmentList',
                 'attachmentLists',
+                'marketScoping.activities',
+                'marketScoping.results',
                 'signatures.user',
                 'office.head',
                 'accountCodeRef',
@@ -525,15 +616,13 @@ class PpmpController extends Controller
         }
         $ppmp->setRelation('history', collect($history));
 
-        // For end-users, reviewer cell comments are strictly hidden until the PPMP has been officially suspended/returned
         $isSuspended = str_ends_with($ppmp->status, '_RETURNED');
         $isReviewerOrAdmin = in_array($user?->role, ['head', 'authorized_staff', 'budget_officer', 'pacco', 'oppmo', 'twg', 'admin', 'super_admin']) || ($user && $user->isAdmin());
         if (!$isReviewerOrAdmin && !$isSuspended) {
-            // Keep complied comments visible so end-users can inspect what was complied after resubmitting to reviewer
+
             $ppmp->setRelation('cellComments', $ppmp->cellComments->where('status', 'complied')->values());
         }
 
-        // Signatories for report / details (served from static cache)
         $activeSignatories = \App\Models\PpmpSignatory::getActiveSignatories();
         $activeBudget = $activeSignatories->firstWhere('signatory_type', 'budget_requirement');
         $activeBac = $activeSignatories->firstWhere('signatory_type', 'bac_secretariat');
@@ -560,28 +649,31 @@ class PpmpController extends Controller
         ]);
     }
 
-    /**
-     * Update an editable PPMP (End User when DRAFT or RETURNED)
-     */
     public function update(Request $request, string $uuid): JsonResponse
     {
         $user = $request->user();
         $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
 
-        // Check edit permission: Creator when in draft/head approved/returned, OR active reviewer in their stage, OR admin
         $isCreatorEditable = ($ppmp->created_by === $user->id) && in_array($ppmp->status, [
             'DRAFT',
             'HEAD_PENDING',
             'HEAD_APPROVED',
             'HEAD_RETURNED',
             'BUDGET_OFFICER_RETURNED',
+            'BUDGET_HEAD_RETURNED',
             'PACCO_RETURNED',
+            'PACCO_HEAD_RETURNED',
             'OPPMO_RETURNED',
+            'OPPMO_HEAD_RETURNED',
             'TWG_RETURNED'
         ]);
 
+        $headStage = ReviewHeadResolver::stageForStatus($ppmp->status);
+        $isReviewOfficeHead = $user->isHead() && $headStage && (int) $user->office_id === ReviewHeadResolver::resolveOfficeIdForStage($headStage, $ppmp);
+
         $isReviewerEditable = (
             ($user->isHead() && in_array($ppmp->status, ['HEAD_PENDING', 'HEAD_APPROVED']) && $user->office_id === $ppmp->office_id) ||
+            $isReviewOfficeHead ||
             ($user->isBudgetOfficer() && $ppmp->status === 'BUDGET_OFFICER_REVIEW' && (!$ppmp->budget_reviewer_id || $ppmp->budget_reviewer_id === $user->id)) ||
             ($user->isPacco() && $ppmp->status === 'PACCO_REVIEW' && (!$ppmp->budget_reviewer_id || $ppmp->budget_reviewer_id === $user->id)) ||
             ($user->isOppmo() && $ppmp->status === 'OPPMO_REVIEW' && (!$ppmp->oppmo_reviewer_id || $ppmp->oppmo_reviewer_id === $user->id)) ||
@@ -594,7 +686,6 @@ class PpmpController extends Controller
             ], 403);
         }
 
-        // Enforce Amendment Scope restriction: if scope was ATTACHMENT_LIST only, PPMP/APP items are locked
         if ($ppmp->amendment_scope === 'ATTACHMENT_LIST' && !$user->isAdmin()) {
             return response()->json([
                 'message' => "PPMP items and plan details cannot be modified for this revision. The approved request scope is restricted to the Detailed Specifications only."
@@ -602,6 +693,7 @@ class PpmpController extends Controller
         }
 
         $validated = $request->validate([
+            'tracking_number' => 'nullable|string|max:100',
             'ppmp_number' => 'nullable|string|max:50',
             'title' => 'required|string|max:500',
             'source_of_fund' => 'nullable|string|max:255',
@@ -621,6 +713,8 @@ class PpmpController extends Controller
             'items' => 'required|array|min:1',
             'items.*.id' => 'nullable|integer',
             'items.*.description' => 'required|string',
+            'items.*.is_retention' => 'nullable|boolean',
+            'items.*.retention_percentage' => 'nullable|numeric|min:0|max:100',
             'items.*.project_type' => 'nullable|string',
             'items.*.quantity_size' => 'nullable|string',
             'items.*.procurement_mode' => 'nullable|string',
@@ -665,45 +759,74 @@ class PpmpController extends Controller
                 $cleanFiscalYear = $ppmp->fiscal_year ?: (string) date('Y');
             }
 
-            // If fiscal year changed or tracking number does not match the fiscal year, update tracking_number
-            $trackingNumber = $ppmp->tracking_number;
-            if ($cleanFiscalYear !== $ppmp->fiscal_year || !str_contains((string)$trackingNumber, "-{$cleanFiscalYear}-")) {
-                if ($trackingNumber && preg_match('/^([A-Z0-9\-]+)-(\d{4})-(\d+)$/', $trackingNumber, $tnMatches)) {
-                    $prefixBase = $tnMatches[1];
-                    $seqPart = $tnMatches[3];
-                    $candidateTrk = "{$prefixBase}-{$cleanFiscalYear}-{$seqPart}";
-                    $alreadyTaken = Ppmp::where('tracking_number', $candidateTrk)->where('id', '!=', $ppmp->id)->exists();
-                    if (!$alreadyTaken) {
-                        $trackingNumber = $candidateTrk;
-                    } else {
-                        $trackerPrefix = "{$prefixBase}-{$cleanFiscalYear}-";
-                        $existingTrackers = Ppmp::where('fiscal_year', $cleanFiscalYear)
-                            ->where('tracking_number', 'like', "{$trackerPrefix}%")
-                            ->where('id', '!=', $ppmp->id)
-                            ->lockForUpdate()
-                            ->pluck('tracking_number');
-                        $maxSeq = 0;
-                        $prefixRegex = '/^' . preg_quote($trackerPrefix, '/') . '(\d+)/';
-                        foreach ($existingTrackers as $tn) {
-                            if (preg_match($prefixRegex, $tn, $m)) {
-                                $num = (int) $m[1];
-                                if ($num > $maxSeq) $maxSeq = $num;
-                            }
-                        }
-                        $trackingNumber = "{$trackerPrefix}" . str_pad($maxSeq + 1, 6, '0', STR_PAD_LEFT);
-                    }
-                } elseif ($cleanFiscalYear) {
-                    $trackingNumber = preg_replace('/-(\d{4})-/', "-{$cleanFiscalYear}-", (string)$trackingNumber);
-                }
+            $oldTrackingNumber = $ppmp->tracking_number;
+            $familyIds = $ppmp->getFamilyIds();
+            $requestedTracker = array_key_exists('tracking_number', $validated) && $validated['tracking_number'] !== null
+                ? Ppmp::normalizeTrackingNumber((string) $validated['tracking_number'])
+                : '';
 
-                // Also update any child amendments/supplementals to inherit the synchronized tracking number & fiscal year
-                Ppmp::where('parent_id', $ppmp->id)->update([
-                    'tracking_number' => $trackingNumber,
-                    'fiscal_year' => $cleanFiscalYear,
-                ]);
+            if ($requestedTracker !== '' && strcasecmp($requestedTracker, (string) $oldTrackingNumber) !== 0) {
+                if (Ppmp::isTrackingNumberTaken($requestedTracker, $familyIds)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'tracking_number' => ["Tracker No. \"{$requestedTracker}\" already exists. Duplicate tracker numbers are not allowed."],
+                    ]);
+                }
+                $trackingNumber = $requestedTracker;
+            } else {
+                $trackingNumber = $requestedTracker !== '' ? $requestedTracker : $oldTrackingNumber;
+                if ($cleanFiscalYear !== $ppmp->fiscal_year || !str_contains((string)$trackingNumber, "-{$cleanFiscalYear}-")) {
+                    if ($trackingNumber && preg_match('/^([A-Z0-9\-]+)-(\d{4})-(\d+)$/', $trackingNumber, $tnMatches)) {
+                        $prefixBase = $tnMatches[1];
+                        $seqPart = $tnMatches[3];
+                        $candidateTrk = "{$prefixBase}-{$cleanFiscalYear}-{$seqPart}";
+                        $alreadyTaken = Ppmp::isTrackingNumberTaken($candidateTrk, $familyIds);
+                        if (!$alreadyTaken) {
+                            $trackingNumber = $candidateTrk;
+                        } else {
+                            $trackerPrefix = "{$prefixBase}-{$cleanFiscalYear}-";
+                            $existingTrackers = Ppmp::where('fiscal_year', $cleanFiscalYear)
+                                ->where('tracking_number', 'like', "{$trackerPrefix}%")
+                                ->whereNotIn('id', $familyIds)
+                                ->lockForUpdate()
+                                ->pluck('tracking_number');
+                            $maxSeq = 0;
+                            $prefixRegex = '/^' . preg_quote($trackerPrefix, '/') . '(\d+)/';
+                            foreach ($existingTrackers as $tn) {
+                                if (preg_match($prefixRegex, $tn, $m)) {
+                                    $num = (int) $m[1];
+                                    if ($num > $maxSeq) $maxSeq = $num;
+                                }
+                            }
+                            $trackingNumber = "{$trackerPrefix}" . str_pad($maxSeq + 1, 6, '0', STR_PAD_LEFT);
+                        }
+                    } elseif ($cleanFiscalYear) {
+                        $candidateTrk = preg_replace('/-(\d{4})-/', "-{$cleanFiscalYear}-", (string)$trackingNumber);
+                        if (!Ppmp::isTrackingNumberTaken($candidateTrk, $familyIds)) {
+                            $trackingNumber = $candidateTrk;
+                        }
+                    }
+                }
             }
 
-            // Resolve program_name and program_name_id
+            if ($trackingNumber !== $oldTrackingNumber || $cleanFiscalYear !== $ppmp->fiscal_year) {
+                $otherFamilyIds = array_values(array_diff($familyIds, [$ppmp->id]));
+                if (!empty($otherFamilyIds)) {
+                    Ppmp::whereIn('id', $otherFamilyIds)->update([
+                        'tracking_number' => $trackingNumber,
+                        'fiscal_year' => $cleanFiscalYear,
+                    ]);
+                }
+            }
+            if ($trackingNumber !== $oldTrackingNumber) {
+                \App\Models\MonitoringProject::whereIn('ppmp_id', $familyIds)->update([
+                    'pr_number' => $trackingNumber,
+                ]);
+                \App\Models\PurchaseRequest::whereIn('ppmp_id', $familyIds)->update([
+                    'tracker_id' => $trackingNumber,
+                ]);
+                \App\Models\MonitoringProject::flushCache();
+            }
+
             if (array_key_exists('program_name', $validated) || array_key_exists('program_name_id', $validated)) {
                 $rawProgStr = array_key_exists('program_name', $validated) && $validated['program_name'] !== null
                     ? trim((string)$validated['program_name'])
@@ -721,7 +844,7 @@ class PpmpController extends Controller
                     $programNameId = $prog?->id;
                     $programNameStr = $rawProgStr;
                 } else {
-                    // Explicitly removed / cleared
+
                     $programNameId = null;
                     $programNameStr = null;
                 }
@@ -730,7 +853,6 @@ class PpmpController extends Controller
                 $programNameStr = $ppmp->program_name;
             }
 
-            // Resolve account_code and account_code_id
             if (array_key_exists('account_code', $validated) || array_key_exists('account_code_id', $validated)) {
                 $rawCodeStr = array_key_exists('account_code', $validated) && $validated['account_code'] !== null
                     ? trim((string)$validated['account_code'])
@@ -753,7 +875,7 @@ class PpmpController extends Controller
                         }
                     }
                 } else {
-                    // Explicitly removed / cleared
+
                     $accountCodeId = null;
                     $accountCodeStr = null;
                 }
@@ -782,13 +904,12 @@ class PpmpController extends Controller
                 'warranty_and_other_terms' => array_key_exists('warranty_and_other_terms', $validated) ? $validated['warranty_and_other_terms'] : $ppmp->warranty_and_other_terms,
             ]);
 
-            // Compare old items before deleting to track detailed changes
             $oldItems = $ppmp->items()->get();
             $oldItemsMap = $oldItems->keyBy('item_no');
             $changeLogsToCreate = [];
 
-            // Check header changes
             $headerFields = [
+                'tracking_number' => 'Tracker Number',
                 'title' => 'Project Title',
                 'program_name' => 'Program Name',
                 'account_code' => 'Account Code',
@@ -805,7 +926,7 @@ class PpmpController extends Controller
             ];
             foreach ($headerFields as $field => $label) {
                 $oldVal = trim((string) ($oldValues[$field] ?? ''));
-                $newVal = trim((string) ($validated[$field] ?? ($field === 'source_of_fund' ? $sourceOfFund : ($field === 'fiscal_year' ? $cleanFiscalYear : ''))));
+                $newVal = trim((string) ($field === 'tracking_number' ? $trackingNumber : ($validated[$field] ?? ($field === 'source_of_fund' ? $sourceOfFund : ($field === 'fiscal_year' ? $cleanFiscalYear : '')))));
                 if ($oldVal !== $newVal && ($oldVal !== '' || $newVal !== '')) {
                     $changeLogsToCreate[] = [
                         'ppmp_id' => $ppmp->id,
@@ -819,7 +940,6 @@ class PpmpController extends Controller
                 }
             }
 
-            // Track combined Category / Program Name & Account Code if either changed
             $oldProgCombined = trim(($oldValues['program_name'] ?? '') . ' • ' . ($oldValues['account_code'] ?? ''));
             $newProgCombined = trim(($programNameStr ?? '') . ' • ' . ($accountCodeStr ?? ''));
             if ($oldProgCombined !== $newProgCombined && $oldProgCombined !== '•' && $newProgCombined !== '•') {
@@ -834,7 +954,6 @@ class PpmpController extends Controller
                 ];
             }
 
-            // Replace items safely
             $ppmp->items()->delete();
 
             $total = 0;
@@ -865,6 +984,8 @@ class PpmpController extends Controller
                     'ppmp_id' => $ppmp->id,
                     'item_no' => $itemNo,
                     'description' => $itemData['description'],
+                    'is_retention' => (bool) ($itemData['is_retention'] ?? false),
+                    'retention_percentage' => isset($itemData['retention_percentage']) && $itemData['retention_percentage'] !== '' ? (float) $itemData['retention_percentage'] : null,
                     'project_type' => $itemData['project_type'] ?? 'Goods',
                     'quantity_size' => $itemData['quantity_size'] ?? '',
                     'procurement_mode' => $itemData['procurement_mode'] ?? 'Public Bidding',
@@ -879,10 +1000,8 @@ class PpmpController extends Controller
                     'remarks' => $itemData['remarks'] ?? null,
                 ]);
 
-                // Maintain cell comment associations across item updates / edits
                 $ppmp->cellComments()->where('item_no', $itemNo)->update(['item_id' => $newItem->id]);
 
-                // Track item-level changes
                 $oldItem = $oldItemsMap->get($itemNo);
                 $newDesc = trim((string) ($itemData['description'] ?? ''));
                 $newMode = trim((string) ($itemData['procurement_mode'] ?? ''));
@@ -951,7 +1070,6 @@ class PpmpController extends Controller
                 }
             }
 
-            // Check if any old items were removed
             $newCount = count($validated['items']);
             foreach ($oldItems as $oldItem) {
                 if ($oldItem->item_no > $newCount) {
@@ -967,7 +1085,6 @@ class PpmpController extends Controller
                 }
             }
 
-            // Total budget change
             $oldTotal = (float) ($oldValues['total_budget'] ?? 0);
             if (abs($oldTotal - $total) > 0.009) {
                 $changeLogsToCreate[] = [
@@ -997,7 +1114,6 @@ class PpmpController extends Controller
 
             $ppmp->update(['total_budget' => $total]);
 
-            // If amended/supplemental and changes were made, invalidate APP so OPPMO is required to regenerate
             $isAmendedOrSupplemental = !empty($ppmp->parent_id) || in_array($ppmp->amendment_type, ['AMENDMENT', 'SUPPLEMENTAL'], true);
             if ($isAmendedOrSupplemental && count($changeLogsToCreate) > 0) {
                 $existingApp = $ppmp->app_data;
@@ -1023,28 +1139,31 @@ class PpmpController extends Controller
         ]);
     }
 
-    /**
-     * Store customized PPMP List of Attachment data
-     */
     public function saveAttachmentList(Request $request, string $uuid): JsonResponse
     {
         $user = $request->user();
         $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
 
-        // Check edit permission: Creator when in draft/head approved/returned, OR active reviewer in their stage, OR admin
         $isCreatorEditable = ($ppmp->created_by === $user->id) && in_array($ppmp->status, [
             'DRAFT',
             'HEAD_PENDING',
             'HEAD_APPROVED',
             'HEAD_RETURNED',
             'BUDGET_OFFICER_RETURNED',
+            'BUDGET_HEAD_RETURNED',
             'PACCO_RETURNED',
+            'PACCO_HEAD_RETURNED',
             'OPPMO_RETURNED',
+            'OPPMO_HEAD_RETURNED',
             'TWG_RETURNED'
         ]);
 
+        $headStage = ReviewHeadResolver::stageForStatus($ppmp->status);
+        $isReviewOfficeHead = $user->isHead() && $headStage && (int) $user->office_id === ReviewHeadResolver::resolveOfficeIdForStage($headStage, $ppmp);
+
         $isReviewerEditable = (
             ($user->isHead() && in_array($ppmp->status, ['HEAD_PENDING', 'HEAD_APPROVED']) && $user->office_id === $ppmp->office_id) ||
+            $isReviewOfficeHead ||
             ($user->isBudgetOfficer() && $ppmp->status === 'BUDGET_OFFICER_REVIEW' && (!$ppmp->budget_reviewer_id || $ppmp->budget_reviewer_id === $user->id)) ||
             ($user->isPacco() && $ppmp->status === 'PACCO_REVIEW' && (!$ppmp->budget_reviewer_id || $ppmp->budget_reviewer_id === $user->id)) ||
             ($user->isOppmo() && $ppmp->status === 'OPPMO_REVIEW' && (!$ppmp->oppmo_reviewer_id || $ppmp->oppmo_reviewer_id === $user->id)) ||
@@ -1057,7 +1176,6 @@ class PpmpController extends Controller
             ], 403);
         }
 
-        // Enforce Amendment Scope restriction: if scope was PPMP_APP only, List of Attachment is locked
         if ($ppmp->amendment_scope === 'PPMP_APP' && !$user->isAdmin()) {
             return response()->json([
                 'message' => "Detailed Specifications cannot be modified for this revision. The approved request scope is restricted to PPMP/APP procurement items only."
@@ -1089,7 +1207,6 @@ class PpmpController extends Controller
             return response()->json(['message' => 'The rows or attachment_lists field is required.'], 422);
         }
 
-        // Validate that Total Cost of attachment items does not exceed the Allocated Budget from the PPMP data
         $ppmpBudget = (float) ($ppmp->total_budget ?? 0);
         $procurementItems = $ppmp->items()->whereNotNull('description')->where('description', '!=', '')->get();
         $itemsByIdBudget = [];
@@ -1130,7 +1247,6 @@ class PpmpController extends Controller
             }
         }
 
-        // Merge with existing attachment_list_data if already present, preserving keys
         $existingData = is_array($ppmp->attachment_list_data) ? $ppmp->attachment_list_data : [];
         if (!empty($validated['attachment_lists'])) {
             $mergedLists = $existingData['attachment_lists'] ?? [];
@@ -1140,7 +1256,6 @@ class PpmpController extends Controller
             $validated['attachment_lists'] = $mergedLists;
         }
 
-        // Ensure Approved By (TWG) is fetched from the approving TWG signature if already approved, and never defaults to Governor
         $twgSig = $ppmp->signatures()->where('role', 'twg')->first();
         if ($twgSig) {
             $validated['approved_by_name'] = $twgSig->signer_name;
@@ -1152,10 +1267,8 @@ class PpmpController extends Controller
             }
         }
 
-        // Track changes to ppmp_change_logs for PPMP List of Attachment
         $changeLogsToCreate = [];
 
-        // Check header terms
         $attHeaderFields = [
             'warranty_and_other_terms' => ['key' => 'other_terms', 'label' => 'Attachment List • Other Terms & Delivery Info'],
             'additional_condition' => ['key' => 'additional_condition', 'label' => 'Attachment List • Additional Condition'],
@@ -1183,7 +1296,6 @@ class PpmpController extends Controller
             }
         }
 
-        // Check attachment rows diff
         $existingLists = $existingData['attachment_lists'] ?? [];
         $incomingLists = $validated['attachment_lists'] ?? [];
         if (!empty($validated['rows']) && empty($incomingLists)) {
@@ -1286,9 +1398,6 @@ class PpmpController extends Controller
         ]);
     }
 
-    /**
-     * Save / Generate APP (Annual Procurement Plan) data for PPMP
-     */
     public function saveAppData(Request $request, string $uuid): JsonResponse
     {
         $user = $request->user();
@@ -1310,7 +1419,7 @@ class PpmpController extends Controller
 
         $validated = $request->validate([
             'fiscal_year' => 'nullable|string',
-            'plan_version_type' => 'nullable|string', // INDICATIVE, FINAL, UPDATED
+            'plan_version_type' => 'nullable|string',
             'updated_version_no' => 'nullable|string',
             'prepared_by_name' => 'nullable|string',
             'prepared_by_position' => 'nullable|string',
@@ -1362,6 +1471,521 @@ class PpmpController extends Controller
         return response()->json([
             'message' => 'Annual Procurement Plan (APP) data saved successfully.',
             'ppmp' => $ppmp->fresh(['office.head', 'creator.office.head', 'items', 'signatures.user', 'attachments', 'routes', 'changeLogs.user']),
+        ]);
+    }
+
+    public function checkTrackerAvailability(Request $request): JsonResponse
+    {
+        $raw = (string) $request->query('tracking_number', '');
+        $normalized = Ppmp::normalizeTrackingNumber($raw);
+
+        if ($normalized === '') {
+            return response()->json([
+                'available' => false,
+                'exists' => false,
+                'tracking_number' => '',
+                'message' => 'Please enter a valid Tracker No.',
+            ]);
+        }
+
+        $excludeIds = [];
+        $excludeUuid = $request->query('exclude_uuid');
+        if (!empty($excludeUuid)) {
+            $currentPpmp = Ppmp::where('uuid', $excludeUuid)->first();
+            if ($currentPpmp) {
+                $excludeIds = $currentPpmp->getFamilyIds();
+            }
+        }
+
+        $existingQuery = Ppmp::with('office')->whereRaw('UPPER(TRIM(tracking_number)) = ?', [$normalized]);
+        if (!empty($excludeIds)) {
+            $existingQuery->whereNotIn('id', $excludeIds);
+        }
+
+        $existing = $existingQuery->first();
+        if ($existing) {
+            $officeLabel = $existing->office?->code ?: ($existing->office?->name ?: 'another record');
+            return response()->json([
+                'available' => false,
+                'exists' => true,
+                'tracking_number' => $normalized,
+                'existing_ppmp' => [
+                    'uuid' => $existing->uuid,
+                    'title' => $existing->title,
+                    'office' => $officeLabel,
+                    'fiscal_year' => $existing->fiscal_year,
+                ],
+                'message' => "Tracker No. \"{$normalized}\" already exists ({$existing->title}). Duplicate tracker numbers are not allowed.",
+            ]);
+        }
+
+        return response()->json([
+            'available' => true,
+            'exists' => false,
+            'tracking_number' => $normalized,
+            'message' => "Tracker No. \"{$normalized}\" is available.",
+        ]);
+    }
+
+    public function nextTrackingNumber(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $officeCode = null;
+        $implementingUnit = trim((string) $request->query('implementing_unit', ''));
+        if ($implementingUnit !== '' && preg_match('/^\(([^)]+)\)/', $implementingUnit, $m)) {
+            $candidate = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $m[1]));
+            if ($candidate !== '' && $candidate !== 'NA') {
+                $officeCode = $candidate;
+            }
+        }
+        if (!$officeCode && $user?->office_id) {
+            $office = \App\Models\Office::find($user->office_id);
+            if ($office && !empty($office->code) && strtoupper($office->code) !== 'NA') {
+                $officeCode = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $office->code));
+            }
+        }
+        if (!$officeCode) {
+            $officeCode = 'PPMO';
+        }
+
+        $rawType = strtolower(trim((string) $request->query('project_type', 'Goods')));
+        if (str_contains($rawType, 'infra')) {
+            $typeCode = 'INFRA';
+        } elseif (str_contains($rawType, 'consult')) {
+            $typeCode = 'CONSULTING';
+        } else {
+            $typeCode = 'GOODS';
+        }
+
+        $rawYear = trim((string) $request->query('fiscal_year', (string) date('Y')));
+        $year = preg_match('/\b(20\d{2}|\d{4})\b/', $rawYear, $m) ? $m[1] : preg_replace('/^CY\s*/i', '', $rawYear);
+        if (empty($year)) {
+            $year = (string) date('Y');
+        }
+
+        $trackerPrefix = "{$officeCode}{$typeCode}-{$year}-";
+        $existingTrackers = Ppmp::where('tracking_number', 'like', "{$trackerPrefix}%")
+            ->pluck('tracking_number');
+
+        $maxSeq = 0;
+        $prefixRegex = '/^' . preg_quote($trackerPrefix, '/') . '(\d+)/';
+        foreach ($existingTrackers as $tn) {
+            if (preg_match($prefixRegex, (string) $tn, $matches)) {
+                $num = (int) $matches[1];
+                if ($num > $maxSeq) {
+                    $maxSeq = $num;
+                }
+            }
+        }
+
+        $seq = $maxSeq + 1;
+        $candidateTracker = $trackerPrefix . str_pad((string) $seq, 6, '0', STR_PAD_LEFT);
+        while (Ppmp::isTrackingNumberTaken($candidateTracker)) {
+            $seq++;
+            $candidateTracker = $trackerPrefix . str_pad((string) $seq, 6, '0', STR_PAD_LEFT);
+        }
+
+        return response()->json([
+            'tracking_number' => $candidateTracker,
+        ]);
+    }
+
+    public function updateTrackingNumber(Request $request, string $uuid): JsonResponse
+    {
+        $user = $request->user();
+        $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
+
+        $isCreatorEditable = ($ppmp->created_by === $user->id) && in_array($ppmp->status, [
+            'DRAFT',
+            'HEAD_PENDING',
+            'HEAD_APPROVED',
+            'HEAD_RETURNED',
+            'BUDGET_OFFICER_RETURNED',
+            'BUDGET_HEAD_RETURNED',
+            'PACCO_RETURNED',
+            'PACCO_HEAD_RETURNED',
+            'OPPMO_RETURNED',
+            'OPPMO_HEAD_RETURNED',
+            'TWG_RETURNED',
+        ], true);
+
+        $headStage = ReviewHeadResolver::stageForStatus($ppmp->status);
+        $isReviewOfficeHead = $user->isHead() && $headStage && (int) $user->office_id === ReviewHeadResolver::resolveOfficeIdForStage($headStage, $ppmp);
+
+        $isReviewerEditable = (
+            ($user->isHead() && in_array($ppmp->status, ['HEAD_PENDING', 'HEAD_APPROVED'], true) && $user->office_id === $ppmp->office_id) ||
+            $isReviewOfficeHead ||
+            ($user->isBudgetOfficer() && $ppmp->status === 'BUDGET_OFFICER_REVIEW' && (!$ppmp->budget_reviewer_id || $ppmp->budget_reviewer_id === $user->id)) ||
+            ($user->isPacco() && $ppmp->status === 'PACCO_REVIEW' && (!$ppmp->budget_reviewer_id || $ppmp->budget_reviewer_id === $user->id)) ||
+            ($user->isOppmo() && $ppmp->status === 'OPPMO_REVIEW' && (!$ppmp->oppmo_reviewer_id || $ppmp->oppmo_reviewer_id === $user->id)) ||
+            ($user->isTwg() && $ppmp->status === 'TWG_REVIEW' && (!$ppmp->twg_reviewer_id || $ppmp->twg_reviewer_id === $user->id))
+        );
+
+        if (!$isCreatorEditable && !$isReviewerEditable && !$user->isAdmin()) {
+            return response()->json([
+                'message' => "Tracker No. cannot be modified by you in its current status: {$ppmp->status}.",
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'tracking_number' => 'required|string|max:100',
+        ]);
+
+        $newTracker = Ppmp::normalizeTrackingNumber($validated['tracking_number']);
+        if ($newTracker === '') {
+            return response()->json([
+                'message' => 'Tracker No. cannot be empty.',
+                'errors' => ['tracking_number' => ['Tracker No. cannot be empty.']],
+            ], 422);
+        }
+
+        $familyIds = $ppmp->getFamilyIds();
+        if (Ppmp::isTrackingNumberTaken($newTracker, $familyIds)) {
+            return response()->json([
+                'message' => "Tracker No. \"{$newTracker}\" already exists. Duplicate tracker numbers are not allowed.",
+                'errors' => [
+                    'tracking_number' => ["Tracker No. \"{$newTracker}\" already exists. Duplicate tracker numbers are not allowed."],
+                ],
+            ], 422);
+        }
+
+        $oldTracker = (string) ($ppmp->tracking_number ?? '');
+
+        DB::transaction(function () use ($ppmp, $familyIds, $oldTracker, $newTracker, $user) {
+            $ppmp->update(['tracking_number' => $newTracker]);
+
+            $otherFamilyIds = array_values(array_diff($familyIds, [$ppmp->id]));
+            if (!empty($otherFamilyIds)) {
+                Ppmp::whereIn('id', $otherFamilyIds)->update(['tracking_number' => $newTracker]);
+            }
+
+            if ($oldTracker !== $newTracker) {
+                \App\Models\MonitoringProject::whereIn('ppmp_id', $familyIds)->update([
+                    'pr_number' => $newTracker,
+                ]);
+                \App\Models\PurchaseRequest::whereIn('ppmp_id', $familyIds)->update([
+                    'tracker_id' => $newTracker,
+                ]);
+                \App\Models\MonitoringProject::flushCache();
+
+                \App\Models\PpmpChangeLog::create([
+                    'ppmp_id' => $ppmp->id,
+                    'user_id' => $user->id,
+                    'role' => $user->role,
+                    'field_name' => 'Tracker Number',
+                    'old_value' => $oldTracker !== '' ? $oldTracker : '(empty)',
+                    'new_value' => $newTracker,
+                    'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+                ]);
+
+                AuditLog::log(
+                    'PPMP_TRACKER_UPDATED',
+                    'ppmps',
+                    $ppmp->id,
+                    ['tracking_number' => $oldTracker],
+                    ['tracking_number' => $newTracker],
+                    $user->id
+                );
+            }
+        });
+
+        return response()->json([
+            'message' => "Tracker No. updated to {$newTracker}.",
+            'tracking_number' => $newTracker,
+            'ppmp' => $ppmp->fresh([
+                'office.head',
+                'creator.office.head',
+                'items',
+                'signatures.user',
+                'attachments',
+                'marketScoping.activities',
+                'marketScoping.results',
+                'routes',
+                'changeLogs.user',
+                'monitoringProjects',
+            ]),
+        ]);
+    }
+
+    public function saveMarketScoping(Request $request, string $uuid): JsonResponse
+    {
+        $user = $request->user();
+        $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
+
+        $isCreatorEditable = ($ppmp->created_by === $user->id) && in_array($ppmp->status, [
+            'DRAFT',
+            'HEAD_PENDING',
+            'HEAD_APPROVED',
+            'HEAD_RETURNED',
+            'BUDGET_OFFICER_RETURNED',
+            'BUDGET_HEAD_RETURNED',
+            'PACCO_RETURNED',
+            'PACCO_HEAD_RETURNED',
+            'OPPMO_RETURNED',
+            'OPPMO_HEAD_RETURNED',
+            'TWG_RETURNED',
+        ], true);
+
+        $headStage = ReviewHeadResolver::stageForStatus($ppmp->status);
+        $isReviewOfficeHead = $user->isHead() && $headStage && (int) $user->office_id === ReviewHeadResolver::resolveOfficeIdForStage($headStage, $ppmp);
+
+        $isReviewerEditable = (
+            ($user->isHead() && in_array($ppmp->status, ['HEAD_PENDING', 'HEAD_APPROVED'], true) && $user->office_id === $ppmp->office_id) ||
+            $isReviewOfficeHead ||
+            ($user->isBudgetOfficer() && $ppmp->status === 'BUDGET_OFFICER_REVIEW' && (!$ppmp->budget_reviewer_id || $ppmp->budget_reviewer_id === $user->id)) ||
+            ($user->isPacco() && $ppmp->status === 'PACCO_REVIEW' && (!$ppmp->budget_reviewer_id || $ppmp->budget_reviewer_id === $user->id)) ||
+            ($user->isOppmo() && $ppmp->status === 'OPPMO_REVIEW' && (!$ppmp->oppmo_reviewer_id || $ppmp->oppmo_reviewer_id === $user->id)) ||
+            ($user->isTwg() && $ppmp->status === 'TWG_REVIEW' && (!$ppmp->twg_reviewer_id || $ppmp->twg_reviewer_id === $user->id))
+        );
+
+        if (!$isCreatorEditable && !$isReviewerEditable && !$user->isAdmin()) {
+            return response()->json([
+                'message' => "Market Scoping Checklist cannot be modified by you in its current status: {$ppmp->status}.",
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'procuring_entity' => 'nullable|string|max:255',
+            'implementing_unit' => 'nullable|string|max:255',
+            'representative_name_designation' => 'nullable|string|max:255',
+            'project_name' => 'nullable|string|max:500',
+            'estimated_budget' => 'nullable|numeric|min:0',
+            'scoping_period_from' => 'nullable|string|max:25',
+            'scoping_period_to' => 'nullable|string|max:25',
+            'expected_delivery_date' => 'nullable|string|max:100',
+            'prepared_by_name' => 'nullable|string|max:255',
+            'prepared_by_position' => 'nullable|string|max:255',
+            'prepared_by_date' => 'nullable|string|max:50',
+            'approved_by_name' => 'nullable|string|max:255',
+            'approved_by_position' => 'nullable|string|max:255',
+            'approved_by_date' => 'nullable|string|max:50',
+            'activities' => 'nullable|array',
+            'activities.*.activity_code' => 'required|string|max:60',
+            'activities.*.is_checked' => 'nullable|boolean',
+            'activities.*.custom_activity_text' => 'nullable|string|max:2000',
+            'activities.*.documentation_notes' => 'nullable|string|max:2000',
+            'activities.*.sort_order' => 'nullable|integer|min:0',
+            'results' => 'nullable|array',
+            'results.*.parameter_code' => 'required|string|max:60',
+            'results.*.considered' => 'nullable|string|in:Yes,No,Not Applicable,',
+            'results.*.recommendations' => 'nullable|string|max:4000',
+            'results.*.sort_order' => 'nullable|integer|min:0',
+        ]);
+
+        $scoping = DB::transaction(function () use ($ppmp, $user, $validated) {
+            $existing = \App\Models\PpmpMarketScoping::where('ppmp_id', $ppmp->id)->first();
+            $isNew = !$existing;
+
+            $scoping = \App\Models\PpmpMarketScoping::updateOrCreate(
+                ['ppmp_id' => $ppmp->id],
+                [
+                    'procuring_entity' => $validated['procuring_entity'] ?? 'PROVINCIAL GOVERNMENT OF DAVAO DEL SUR',
+                    'implementing_unit' => $validated['implementing_unit'] ?? ($ppmp->implementing_unit ?: $ppmp->office?->name),
+                    'representative_name_designation' => $validated['representative_name_designation'] ?? null,
+                    'project_name' => $validated['project_name'] ?? $ppmp->title,
+                    'estimated_budget' => array_key_exists('estimated_budget', $validated) && $validated['estimated_budget'] !== null
+                        ? (float) $validated['estimated_budget']
+                        : (float) ($ppmp->total_budget ?? 0),
+                    'scoping_period_from' => $validated['scoping_period_from'] ?? null,
+                    'scoping_period_to' => $validated['scoping_period_to'] ?? null,
+                    'expected_delivery_date' => $validated['expected_delivery_date'] ?? null,
+                    'prepared_by_name' => $validated['prepared_by_name'] ?? null,
+                    'prepared_by_position' => $validated['prepared_by_position'] ?? null,
+                    'prepared_by_date' => $validated['prepared_by_date'] ?? null,
+                    'approved_by_name' => $validated['approved_by_name'] ?? null,
+                    'approved_by_position' => $validated['approved_by_position'] ?? null,
+                    'approved_by_date' => $validated['approved_by_date'] ?? null,
+                    'created_by' => $existing?->created_by ?? $user->id,
+                    'updated_by' => $user->id,
+                ]
+            );
+
+            if (isset($validated['activities']) && is_array($validated['activities'])) {
+                foreach ($validated['activities'] as $idx => $act) {
+                    \App\Models\PpmpMarketScopingActivity::updateOrCreate(
+                        [
+                            'market_scoping_id' => $scoping->id,
+                            'activity_code' => $act['activity_code'],
+                        ],
+                        [
+                            'is_checked' => !empty($act['is_checked']),
+                            'custom_activity_text' => $act['custom_activity_text'] ?? null,
+                            'documentation_notes' => $act['documentation_notes'] ?? null,
+                            'sort_order' => $act['sort_order'] ?? ($idx + 1),
+                        ]
+                    );
+                }
+            }
+
+            if (isset($validated['results']) && is_array($validated['results'])) {
+                foreach ($validated['results'] as $idx => $res) {
+                    \App\Models\PpmpMarketScopingResult::updateOrCreate(
+                        [
+                            'market_scoping_id' => $scoping->id,
+                            'parameter_code' => $res['parameter_code'],
+                        ],
+                        [
+                            'considered' => ($res['considered'] ?? '') !== '' ? $res['considered'] : null,
+                            'recommendations' => $res['recommendations'] ?? null,
+                            'sort_order' => $res['sort_order'] ?? ($idx + 1),
+                        ]
+                    );
+                }
+            }
+
+            \App\Models\PpmpChangeLog::create([
+                'ppmp_id' => $ppmp->id,
+                'user_id' => $user->id,
+                'role' => $user->role,
+                'field_name' => 'Market Scoping Checklist',
+                'old_value' => $isNew ? '(not created)' : 'Updated',
+                'new_value' => $isNew ? 'Market Scoping Checklist Created' : 'Market Scoping Checklist Saved',
+                'action' => $user->isEndUser() ? 'end_user_edit' : 'reviewer_edit',
+            ]);
+
+            AuditLog::log(
+                'MARKET_SCOPING_SAVED',
+                'ppmp_market_scopings',
+                $scoping->id,
+                null,
+                ['ppmp_id' => $ppmp->id, 'project_name' => $scoping->project_name],
+                $user->id
+            );
+
+            return $scoping->fresh(['activities', 'results']);
+        });
+
+        $freshPpmp = $ppmp->fresh([
+            'office.head',
+            'creator.office.head',
+            'items',
+            'signatures.user',
+            'attachments',
+            'marketScoping.activities',
+            'marketScoping.results',
+            'routes',
+            'changeLogs.user',
+            'cellComments.reviewer',
+            'cellComments.compliedByUser',
+            'monitoringProjects',
+        ]);
+
+        return response()->json([
+            'message' => 'Market Scoping Checklist saved successfully.',
+            'market_scoping' => $scoping,
+            'ppmp' => $freshPpmp,
+        ]);
+    }
+
+    public function readyToPrintList(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user || !$user->isAdmin()) {
+            return response()->json(['message' => 'Unauthorized. Admin or Super Admin access required.'], 403);
+        }
+
+        $desiredColumns = [
+            'id',
+            'uuid',
+            'tracking_number',
+            'ppmp_number',
+            'title',
+            'office_id',
+            'implementing_unit',
+            'fiscal_year',
+            'plan_type',
+            'account_code',
+            'program_name',
+            'total_budget',
+            'status',
+            'oppmo_approved_at',
+            'head_approved_at',
+            'created_at',
+            'updated_at',
+        ];
+        $existingColumns = \Illuminate\Support\Facades\Schema::getColumnListing('ppmps');
+        $selectColumns = array_values(array_intersect($desiredColumns, $existingColumns));
+        if (empty($selectColumns)) {
+            $selectColumns = ['*'];
+        }
+
+        $ppmps = Ppmp::with([
+            'office:id,name,code',
+            'items:id,ppmp_id,project_type,source_of_fund',
+        ])
+            ->where('status', 'READY_TO_PRINT')
+            ->orderByDesc('updated_at')
+            ->get($selectColumns);
+
+        $offices = Office::orderBy('name')->get(['id', 'name', 'code']);
+
+        return response()->json([
+            'ppmps' => $ppmps,
+            'offices' => $offices,
+            'signature_settings' => \App\Models\SystemSetting::getSignatureSettings(),
+        ]);
+    }
+
+    public function readyToPrintBatchDetails(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user || !$user->isAdmin()) {
+            return response()->json(['message' => 'Unauthorized. Admin or Super Admin access required.'], 403);
+        }
+
+        $validated = $request->validate([
+            'uuids' => 'required|array|min:1|max:150',
+            'uuids.*' => 'required|string',
+        ]);
+
+        $signatureSettings = \App\Models\SystemSetting::getSignatureSettings();
+        $activeSignatories = \App\Models\PpmpSignatory::getActiveSignatories();
+        $activeBudget = $activeSignatories->firstWhere('signatory_type', 'budget_requirement');
+        $activeBac = $activeSignatories->firstWhere('signatory_type', 'bac_secretariat');
+        $activeGovernor = $activeSignatories->firstWhere('signatory_type', 'approved_by');
+
+        $defaultSignatories = [
+            'budget_requirement' => $activeBudget ? [
+                'name' => $activeBudget->name,
+                'position' => $activeBudget->position,
+            ] : null,
+            'bac_secretariat' => $activeBac ? [
+                'name' => $activeBac->name,
+                'position' => $activeBac->position,
+            ] : null,
+            'approved_by' => $activeGovernor ? [
+                'name' => $activeGovernor->name,
+                'position' => $activeGovernor->position,
+            ] : null,
+        ];
+
+        $ppmps = Ppmp::with([
+            'office.head',
+            'creator.office.head',
+            'items.fundSource',
+            'fundSourceRef',
+            'signatures.user',
+            'parent.signatures.user',
+            'parent.office.head',
+            'accountCodeRef',
+            'programNameRef',
+        ])
+            ->where('status', 'READY_TO_PRINT')
+            ->whereIn('uuid', $validated['uuids'])
+            ->get()
+            ->map(function (Ppmp $ppmp) use ($signatureSettings, $defaultSignatories) {
+                $arr = $ppmp->toArray();
+                $arr['signature_settings'] = $signatureSettings;
+                $arr['default_signatories'] = $defaultSignatories;
+                return $arr;
+            })
+            ->keyBy('uuid');
+
+        return response()->json([
+            'ppmps_by_uuid' => $ppmps,
+            'signature_settings' => $signatureSettings,
+            'default_signatories' => $defaultSignatories,
         ]);
     }
 }

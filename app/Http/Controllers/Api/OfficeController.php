@@ -11,18 +11,13 @@ use Illuminate\Support\Facades\DB;
 
 class OfficeController extends Controller
 {
-    /**
-     * List all offices
-     */
+
     public function index(): JsonResponse
     {
         $offices = Office::with(['head:id,name,designation'])->orderBy('name')->get();
         return response()->json($offices);
     }
 
-    /**
-     * Add a single office (Admin only)
-     */
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -54,9 +49,6 @@ class OfficeController extends Controller
         ], 201);
     }
 
-    /**
-     * Update an office (Admin only)
-     */
     public function update(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -92,9 +84,6 @@ class OfficeController extends Controller
         ]);
     }
 
-    /**
-     * Delete an office (Admin only)
-     */
     public function destroy(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -120,10 +109,6 @@ class OfficeController extends Controller
         ]);
     }
 
-    /**
-     * Batch import offices from CSV or Excel (Admin only)
-     * Matches columns: abbreviation, office_name, head_name, designation, responsibility_number
-     */
     public function import(Request $request): JsonResponse
     {
         $user = $request->user();

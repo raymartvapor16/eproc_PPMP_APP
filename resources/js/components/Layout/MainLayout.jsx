@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { notificationService, authService, ppmpService } from '../../services/api';
+import { useSignatureSettings } from '../../utils/signatureController';
 import { isAwaitingReceive, getStageReceiptInfo } from '../../utils/workflowHelpers';
 import { showConfirm } from '../../utils/modalAlert';
 import {
@@ -42,6 +43,11 @@ import {
     Activity,
     Camera,
     Upload,
+    BarChart3,
+    ShieldCheck,
+    Calendar,
+    FileText,
+    Lock,
 } from 'lucide-react';
 import { canUserAccessSystem } from '../UI/UnauthorizedSystemAccessView';
 import { SignaturePadModal } from '../UI/SignaturePadModal';
@@ -49,13 +55,14 @@ import { UserAvatar } from '../UI/UserAvatar';
 import { SystemSwitcherDropdown } from './SystemSwitcherDropdown';
 
 export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout, onUserUpdate, children }) => {
+    const { isPnpkiEnabled } = useSignatureSettings();
     const [unreadCount, setUnreadCount] = useState(0);
     const [notifications, setNotifications] = useState([]);
     const [showNotifMenu, setShowNotifMenu] = useState(false);
     const [showAllNotifsDrawer, setShowAllNotifsDrawer] = useState(false);
     const [allNotifications, setAllNotifications] = useState([]);
     const [loadingAllNotifs, setLoadingAllNotifs] = useState(false);
-    const [notifFilter, setNotifFilter] = useState('all'); // 'all', 'unread', 'approved', 'review', 'returned'
+    const [notifFilter, setNotifFilter] = useState('all');
     const [notifSearch, setNotifSearch] = useState('');
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const notifDropdownRef = React.useRef(null);
@@ -73,10 +80,9 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
             const newUnreadCount = res.data.unread_count || 0;
             const latestId = newNotifs.length > 0 ? newNotifs[0].id : null;
 
-            // Detect if notifications or unread count changed after initial load
             const isInitial = prevLatestNotifIdRef.current === null && prevUnreadCountRef.current === null;
             const hasChanged = !isInitial && (
-                latestId !== prevLatestNotifIdRef.current || 
+                latestId !== prevLatestNotifIdRef.current ||
                 newUnreadCount !== prevUnreadCountRef.current
             );
 
@@ -86,17 +92,15 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
             setNotifications(newNotifs);
             setUnreadCount(newUnreadCount);
 
-            // If "All Notifications" drawer is open, keep it in sync
             if (showAllNotifsDrawer) {
                 try {
                     const allRes = await notificationService.getAll({ all: 1 });
                     setAllNotifications(allRes.data.notifications || []);
                 } catch (err) {
-                    // ignore
+
                 }
             }
 
-            // If notifications have updated, trigger automatic data reload for active views
             if (hasChanged) {
                 window.dispatchEvent(new CustomEvent('app:data_reload', {
                     detail: {
@@ -149,7 +153,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
         };
     }, [showAllNotifsDrawer]);
 
-    // Lock background page scroll and support Escape key when All Notifications drawer is open
     useEffect(() => {
         if (!showAllNotifsDrawer) return;
         const originalOverflow = document.body.style.overflow;
@@ -168,7 +171,18 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
         };
     }, [showAllNotifsDrawer]);
 
-    // Profile Modal & Edit States
+    const getInitialProfileSigMeta = (u) => {
+        const pnpki = u?.pnpki_signature || u?.pnpkiSignature || null;
+        return {
+            signatureType: pnpki?.signature_type || 'optional',
+            expirationDate: pnpki?.expiration_date || '',
+            pnpkiProofFile: null,
+            existingProofName: pnpki?.proof_original_name || '',
+            existingProofUrl: pnpki?.proof_pdf_url || '',
+            captureMethod: pnpki?.capture_method || 'drawn',
+        };
+    };
+
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [isEditingProfile, setIsEditingProfile] = useState(false);
     const [profileForm, setProfileForm] = useState({
@@ -186,15 +200,21 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
     const [signatureTimestamp, setSignatureTimestamp] = useState(Date.now());
     const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
     const [profileSigDataUrl, setProfileSigDataUrl] = useState(null);
+    const [profileSigMeta, setProfileSigMeta] = useState(() => getInitialProfileSigMeta(user));
+    const [profileSigMetaChanged, setProfileSigMetaChanged] = useState(false);
 
-    // Profile Photo State
     const [selectedPhotoFile, setSelectedPhotoFile] = useState(null);
     const [photoPreviewUrl, setPhotoPreviewUrl] = useState(null);
     const [removePhotoRequested, setRemovePhotoRequested] = useState(false);
     const [photoTimestamp, setPhotoTimestamp] = useState(Date.now());
     const photoFileInputRef = React.useRef(null);
 
-    // When modal opens, initialize form with current user
+    useEffect(() => {
+        if (!profileSigMetaChanged) {
+            setProfileSigMeta(getInitialProfileSigMeta(user));
+        }
+    }, [user, profileSigMetaChanged]);
+
     const handleOpenProfile = () => {
         setProfileForm({
             name: user?.name || '',
@@ -202,6 +222,8 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
             address: user?.address || '',
             designation: user?.designation || '',
         });
+        setProfileSigMeta(getInitialProfileSigMeta(user));
+        setProfileSigMetaChanged(false);
         setIsEditingProfile(false);
         setShowSignaturePad(false);
         setProfileError('');
@@ -213,20 +235,27 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
         setPhotoPreviewUrl(null);
         setRemovePhotoRequested(false);
         setIsProfileModalOpen(true);
+
+        authService.getProfile()
+            .then((res) => {
+                if (res?.data?.user) {
+                    if (onUserUpdate) onUserUpdate(res.data.user);
+                    setProfileSigMeta(getInitialProfileSigMeta(res.data.user));
+                }
+            })
+            .catch(() => {});
     };
 
     const handlePhotoFileChange = (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        // Security validation: JPEG and PNG only
         const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
         if (!validTypes.includes(file.type.toLowerCase())) {
             setProfileError('Invalid format: Only JPEG and PNG images are allowed.');
             return;
         }
 
-        // Max 2MB limit
         if (file.size > 2 * 1024 * 1024) {
             setProfileError('File size exceeds the 2MB limit. Please upload a smaller image.');
             return;
@@ -250,13 +279,27 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
         if (e) e.stopPropagation();
         setHasProfileSignatureDrawn(false);
         setProfileSigDataUrl(null);
+        setProfileSigMeta(getInitialProfileSigMeta(user));
+        setProfileSigMetaChanged(false);
     };
 
-    const handleApplyProfileModalSignature = (dataUrl) => {
+    const handleApplyProfileModalSignature = (dataUrl, meta = null) => {
         if (dataUrl) {
             setProfileSigDataUrl(dataUrl);
             setHasProfileSignatureDrawn(true);
             setShowSignaturePad(true);
+            setIsEditingProfile(true);
+            if (meta) {
+                setProfileSigMeta((prev) => ({
+                    ...prev,
+                    signatureType: meta.signatureType || 'optional',
+                    expirationDate: meta.expirationDate || '',
+                    pnpkiProofFile: meta.pnpkiProofFile || null,
+                    existingProofName: meta.existingProofName || meta.pnpkiProofFile?.name || prev.existingProofName,
+                    captureMethod: meta.captureMethod || 'drawn',
+                }));
+                setProfileSigMetaChanged(true);
+            }
         } else {
             clearCanvas();
         }
@@ -264,12 +307,24 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
 
     const handleSaveProfile = async (e) => {
         e.preventDefault();
-        setProfileSaving(true);
         setProfileError('');
         setProfileSuccess('');
 
+        if ((hasProfileSignatureDrawn || profileSigMetaChanged) && profileSigMeta.signatureType === 'pnpki') {
+            if (!profileSigMeta.expirationDate) {
+                setProfileError('Please select the expiration date for your PNPKI Digital E-Signature.');
+                return;
+            }
+            if (!profileSigMeta.pnpkiProofFile && !profileSigMeta.existingProofName && !profileSigMeta.existingProofUrl) {
+                setProfileError('Please attach the PDF Proof of Registration of PNPKI (maximum 5MB).');
+                return;
+            }
+        }
+
+        setProfileSaving(true);
+
         try {
-            // 1. Handle profile photo upload or removal
+
             if (selectedPhotoFile) {
                 const formData = new FormData();
                 formData.append('profile_photo', selectedPhotoFile);
@@ -280,34 +335,69 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                 setPhotoTimestamp(Date.now());
             }
 
-            // 2. Handle profile text details and drawn signature
             const sigDataUrl = hasProfileSignatureDrawn ? profileSigDataUrl : null;
+            let payload;
 
-            const payload = {
-                ...profileForm,
-                signature: sigDataUrl,
-            };
+            if (profileSigMeta.pnpkiProofFile) {
+                payload = new FormData();
+                Object.keys(profileForm).forEach((key) => {
+                    payload.append(key, profileForm[key] ?? '');
+                });
+                if (sigDataUrl) {
+                    payload.append('signature', sigDataUrl);
+                }
+                payload.append('signature_type', profileSigMeta.signatureType || 'optional');
+                payload.append('signature_capture_method', profileSigMeta.captureMethod || 'drawn');
+                if (profileSigMeta.signatureType === 'pnpki') {
+                    payload.append('pnpki_expiration_date', profileSigMeta.expirationDate || '');
+                    payload.append('pnpki_proof_pdf', profileSigMeta.pnpkiProofFile);
+                }
+            } else {
+                payload = {
+                    ...profileForm,
+                    signature: sigDataUrl,
+                    ...(hasProfileSignatureDrawn || profileSigMetaChanged
+                        ? {
+                              signature_type: profileSigMeta.signatureType || 'optional',
+                              signature_capture_method: profileSigMeta.captureMethod || 'drawn',
+                              pnpki_expiration_date:
+                                  profileSigMeta.signatureType === 'pnpki'
+                                      ? profileSigMeta.expirationDate || null
+                                      : null,
+                          }
+                        : {}),
+                };
+            }
 
             const res = await authService.updateProfile(payload);
             setProfileSuccess('Profile details and signature updated successfully!');
             setIsEditingProfile(false);
             setShowSignaturePad(false);
             setHasProfileSignatureDrawn(false);
+            setProfileSigMetaChanged(false);
             setSignatureTimestamp(Date.now());
             setSelectedPhotoFile(null);
             setRemovePhotoRequested(false);
 
-            if (onUserUpdate && res.data?.user) {
-                onUserUpdate(res.data.user);
+            if (res.data?.user) {
+                setProfileSigMeta(getInitialProfileSigMeta(res.data.user));
+                if (onUserUpdate) {
+                    onUserUpdate(res.data.user);
+                }
             }
         } catch (err) {
-            setProfileError(err.response?.data?.message || 'Failed to update profile details.');
+            const validationErrors = err.response?.data?.errors;
+            if (validationErrors) {
+                const firstKey = Object.keys(validationErrors)[0];
+                setProfileError(validationErrors[firstKey][0]);
+            } else {
+                setProfileError(err.response?.data?.message || 'Failed to update profile details.');
+            }
         } finally {
             setProfileSaving(false);
         }
     };
 
-    // Close notification dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (notifContainerRef.current && !notifContainerRef.current.contains(event.target)) {
@@ -413,7 +503,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
         }
     };
 
-    // Receive Required Modal State for Notifications
     const [receiveRequiredPpmp, setReceiveRequiredPpmp] = useState(null);
     const [receivingNotifPpmp, setReceivingNotifPpmp] = useState(false);
 
@@ -438,7 +527,7 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
     };
 
     const handleNotificationClick = async (notif) => {
-        // Mark notification as read
+
         if (!notif.read_at) {
             try {
                 await notificationService.markAsRead(notif.id);
@@ -458,9 +547,21 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
         setShowNotifMenu(false);
         setShowAllNotifsDrawer(false);
 
-        // If notification is linked to a PPMP
+        if (notif.title?.toLowerCase().includes('pnpki') && notif.title?.toLowerCase().includes('pending approval')) {
+            if (user?.role === 'super_admin') {
+                window.dispatchEvent(new CustomEvent('admin:navigate_section', { detail: { section: 'users' } }));
+                window.dispatchEvent(new CustomEvent('app:data_reload'));
+            }
+            return;
+        }
+
+        if (notif.title?.toLowerCase().includes('pnpki')) {
+            window.dispatchEvent(new CustomEvent('pnpki:open_renewal_modal', { detail: { mode: 'renew' } }));
+            return;
+        }
+
         if (notif.ppmp?.uuid) {
-            // Check if current user is required to receive this document first
+
             if (isAwaitingReceive(notif.ppmp, user)) {
                 setReceiveRequiredPpmp(notif.ppmp);
                 return;
@@ -505,11 +606,11 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
 
     return (
         <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
-            {/* Top Navigation Bar */}
+
             <header className="bg-slate-900 text-white sticky top-0 z-40 shadow-md no-print">
                 <div className="max-w-[1700px] w-full mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex items-center justify-between h-16">
-                        {/* Left Brand */}
+
                         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                             <button
                                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -550,9 +651,8 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                             </div>
                         </div>
 
-                        {/* Right: Notifications & User Profile */}
                         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-                            {/* Notification Bell */}
+
                             <div className="relative" ref={notifContainerRef}>
                                 <button
                                     onClick={() => {
@@ -572,13 +672,12 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                     )}
                                 </button>
 
-                                {/* Notification Dropdown Popover */}
                                 {showNotifMenu && (
-                                    <div 
+                                    <div
                                         ref={notifDropdownRef}
-                                        className="absolute right-0 mt-2 w-[340px] sm:w-[420px] md:w-[450px] max-h-[520px] flex flex-col bg-white text-slate-800 rounded-2xl shadow-2xl border border-slate-200/90 z-50 overflow-hidden animate-in fade-in zoom-in-95"
+                                        className="fixed left-3 right-3 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-2 w-auto sm:w-[420px] md:w-[450px] max-h-[calc(100vh-5rem)] sm:max-h-[520px] flex flex-col bg-white text-slate-800 rounded-2xl shadow-2xl border border-slate-200/90 z-50 overflow-hidden animate-in fade-in zoom-in-95"
                                     >
-                                        {/* Dropdown Header (Sticky Pinned) */}
+
                                         <div className="shrink-0 p-3.5 sm:p-4 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white flex items-center justify-between border-b border-slate-800 shadow-xs">
                                             <div className="flex items-center gap-2.5">
                                                 <div className="p-1.5 bg-blue-500/15 text-blue-400 rounded-lg border border-blue-500/25">
@@ -617,8 +716,77 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                             )}
                                         </div>
 
-                                        {/* Dropdown Body: Notification List (ONLY THIS SCROLLS) */}
                                         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-2.5 bg-slate-50/70 scrollbar-thin scrollbar-thumb-slate-300 hover:scrollbar-thumb-slate-400 scrollbar-track-transparent">
+
+                                            {(() => {
+                                                const pnpki = user?.pnpki_signature || user?.pnpkiSignature || null;
+                                                const expStr = pnpki?.expiration_date ? String(pnpki.expiration_date).slice(0, 10) : '';
+                                                if (!expStr) return null;
+
+                                                const now = new Date();
+                                                const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                                                const [yy, mm, dd] = expStr.split('-').map(Number);
+                                                const expStart = new Date(yy, (mm || 1) - 1, dd || 1);
+                                                const expEnd = new Date(yy, (mm || 1) - 1, dd || 1, 23, 59, 59, 999);
+                                                const daysLeft = Math.round((expStart.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24));
+                                                const isPnpkiExpired = isPnpkiEnabled && (Boolean(pnpki?.is_expired) || now > expEnd || daysLeft < 0);
+                                                const isPnpkiSoon = isPnpkiEnabled && !isPnpkiExpired && pnpki?.signature_type === 'pnpki' && daysLeft >= 0 && daysLeft <= 14;
+
+                                                if (!isPnpkiEnabled || (!isPnpkiExpired && !isPnpkiSoon)) return null;
+
+                                                const hasDbPnpkiAlert = notifications.some((n) => n.title?.toLowerCase().includes('pnpki expir'));
+                                                if (hasDbPnpkiAlert) return null;
+
+                                                return (
+                                                    <div
+                                                        onClick={() => {
+                                                            setShowNotifMenu(false);
+                                                            window.dispatchEvent(new CustomEvent('pnpki:open_renewal_modal', { detail: { mode: 'renew' } }));
+                                                        }}
+                                                        className={`p-3 rounded-xl border-2 cursor-pointer transition-all shadow-xs hover:shadow-md flex flex-col gap-2 ${
+                                                            isPnpkiExpired
+                                                                ? 'bg-rose-50/90 hover:bg-rose-50 border-rose-300 border-l-4 border-l-rose-600'
+                                                                : 'bg-amber-50/90 hover:bg-amber-50 border-amber-300 border-l-4 border-l-amber-500'
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-center justify-between gap-1.5">
+                                                            <span
+                                                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                                                    isPnpkiExpired
+                                                                        ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                                                        : 'bg-amber-100 text-amber-900 border-amber-300'
+                                                                }`}
+                                                            >
+                                                                <ShieldCheck className="w-3 h-3" />
+                                                                <span>{isPnpkiExpired ? 'PNPKI Expired' : 'PNPKI Reminder'}</span>
+                                                            </span>
+                                                            <span className="px-1.5 py-0.2 bg-rose-600 text-white text-[9px] font-black uppercase tracking-wider rounded-sm">
+                                                                ACTION REQUIRED
+                                                            </span>
+                                                        </div>
+                                                        <h4 className="font-extrabold text-xs text-slate-900 leading-snug">
+                                                            {isPnpkiExpired
+                                                                ? `PNPKI Digital E-Signature Expired (${expStr})`
+                                                                : daysLeft === 0
+                                                                ? `PNPKI Digital E-Signature Expires Today (${expStr})`
+                                                                : `PNPKI E-Signature Expires in ${daysLeft} Day${daysLeft === 1 ? '' : 's'} (${expStr})`}
+                                                        </h4>
+                                                        <p className="text-slate-700 text-[11px] leading-relaxed">
+                                                            {isPnpkiExpired
+                                                                ? 'Your PNPKI certificate has expired. Until renewed, your account is forced to use the Optional Digital Signature (old registration data preserved).'
+                                                                : 'Please renew your PNPKI registration before it expires to avoid falling back to the Optional Digital Signature.'}
+                                                        </p>
+                                                        <div className="pt-1.5 border-t border-slate-200/70 flex items-center justify-between text-[10px]">
+                                                            <span className="text-slate-500 font-semibold">Retained Exp: {expStr}</span>
+                                                            <span className="inline-flex items-center gap-1 font-extrabold text-emerald-700 hover:underline">
+                                                                <span>Renew PNPKI Now</span>
+                                                                <ArrowUpRight className="w-3 h-3" />
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
+
                                             {notifications.length === 0 ? (
                                                 <div className="py-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
                                                     <Bell className="w-7 h-7 text-slate-300" />
@@ -628,14 +796,28 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                             ) : (
                                                 notifications.map((n) => {
                                                     const hasShortcut = Boolean(n.ppmp?.uuid);
+                                                    const isPnpkiNotif = Boolean(n.title?.toLowerCase().includes('pnpki'));
                                                     const isUnread = !n.read_at;
 
-                                                    // Category badge calculation
                                                     let badgeColor = 'bg-slate-100 text-slate-700 border-slate-200';
                                                     let badgeIcon = <Info className="w-2.5 h-2.5 text-slate-500" />;
                                                     let categoryLabel = 'Notice';
 
-                                                    if (n.type === 'success' || (n.title && (n.title.toLowerCase().includes('approved') || n.title.toLowerCase().includes('ready to print')))) {
+                                                    if (isPnpkiNotif) {
+                                                        if (n.type === 'danger' || n.title?.toLowerCase().includes('expired')) {
+                                                            badgeColor = 'bg-rose-100 text-rose-800 border-rose-300';
+                                                            badgeIcon = <AlertTriangle className="w-2.5 h-2.5 text-rose-600" />;
+                                                            categoryLabel = 'PNPKI Expired';
+                                                        } else if (n.type === 'warning' || n.title?.toLowerCase().includes('expiring') || n.title?.toLowerCase().includes('expires')) {
+                                                            badgeColor = 'bg-amber-100 text-amber-900 border-amber-300';
+                                                            badgeIcon = <Clock className="w-2.5 h-2.5 text-amber-600" />;
+                                                            categoryLabel = 'PNPKI Reminder';
+                                                        } else {
+                                                            badgeColor = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+                                                            badgeIcon = <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />;
+                                                            categoryLabel = 'PNPKI Renewed';
+                                                        }
+                                                    } else if (n.type === 'success' || (n.title && (n.title.toLowerCase().includes('approved') || n.title.toLowerCase().includes('ready to print')))) {
                                                         badgeColor = 'bg-emerald-50 text-emerald-800 border-emerald-200';
                                                         badgeIcon = <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />;
                                                         categoryLabel = 'Approved';
@@ -659,7 +841,7 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                                                     : 'bg-white hover:bg-slate-50 border-slate-200/90 hover:border-slate-300'
                                                             }`}
                                                         >
-                                                            {/* Card Header */}
+
                                                             <div className="flex items-center justify-between gap-1.5">
                                                                 <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                                                                     <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold border ${badgeColor}`}>
@@ -691,28 +873,30 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                                                 </div>
                                                             </div>
 
-                                                            {/* Card Title */}
                                                             <h4 className="font-extrabold text-xs text-slate-900 group-hover:text-blue-600 transition leading-snug">
                                                                 {n.title}
                                                             </h4>
 
-                                                            {/* Card Message */}
                                                             <p className="text-slate-600 text-[11px] leading-relaxed line-clamp-3">
                                                                 {n.message ? (n.ppmp?.tracking_number ? n.message.replace(/PPMP\s+0(?!\d)/g, `PPMP ${n.ppmp.tracking_number}`) : n.message) : ''}
                                                             </p>
 
-                                                            {/* Card Footer */}
                                                             <div className="mt-0.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
                                                                 <span className="text-slate-400 font-mono">
                                                                     {n.created_at ? new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
                                                                 </span>
 
-                                                                {hasShortcut && (
+                                                                {hasShortcut ? (
                                                                     <div className="inline-flex items-center gap-1 font-bold text-blue-600 group-hover:underline">
                                                                         <span>Open PPMP</span>
                                                                         <ArrowUpRight className="w-3 h-3" />
                                                                     </div>
-                                                                )}
+                                                                ) : (isPnpkiEnabled && isPnpkiNotif) ? (
+                                                                    <div className="inline-flex items-center gap-1 font-bold text-emerald-700 group-hover:underline">
+                                                                        <span>Renew PNPKI Signature</span>
+                                                                        <ArrowUpRight className="w-3 h-3" />
+                                                                    </div>
+                                                                ) : null}
                                                             </div>
                                                         </div>
                                                     );
@@ -720,7 +904,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                             )}
                                         </div>
 
-                                        {/* Dropdown Footer (Sticky Pinned) */}
                                         <div className="shrink-0 p-2.5 bg-white border-t border-slate-200 text-center">
                                             <button
                                                 type="button"
@@ -735,7 +918,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                 )}
                             </div>
 
-                            {/* User Profile info button */}
                             <button
                                 type="button"
                                 onClick={handleOpenProfile}
@@ -764,7 +946,33 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                 </div>
                             </button>
 
-                            {/* Logout button */}
+                            {Array.isArray(user?.available_roles) && user.available_roles.length > 1 && (
+                                <select
+                                    value={user.role || ''}
+                                    title="Switch active role perspective"
+                                    onChange={async (e) => {
+                                        const nextRole = e.target.value;
+                                        if (!nextRole || nextRole === user.role) return;
+                                        try {
+                                            const res = await authService.switchRole(nextRole);
+                                            if (res.data?.user && onUserUpdate) {
+                                                onUserUpdate(res.data.user);
+                                            }
+                                            window.dispatchEvent(new CustomEvent('app:data_reload'));
+                                        } catch (err) {
+                                            console.error('Failed to switch role:', err);
+                                        }
+                                    }}
+                                    className="hidden sm:block text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-blue-200 border border-slate-600 rounded-lg px-2 py-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    {user.available_roles.map((r) => (
+                                        <option key={r} value={r} className="bg-slate-900 text-white">
+                                            Role: {getRoleDisplayName(r)}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+
                             <button
                                 onClick={onLogout}
                                 title="Sign Out"
@@ -776,10 +984,9 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                     </div>
                 </div>
 
-                {/* Sub-nav Links */}
                 <nav className="bg-slate-800 border-t border-slate-700 hidden md:block relative z-30 overflow-visible">
                     <div className="max-w-[1700px] w-full mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-11 overflow-visible">
-                        {/* Tab Buttons (Horizontal scrollable if cramped, isolated from dropdown) */}
+
                         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap py-1 min-w-0">
                             <button
                                 onClick={() => onNavigate('dashboard')}
@@ -805,6 +1012,32 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                 PPMP Management List
                             </button>
 
+                            <button
+                                onClick={() => onNavigate('pnpki')}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition shrink-0 ${
+                                    activeTab === 'pnpki'
+                                        ? 'bg-emerald-600 text-white shadow-xs'
+                                        : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                                }`}
+                            >
+                                <ShieldCheck className="w-4 h-4" />
+                                PNPKI
+                            </button>
+
+                            {user?.role === 'end_user' && (
+                                <button
+                                    onClick={() => onNavigate('analytics')}
+                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold transition shrink-0 cursor-pointer ${
+                                        activeTab === 'analytics'
+                                            ? 'bg-indigo-600 text-white shadow-xs'
+                                            : 'text-indigo-200 hover:text-white hover:bg-slate-700'
+                                    }`}
+                                >
+                                    <BarChart3 className="w-4 h-4" />
+                                    Analytics
+                                </button>
+                            )}
+
                             {user?.role === 'end_user' && (
                                 <button
                                     onClick={() => onNavigate('create')}
@@ -820,7 +1053,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                             )}
                         </div>
 
-                        {/* System Switcher Dropdown (outside of scroll container, always overflow-visible) */}
                         <div className="ml-4 flex items-center gap-2 shrink-0 relative z-40 overflow-visible">
                             <SystemSwitcherDropdown
                                 user={user}
@@ -831,7 +1063,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                     </div>
                 </nav>
 
-                {/* Mobile Menu */}
                 {mobileMenuOpen && (
                     <div className="md:hidden bg-slate-800 border-t border-slate-700 p-4 space-y-2">
                         <button
@@ -850,6 +1081,24 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                         >
                             PPMP Management List
                         </button>
+                        <button
+                            onClick={() => { onNavigate('pnpki'); setMobileMenuOpen(false); }}
+                            className={`w-full text-left px-3 py-2 text-xs font-semibold rounded ${
+                                activeTab === 'pnpki' ? 'bg-emerald-600 text-white' : 'text-slate-200 hover:bg-slate-700'
+                            }`}
+                        >
+                            PNPKI
+                        </button>
+                        {user?.role === 'end_user' && (
+                            <button
+                                onClick={() => { onNavigate('analytics'); setMobileMenuOpen(false); }}
+                                className={`w-full text-left px-3 py-2 text-xs font-semibold rounded ${
+                                    activeTab === 'analytics' ? 'bg-indigo-600 text-white' : 'text-indigo-200 hover:bg-slate-700'
+                                }`}
+                            >
+                                Analytics
+                            </button>
+                        )}
                         {user?.role === 'end_user' && (
                             <button
                                 onClick={() => { onNavigate('create'); setMobileMenuOpen(false); }}
@@ -871,6 +1120,7 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                         setMobileMenuOpen(false);
                                     }}
                                     align="left"
+                                    fullWidth={true}
                                 />
                             </div>
                         </div>
@@ -878,7 +1128,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                 )}
             </header>
 
-            {/* Office Context Banner */}
             <div className="bg-white border-b border-slate-200 px-3 sm:px-4 py-2 shadow-2xs no-print">
                 <div className="max-w-[1700px] w-full mx-auto flex items-center justify-between text-xs text-slate-600 gap-2">
                     <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
@@ -898,21 +1147,18 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                 </div>
             </div>
 
-            {/* Main Content Body */}
             <main className="flex-1 max-w-[1700px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
                 {children}
             </main>
 
-            {/* Footer */}
             <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500 no-print">
                 Province of Davao del Sur - OPPMO • Integrated E-Procurement & PPMP Management System
             </footer>
 
-            {/* User Profile Details & Signature Modal */}
             {isProfileModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4 overflow-hidden animate-in fade-in duration-200">
                     <div className="bg-white w-full max-w-2xl max-h-[92vh] sm:max-h-[88vh] rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
-                        {/* Header (Sticky top) */}
+
                         <div className="px-5 sm:px-6 py-3.5 bg-slate-900 text-white flex items-center justify-between shrink-0 border-b border-slate-800">
                             <div className="flex items-center gap-3">
                                 <UserAvatar
@@ -936,7 +1182,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                             </button>
                         </div>
 
-                        {/* Status Feedback Messages (Sticky below header) */}
                         {profileError && (
                             <div className="mx-5 sm:mx-6 mt-3 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2 shrink-0">
                                 <AlertCircle className="w-4 h-4 shrink-0" />
@@ -950,11 +1195,10 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                             </div>
                         )}
 
-                        {/* Form (Wraps scrollable body and sticky footer) */}
                         <form onSubmit={handleSaveProfile} className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                            {/* Scrollable Form Body */}
+
                             <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
-                                {/* Profile Photo & Avatar Section */}
+
                                 <div className="p-3.5 sm:p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row items-center sm:items-start gap-4">
                                     <div className="relative group shrink-0">
                                         {photoPreviewUrl ? (
@@ -1032,7 +1276,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                     </div>
                                 </div>
 
-                                {/* Form Fields Grid */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
@@ -1151,167 +1394,384 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                     </div>
                                 </div>
 
-                                {/* Official E-Signature Section */}
-                                <div className="p-3.5 sm:p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-1.5">
-                                            <PenTool className="w-4 h-4 text-blue-600" />
-                                            <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                                                Official Electronic Signature
-                                            </span>
-                                        </div>
+                                {(() => {
+                                    const pnpkiRecord = user?.pnpki_signature || user?.pnpkiSignature || null;
+                                    const expStr = profileSigMeta.expirationDate || pnpkiRecord?.expiration_date || '';
+                                    let isPnpkiExpired = false;
+                                    let isPnpkiExpiringSoon = false;
+                                    let daysRemaining = null;
 
-                                        {user?.signature_path ? (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                                <Check className="w-3 h-3" /> Signature on File
-                                            </span>
-                                        ) : (
-                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
-                                                <AlertCircle className="w-3 h-3" /> No Signature Yet
-                                            </span>
-                                        )}
-                                    </div>
+                                    if (expStr) {
+                                        const now = new Date();
+                                        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                                        const [yy, mm, dd] = String(expStr).slice(0, 10).split('-').map(Number);
+                                        const expStart = new Date(yy, (mm || 1) - 1, dd || 1);
+                                        const expEnd = new Date(yy, (mm || 1) - 1, dd || 1, 23, 59, 59, 999);
+                                        daysRemaining = Math.round((expStart.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24));
+                                        isPnpkiExpired = now > expEnd || daysRemaining < 0;
+                                        isPnpkiExpiringSoon = !isPnpkiExpired && daysRemaining >= 0 && daysRemaining <= 14;
+                                    }
 
-                                    {/* Preview of existing signature on file */}
-                                    {user?.signature_path && (!isEditingProfile || !showSignaturePad) && (
-                                        <div className="p-2.5 bg-white border border-slate-200 rounded-lg flex flex-col items-center justify-center space-y-1.5">
-                                            <img
-                                                src={`${authService.getSignatureUrl()}?t=${signatureTimestamp}`}
-                                                alt="Official Signature"
-                                                className="max-h-16 max-w-full object-contain filter contrast-125"
-                                                onError={(e) => {
-                                                    e.target.style.display = 'none';
-                                                }}
-                                            />
-                                            <div className="flex items-center justify-between w-full pt-1.5 border-t border-slate-100 text-[10px]">
-                                                <span className="text-slate-400">Stored securely in private storage</span>
-                                                {isEditingProfile && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setShowSignaturePad(true);
-                                                            setTimeout(clearCanvas, 50);
-                                                        }}
-                                                        className="font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer transition"
-                                                    >
-                                                        <Edit3 className="w-3.5 h-3.5" />
-                                                        Change Signature
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
+                                    const effectiveSigType =
+                                        profileSigMeta.signatureType === 'pnpki' && !isPnpkiExpired
+                                            ? 'pnpki'
+                                            : 'optional';
 
-                                    {/* Signature drawing pad (when editing and user has no signature or clicked change signature) */}
-                                    {isEditingProfile && (!user?.signature_path || showSignaturePad) && (
-                                        <div className="space-y-2">
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-[11px] font-semibold text-slate-700">
-                                                    {user?.signature_path ? 'New Official Signature:' : 'Official Specimen Signature:'}
-                                                </span>
+                                    const isCurrentlyUsingPnpki = effectiveSigType === 'pnpki';
+                                    const hasStoredPnpkiData = Boolean(
+                                        profileSigMeta.signatureType === 'pnpki' ||
+                                        expStr ||
+                                        profileSigMeta.existingProofUrl ||
+                                        profileSigMeta.pnpkiProofFile
+                                    );
+
+                                    return (
+                                        <div className="p-3.5 sm:p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <PenTool className="w-4 h-4 text-blue-600 shrink-0" />
+                                                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                                                        Official Electronic Signature
+                                                    </span>
+                                                    {effectiveSigType === 'pnpki' ? (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                                            <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                                                            PNPKI Digital E-Signature
+                                                        </span>
+                                                    ) : isPnpkiExpired && expStr ? (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                                            <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                                            Optional Digital Signature (PNPKI Expired — Forced Fallback)
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+                                                            Optional Digital Signature
+                                                        </span>
+                                                    )}
+                                                </div>
+
                                                 <div className="flex items-center gap-2">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setIsSignatureModalOpen(true)}
-                                                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg cursor-pointer transition shadow-xs active:scale-95"
-                                                    >
-                                                        <Maximize2 className="w-3 h-3" />
-                                                        {hasProfileSignatureDrawn ? 'Edit Signature' : 'Draw Freely'}
-                                                    </button>
-                                                    {user?.signature_path && (
+                                                    {user?.signature_path || hasProfileSignatureDrawn ? (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                                            <Check className="w-3 h-3" />
+                                                            {hasProfileSignatureDrawn ? 'New Signature Ready' : 'Signature on File'}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                                                            <AlertCircle className="w-3 h-3" /> No Signature Yet
+                                                        </span>
+                                                    )}
+
+                                                    {!isEditingProfile && !isCurrentlyUsingPnpki && (
                                                         <button
                                                             type="button"
                                                             onClick={() => {
-                                                                setShowSignaturePad(false);
-                                                                clearCanvas();
+                                                                setProfileSuccess('');
+                                                                setProfileError('');
+                                                                setIsEditingProfile(true);
+                                                                setShowSignaturePad(true);
+                                                                setIsSignatureModalOpen(true);
                                                             }}
-                                                            className="text-[11px] font-medium text-slate-500 hover:text-slate-700 cursor-pointer transition"
+                                                            className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg cursor-pointer transition shadow-2xs"
                                                         >
-                                                            Keep Current
-                                                        </button>
-                                                    )}
-                                                    {hasProfileSignatureDrawn && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={clearCanvas}
-                                                            className="text-[11px] font-semibold text-rose-600 hover:text-rose-800 flex items-center gap-1 cursor-pointer transition"
-                                                            title="Clear drawing"
-                                                        >
-                                                            <Eraser className="w-3 h-3" />
-                                                            Clear
+                                                            <Maximize2 className="w-3 h-3" />
+                                                            <span>Signature Studio</span>
                                                         </button>
                                                     )}
                                                 </div>
                                             </div>
 
-                                            {/* Clickable Card to open Modal */}
-                                            <div 
-                                                role="button"
-                                                tabIndex={0}
-                                                onClick={() => setIsSignatureModalOpen(true)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter' || e.key === ' ') {
-                                                        e.preventDefault();
-                                                        setIsSignatureModalOpen(true);
-                                                    }
-                                                }}
-                                                className="relative border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-xl bg-white overflow-hidden shadow-inner group transition-all duration-200 cursor-pointer h-[100px] flex items-center justify-center select-none"
-                                            >
-                                                {hasProfileSignatureDrawn && profileSigDataUrl ? (
-                                                    <div className="w-full h-full p-2 flex flex-col items-center justify-center relative group-hover:bg-blue-50/30 transition">
-                                                        <img
-                                                            src={profileSigDataUrl}
-                                                            alt="Captured profile signature"
-                                                            className="max-h-full max-w-full object-contain filter contrast-125 drop-shadow-sm"
-                                                        />
-                                                        <div className="absolute inset-0 bg-slate-900/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[0.5px]">
-                                                            <span className="px-3 py-1 bg-white/90 text-slate-800 text-xs font-bold rounded-lg shadow-sm flex items-center gap-1">
-                                                                <PenTool className="w-3 h-3 text-blue-600" /> Click to Redraw / Edit
+                                            {hasStoredPnpkiData && (
+                                                <div
+                                                    className={`p-3 rounded-xl border text-xs space-y-2 ${
+                                                        isPnpkiExpired
+                                                            ? 'bg-rose-50/90 border-rose-200 text-rose-950'
+                                                            : isPnpkiExpiringSoon
+                                                            ? 'bg-amber-50/90 border-amber-300 text-amber-950'
+                                                            : 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
+                                                    }`}
+                                                >
+                                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span
+                                                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                                                    isPnpkiExpired
+                                                                        ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                                                                        : isPnpkiExpiringSoon
+                                                                        ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                                                        : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                                                }`}
+                                                            >
+                                                                {isPnpkiExpired
+                                                                    ? 'Expired Certificate'
+                                                                    : isPnpkiExpiringSoon
+                                                                    ? daysRemaining === 0
+                                                                        ? 'Expires Today'
+                                                                        : `Expiring in ${daysRemaining}d`
+                                                                    : 'Active Certificate'}
+                                                            </span>
+                                                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold">
+                                                                <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                                                <span>
+                                                                    {isPnpkiExpired ? 'Old Expiration Date:' : 'Expiration Date:'}{' '}
+                                                                    <strong className={isPnpkiExpired ? 'text-rose-700' : 'text-slate-900'}>
+                                                                        {expStr || 'Not set'}
+                                                                    </strong>
+                                                                </span>
                                                             </span>
                                                         </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex flex-col items-center justify-center text-slate-400 group-hover:text-blue-600 p-3 transition-colors text-center">
-                                                        <div className="w-8 h-8 rounded-full bg-blue-50 group-hover:bg-blue-100 text-blue-600 flex items-center justify-center mb-1 transition-colors shadow-xs group-hover:scale-105">
-                                                            <PenTool className="w-4 h-4 stroke-[1.75]" />
-                                                        </div>
-                                                        <span className="text-xs font-bold text-slate-700 group-hover:text-blue-700">
-                                                            Click here to open Signature Studio
-                                                        </span>
-                                                        <span className="text-[10px] text-slate-400 group-hover:text-slate-500 mt-0.5">
-                                                            Draw freely with high resolution smooth curves and undo
-                                                        </span>
-                                                    </div>
-                                                )}
-                                            </div>
 
-                                            <div className="flex items-center justify-between text-[10px] text-slate-500">
-                                                <span>Sign on baseline. Encrypted securely.</span>
-                                                {hasProfileSignatureDrawn ? (
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-emerald-600 font-semibold flex items-center gap-1">
-                                                            <Check className="w-3 h-3" /> New signature ready
-                                                        </span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setIsSignatureModalOpen(true)}
-                                                            className="text-[10px] text-blue-600 font-semibold hover:underline cursor-pointer"
-                                                        >
-                                                            Edit
-                                                        </button>
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            {profileSigMeta.pnpkiProofFile ? (
+                                                                <span
+                                                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-emerald-300 text-[10px] font-bold text-emerald-800 truncate max-w-[180px]"
+                                                                    title={profileSigMeta.pnpkiProofFile.name}
+                                                                >
+                                                                    <FileText className="w-3 h-3 text-emerald-600 shrink-0" />
+                                                                    <span>Attached: {profileSigMeta.pnpkiProofFile.name}</span>
+                                                                </span>
+                                                            ) : profileSigMeta.existingProofUrl ? (
+                                                                <a
+                                                                    href={profileSigMeta.existingProofUrl}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-emerald-50 border border-emerald-300 text-[10px] font-bold text-emerald-800 underline underline-offset-2 transition"
+                                                                >
+                                                                    <FileText className="w-3 h-3 text-emerald-600 shrink-0" />
+                                                                    <span>View PNPKI Proof PDF</span>
+                                                                </a>
+                                                            ) : null}
+
+                                                            {!isPnpkiEnabled ? (
+                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                                                    <span>Optional Digital E-Signature Active</span>
+                                                                </span>
+                                                            ) : pnpkiRecord?.renewal_status === 'pending' ? (
+                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
+                                                                    <Clock className="w-3 h-3 text-amber-600" />
+                                                                    <span>Pending Super Admin Approval</span>
+                                                                </span>
+                                                            ) : isPnpkiExpired ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        window.dispatchEvent(
+                                                                            new CustomEvent('pnpki:open_renewal_modal', {
+                                                                                detail: { mode: 'renew' },
+                                                                            })
+                                                                        );
+                                                                    }}
+                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase tracking-wider shadow-2xs transition cursor-pointer bg-rose-600 hover:bg-rose-700 text-white"
+                                                                >
+                                                                    <RefreshCw className="w-3 h-3" />
+                                                                    <span>Renew PNPKI</span>
+                                                                </button>
+                                                            ) : null}
+                                                        </div>
                                                     </div>
-                                                ) : (
-                                                    user?.signature_path && (
-                                                        <span className="text-amber-600">Leave blank to keep existing signature</span>
-                                                    )
-                                                )}
-                                            </div>
+
+                                                    {pnpkiRecord?.renewal_status === 'pending' && (
+                                                        <div className="pt-1.5 border-t border-amber-200/80 text-[11px] text-amber-900 flex items-center justify-between gap-2 flex-wrap">
+                                                            <span>
+                                                                <strong>Renewal Submitted:</strong> New Expiration Date{' '}
+                                                                <strong>{pnpkiRecord.pending_expiration_date}</strong> is awaiting Super Administrator approval.
+                                                            </span>
+                                                            {pnpkiRecord.pending_proof_pdf_url && (
+                                                                <a
+                                                                    href={pnpkiRecord.pending_proof_pdf_url}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="underline font-bold text-amber-900 hover:text-amber-950"
+                                                                >
+                                                                    View Submitted Proof PDF
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {pnpkiRecord?.renewal_status === 'rejected' && pnpkiRecord?.renewal_rejection_reason && (
+                                                        <div className="pt-1.5 border-t border-rose-200/80 text-[11px] text-rose-800">
+                                                            <strong>Renewal Disapproved:</strong> {pnpkiRecord.renewal_rejection_reason}
+                                                        </div>
+                                                    )}
+
+                                                    {isPnpkiExpired && (
+                                                        <div className="pt-1.5 border-t border-rose-200/80 text-[11px] text-rose-800 flex items-center justify-between gap-2 flex-wrap">
+                                                            <span>
+                                                                <strong>Forced to Optional Digital Signature:</strong> Until your PNPKI renewal is approved by the Super Administrator, your account uses the Optional Digital Signature. Your old expiration date and proof PDF remain preserved above.
+                                                            </span>
+                                                        </div>
+                                                    )}
+
+                                                    {pnpkiRecord?.previous_expiration_date && !isPnpkiExpired && (
+                                                        <div className="pt-1.5 border-t border-emerald-200/70 text-[10px] text-emerald-800 flex items-center justify-between gap-2 flex-wrap">
+                                                            <span>
+                                                                Previous Registration Preserved: Expired{' '}
+                                                                <strong>{pnpkiRecord.previous_expiration_date}</strong>
+                                                            </span>
+                                                            {pnpkiRecord.previous_proof_pdf_url && (
+                                                                <a
+                                                                    href={pnpkiRecord.previous_proof_pdf_url}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="underline font-bold hover:text-emerald-950"
+                                                                >
+                                                                    View Previous Proof PDF
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {user?.signature_path && (isCurrentlyUsingPnpki || !isEditingProfile || !showSignaturePad) && (
+                                                <div className="p-2.5 bg-white border border-slate-200 rounded-lg flex flex-col items-center justify-center space-y-1.5">
+                                                    <img
+                                                        src={`${authService.getSignatureUrl()}?t=${signatureTimestamp}`}
+                                                        alt="Official Signature"
+                                                        className="max-h-16 max-w-full object-contain filter contrast-125"
+                                                        onError={(e) => {
+                                                            e.target.style.display = 'none';
+                                                        }}
+                                                    />
+                                                    <div className="flex items-center justify-between w-full pt-1.5 border-t border-slate-100 text-[10px] flex-wrap gap-1.5">
+                                                        <span className="text-slate-400">Stored securely in private storage</span>
+                                                        {isCurrentlyUsingPnpki ? (
+                                                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+                                                                <Lock className="w-3 h-3 text-slate-500 shrink-0" />
+                                                                <span>Locked (Only Super Admin can edit PNPKI Signature)</span>
+                                                            </span>
+                                                        ) : (
+                                                            isEditingProfile && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setShowSignaturePad(true);
+                                                                        setIsSignatureModalOpen(true);
+                                                                    }}
+                                                                    className="font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer transition"
+                                                                >
+                                                                    <Edit3 className="w-3.5 h-3.5" />
+                                                                    Change / Configure Signature
+                                                                </button>
+                                                            )
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {!isCurrentlyUsingPnpki && isEditingProfile && (!user?.signature_path || showSignaturePad) && (
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-[11px] font-semibold text-slate-700">
+                                                            {user?.signature_path ? 'New Official Signature:' : 'Official Specimen Signature:'}
+                                                        </span>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setIsSignatureModalOpen(true)}
+                                                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg cursor-pointer transition shadow-xs active:scale-95"
+                                                            >
+                                                                <Maximize2 className="w-3 h-3" />
+                                                                {hasProfileSignatureDrawn ? 'Edit Signature Studio' : 'Open Signature Studio'}
+                                                            </button>
+                                                            {user?.signature_path && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setShowSignaturePad(false);
+                                                                        clearCanvas();
+                                                                    }}
+                                                                    className="text-[11px] font-medium text-slate-500 hover:text-slate-700 cursor-pointer transition"
+                                                                >
+                                                                    Keep Current
+                                                                </button>
+                                                            )}
+                                                            {hasProfileSignatureDrawn && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={clearCanvas}
+                                                                    className="text-[11px] font-semibold text-rose-600 hover:text-rose-800 flex items-center gap-1 cursor-pointer transition"
+                                                                    title="Clear drawing"
+                                                                >
+                                                                    <Eraser className="w-3 h-3" />
+                                                                    Clear
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    <div
+                                                        role="button"
+                                                        tabIndex={0}
+                                                        onClick={() => setIsSignatureModalOpen(true)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                                e.preventDefault();
+                                                                setIsSignatureModalOpen(true);
+                                                            }
+                                                        }}
+                                                        className="relative border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-xl bg-white overflow-hidden shadow-inner group transition-all duration-200 cursor-pointer h-[105px] flex items-center justify-center select-none"
+                                                    >
+                                                        {hasProfileSignatureDrawn && profileSigDataUrl ? (
+                                                            <div className="w-full h-full p-2 flex flex-col items-center justify-center relative group-hover:bg-blue-50/30 transition">
+                                                                <img
+                                                                    src={profileSigDataUrl}
+                                                                    alt="Captured profile signature"
+                                                                    className="max-h-full max-w-full object-contain filter contrast-125 drop-shadow-sm"
+                                                                />
+                                                                <div className="absolute inset-0 bg-slate-900/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[0.5px]">
+                                                                    <span className="px-3 py-1 bg-white/90 text-slate-800 text-xs font-bold rounded-lg shadow-sm flex items-center gap-1">
+                                                                        <PenTool className="w-3 h-3 text-blue-600" /> Click to Redraw / Change Option
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex flex-col items-center justify-center text-slate-400 group-hover:text-blue-600 p-3 transition-colors text-center">
+                                                                <div className="w-8 h-8 rounded-full bg-blue-50 group-hover:bg-blue-100 text-blue-600 flex items-center justify-center mb-1 transition-colors shadow-xs group-hover:scale-105">
+                                                                    <PenTool className="w-4 h-4 stroke-[1.75]" />
+                                                                </div>
+                                                                <span className="text-xs font-bold text-slate-700 group-hover:text-blue-700">
+                                                                    Click here to open Signature Studio
+                                                                </span>
+                                                                <span className="text-[10px] text-slate-400 group-hover:text-slate-500 mt-0.5">
+                                                                    Choose PNPKI Digital E-Signature or Optional Digital Signature
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="flex items-center justify-between text-[10px] text-slate-500">
+                                                        <span>Sign on baseline or attach image. Encrypted securely.</span>
+                                                        {hasProfileSignatureDrawn ? (
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-emerald-600 font-semibold flex items-center gap-1">
+                                                                    <Check className="w-3 h-3" />
+                                                                    {profileSigMeta.signatureType === 'pnpki'
+                                                                        ? 'New PNPKI E-Sig Ready'
+                                                                        : 'New Optional E-Sig Ready'}
+                                                                </span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setIsSignatureModalOpen(true)}
+                                                                    className="text-[10px] text-blue-600 font-semibold hover:underline cursor-pointer"
+                                                                >
+                                                                    Modify
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            user?.signature_path && (
+                                                                <span className="text-amber-600">Leave blank to keep existing signature</span>
+                                                            )
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-                                </div>
+                                    );
+                                })()}
                             </div>
 
-                            {/* Modal Footer Controls (Sticky at bottom, never overflow) */}
                             <div className="px-5 sm:px-6 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5 shrink-0">
                                 {!isEditingProfile ? (
                                     <>
@@ -1346,7 +1806,7 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                                 setIsEditingProfile(false);
                                                 setShowSignaturePad(false);
                                                 clearCanvas();
-                                                // Reset form back to user's saved data
+
                                                 setProfileForm({
                                                     name: user?.name || '',
                                                     phone_number: user?.phone_number || '',
@@ -1386,29 +1846,27 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                 </div>
             )}
 
-            {/* Profile Freeform Signature Drawing Studio Modal */}
             <SignaturePadModal
                 isOpen={isSignatureModalOpen}
                 onClose={() => setIsSignatureModalOpen(false)}
                 onSave={handleApplyProfileModalSignature}
                 initialDataUrl={profileSigDataUrl || (user?.signature_path ? `${authService.getSignatureUrl()}?t=${signatureTimestamp}` : null)}
-                title="Draw Official Specimen Signature"
-                description="Freely draw and adjust your official signature with high-resolution smooth bezier curves, thickness settings, and ink colors."
+                initialMeta={profileSigMeta}
+                title="Official Specimen Signature Studio"
+                description="Choose PNPKI Digital E-Signature or Optional Digital Signature, then draw freely or attach your e-signature."
             />
 
-            {/* Slide Pop-up Side Drawer: All Notifications */}
             {showAllNotifsDrawer && (
                 <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="notif-drawer-title">
-                    {/* Backdrop */}
-                    <div 
+
+                    <div
                         onClick={() => setShowAllNotifsDrawer(false)}
                         className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
                     />
 
-                    {/* Side Sliding Drawer */}
                     <div className="fixed inset-y-0 right-0 max-w-full flex pl-4 sm:pl-10 h-full pointer-events-none">
                         <div className="w-screen max-w-md sm:max-w-lg lg:max-w-xl bg-white shadow-2xl border-l border-slate-200 flex flex-col h-full max-h-screen overflow-hidden pointer-events-auto animate-in slide-in-from-right duration-250">
-                            {/* Drawer Header (STICKY PINNED AT TOP) */}
+
                             <div className="shrink-0 p-4 sm:p-5 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 text-white border-b border-slate-800 shadow-sm flex flex-col gap-3">
                                 <div className="flex items-center justify-between gap-3">
                                     <div className="flex items-center gap-3 min-w-0">
@@ -1432,7 +1890,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                         </div>
                                     </div>
 
-                                    {/* Top Quick Actions */}
                                     <div className="flex items-center gap-1 shrink-0">
                                         <button
                                             type="button"
@@ -1454,7 +1911,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                     </div>
                                 </div>
 
-                                {/* Header Action Toolbar */}
                                 <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/80 flex-wrap">
                                     <span className="text-[11px] font-medium text-slate-400">
                                         {(allNotifications.length > 0 ? allNotifications : notifications).length} Total Alerts in Feed
@@ -1486,7 +1942,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                 </div>
                             </div>
 
-                            {/* Sub-Header: Search & Category Filter Pills (STICKY PINNED) */}
                             {(() => {
                                 const sourceList = allNotifications.length > 0 ? allNotifications : notifications;
                                 const unreadListCount = sourceList.filter(n => !n.read_at).length;
@@ -1496,7 +1951,7 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
 
                                 return (
                                     <div className="shrink-0 p-3 bg-white border-b border-slate-200/90 shadow-2xs space-y-2.5">
-                                        {/* Search Filter Input */}
+
                                         <div className="relative">
                                             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                                             <input
@@ -1518,7 +1973,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                             )}
                                         </div>
 
-                                        {/* Filter Tabs */}
                                         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
                                             {[
                                                 { key: 'all', label: 'All', count: sourceList.length },
@@ -1553,7 +2007,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                 );
                             })()}
 
-                            {/* Drawer Body: Notification List (ONLY THIS SCROLLS!) */}
                             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3 bg-slate-50/70 scrollbar-thin scrollbar-thumb-slate-300 hover:scrollbar-thumb-slate-400 scrollbar-track-transparent">
                                 {loadingAllNotifs ? (
                                     <div className="py-20 text-center flex flex-col items-center justify-center text-slate-500 gap-3">
@@ -1562,9 +2015,9 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                     </div>
                                 ) : (() => {
                                     const sourceList = allNotifications.length > 0 ? allNotifications : notifications;
-                                    
+
                                     const filteredList = sourceList.filter((n) => {
-                                        // 1. Tab filter
+
                                         if (notifFilter === 'unread' && n.read_at) return false;
                                         if (notifFilter === 'approved') {
                                             const isAppr = n.type === 'success' || (n.title && (n.title.toLowerCase().includes('approved') || n.title.toLowerCase().includes('ready to print')));
@@ -1579,7 +2032,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                             if (!isRet) return false;
                                         }
 
-                                        // 2. Search query filter
                                         if (notifSearch.trim()) {
                                             const q = notifSearch.toLowerCase();
                                             const title = (n.title || '').toLowerCase();
@@ -1635,14 +2087,28 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
 
                                     return filteredList.map((n) => {
                                         const hasShortcut = Boolean(n.ppmp?.uuid);
+                                        const isPnpkiNotif = Boolean(n.title?.toLowerCase().includes('pnpki'));
                                         const isUnread = !n.read_at;
 
-                                        // Category badge calculation
                                         let badgeColor = 'bg-slate-100 text-slate-700 border-slate-200';
                                         let badgeIcon = <Info className="w-3 h-3 text-slate-500" />;
                                         let categoryLabel = 'Notice';
 
-                                        if (n.type === 'success' || (n.title && (n.title.toLowerCase().includes('approved') || n.title.toLowerCase().includes('ready to print')))) {
+                                        if (isPnpkiNotif) {
+                                            if (n.type === 'danger' || n.title?.toLowerCase().includes('expired')) {
+                                                badgeColor = 'bg-rose-100 text-rose-800 border-rose-300';
+                                                badgeIcon = <AlertTriangle className="w-3 h-3 text-rose-600" />;
+                                                categoryLabel = 'PNPKI Expired';
+                                            } else if (n.type === 'warning' || n.title?.toLowerCase().includes('expiring') || n.title?.toLowerCase().includes('expires')) {
+                                                badgeColor = 'bg-amber-100 text-amber-900 border-amber-300';
+                                                badgeIcon = <Clock className="w-3 h-3 text-amber-600" />;
+                                                categoryLabel = 'PNPKI Reminder';
+                                            } else {
+                                                badgeColor = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+                                                badgeIcon = <ShieldCheck className="w-3 h-3 text-emerald-600" />;
+                                                categoryLabel = 'PNPKI Renewed';
+                                            }
+                                        } else if (n.type === 'success' || (n.title && (n.title.toLowerCase().includes('approved') || n.title.toLowerCase().includes('ready to print')))) {
                                             badgeColor = 'bg-emerald-50 text-emerald-800 border-emerald-200';
                                             badgeIcon = <CheckCircle2 className="w-3 h-3 text-emerald-600" />;
                                             categoryLabel = 'Approved';
@@ -1666,7 +2132,7 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                                         : 'bg-white hover:bg-slate-50 border-slate-200/90 hover:border-slate-300'
                                                 }`}
                                             >
-                                                {/* Card Header */}
+
                                                 <div className="flex items-center justify-between gap-2">
                                                     <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${badgeColor}`}>
@@ -1699,28 +2165,30 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                                     </div>
                                                 </div>
 
-                                                {/* Card Title */}
                                                 <h4 className="font-extrabold text-[13px] text-slate-900 group-hover:text-blue-600 transition leading-snug">
                                                     {n.title}
                                                 </h4>
 
-                                                {/* Card Message */}
                                                 <p className="text-slate-600 text-xs leading-relaxed">
                                                     {n.message ? (n.ppmp?.tracking_number ? n.message.replace(/PPMP\s+0(?!\d)/g, `PPMP ${n.ppmp.tracking_number}`) : n.message) : ''}
                                                 </p>
 
-                                                {/* Card Action & Timestamp Footer */}
                                                 <div className="mt-1 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] flex-wrap gap-2">
                                                     <span className="text-slate-400 font-mono text-[10px]">
                                                         {n.created_at ? new Date(n.created_at).toLocaleString() : '—'}
                                                     </span>
 
-                                                    {hasShortcut && (
+                                                    {hasShortcut ? (
                                                         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 group-hover:bg-blue-600 text-blue-700 group-hover:text-white rounded-lg font-bold text-xs transition border border-blue-200 group-hover:border-blue-600 shadow-2xs">
                                                             <span>Open PPMP Details</span>
                                                             <ArrowUpRight className="w-3.5 h-3.5" />
                                                         </div>
-                                                    )}
+                                                    ) : (isPnpkiEnabled && isPnpkiNotif) ? (
+                                                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 group-hover:bg-emerald-600 text-emerald-700 group-hover:text-white rounded-lg font-bold text-xs transition border border-emerald-200 group-hover:border-emerald-600 shadow-2xs">
+                                                            <span>Renew PNPKI Signature</span>
+                                                            <ArrowUpRight className="w-3.5 h-3.5" />
+                                                        </div>
+                                                    ) : null}
                                                 </div>
                                             </div>
                                         );
@@ -1728,7 +2196,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                                 })()}
                             </div>
 
-                            {/* Drawer Footer (STICKY PINNED AT BOTTOM) */}
                             <div className="shrink-0 p-3.5 bg-white border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
                                 <span>Official System Activity &amp; Status Tracking</span>
                                 <button
@@ -1745,7 +2212,6 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                 </div>
             )}
 
-            {/* Receive Required Modal for Notifications */}
             {receiveRequiredPpmp && (
                 <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
                     <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden transform transition-all animate-in fade-in zoom-in-95 duration-200">

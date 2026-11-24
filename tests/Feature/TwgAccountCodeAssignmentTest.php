@@ -128,7 +128,7 @@ class TwgAccountCodeAssignmentTest extends TestCase
 
     public function test_twg_reviewer_self_registration_with_json_string_account_codes(): void
     {
-        // Simulating FormData multipart upload where array becomes JSON string
+
         $payload = [
             'name' => 'TWG Specialist 2',
             'email' => 'twg2@davaodelsur.gov.ph',
@@ -189,7 +189,6 @@ class TwgAccountCodeAssignmentTest extends TestCase
 
         $this->assertCount(1, $twgUser->fresh()->accountCodes);
 
-        // Admin updates assignments to accountCode2 and accountCode3
         $response = $this->actingAs($this->admin)->putJson("/api/users/{$twgUser->id}/account-codes", [
             'account_code_ids' => [$this->accountCode2->id, $this->accountCode3->id],
         ]);

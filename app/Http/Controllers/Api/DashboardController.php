@@ -11,15 +11,14 @@ use App\Models\PpmpRoute;
 use App\Models\PpmpSignatory;
 use App\Models\SystemNotification;
 use App\Models\User;
+use App\Support\ReviewHeadResolver;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
-    /**
-     * Role-specific dashboard metrics and activity feed
-     */
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -28,10 +27,12 @@ class DashboardController extends Controller
         $recentPpmps = [];
 
         $commonRecentRelations = [
-            'office',
-            'creator',
+            'office.head' => fn ($q) => $q->without('pnpkiSignature'),
+            'creator' => fn ($q) => $q->without('pnpkiSignature'),
+            'items',
             'signatures',
             'attachments',
+            'marketScoping',
             'monitoringProjects',
             'amendment',
         ];
@@ -53,21 +54,61 @@ class DashboardController extends Controller
             ];
 
             $endUserRecent = clone $base;
-            $recentPpmps = $endUserRecent->with(array_merge($commonRecentRelations, ['items']))->latest('updated_at')->take(100)->get();
+            $endUserRelations = array_diff_key($commonRecentRelations, ['creator' => true]);
+            $recentPpmps = $endUserRecent->with($endUserRelations)->latest('updated_at')->take(100)->get();
+            $recentPpmps->each(fn ($p) => $p->setRelation('creator', $user));
+            $endUserAnalytics = $this->buildEndUserAnalytics($recentPpmps, $metrics);
         } elseif ($user->isHead()) {
-            $base = Ppmp::where('office_id', $user->office_id)->whereDoesntHave('children');
+            if ($user->office_id && !$user->relationLoaded('office')) {
+                $user->load(['office.head' => fn ($q) => $q->without('pnpkiSignature')]);
+            }
+            $headStages = ReviewHeadResolver::userStagesForHead($user);
+            $appStages = ReviewHeadResolver::userAppSignatoryStages($user);
+            $base = Ppmp::whereDoesntHave('children');
+            if (empty($headStages) && empty($appStages)) {
+                $base->where('office_id', $user->office_id);
+            } else {
+                $stageStatuses = [];
+                if (in_array('budget', $headStages, true)) {
+                    array_push($stageStatuses, 'BUDGET_HEAD_REVIEW', 'BUDGET_HEAD_RETURNED', 'OPPMO_HEAD_REVIEW', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW', 'READY_TO_PRINT');
+                }
+                if (in_array('pacco', $headStages, true)) {
+                    array_push($stageStatuses, 'PACCO_HEAD_REVIEW', 'PACCO_HEAD_RETURNED', 'OPPMO_HEAD_REVIEW', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW', 'READY_TO_PRINT');
+                }
+                if (in_array('oppmo', $headStages, true)) {
+                    array_push($stageStatuses, 'OPPMO_HEAD_REVIEW', 'OPPMO_HEAD_RETURNED', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW', 'READY_TO_PRINT');
+                }
+                if (in_array('app_preparer', $appStages, true)) {
+                    array_push($stageStatuses, 'APP_PREPARER_REVIEW', 'APP_PREPARER_RETURNED', 'GOVERNOR_REVIEW', 'READY_TO_PRINT');
+                }
+                if (in_array('governor', $appStages, true)) {
+                    array_push($stageStatuses, 'GOVERNOR_REVIEW', 'GOVERNOR_RETURNED', 'READY_TO_PRINT');
+                }
+                $stageStatuses = array_values(array_unique($stageStatuses));
+                $base->where(function ($q) use ($user, $stageStatuses) {
+                    $q->where('office_id', $user->office_id)
+                      ->orWhereIn('status', $stageStatuses);
+                });
+            }
+
             $byStatus = (clone $base)->selectRaw('status, count(*) as cnt')->groupBy('status')->pluck('cnt', 'status');
             $c = fn (string $s): int => (int) ($byStatus[$s] ?? 0);
 
             $metrics = [
-                'pending_endorsement' => $c('HEAD_PENDING'),
+                'pending_endorsement' => $c('HEAD_PENDING') + $c('BUDGET_HEAD_REVIEW') + $c('PACCO_HEAD_REVIEW') + $c('OPPMO_HEAD_REVIEW') + $c('APP_PREPARER_REVIEW') + $c('GOVERNOR_REVIEW'),
                 'endorsed_approved' => $c('READY_TO_PRINT'),
-                'returned' => $c('HEAD_RETURNED'),
+                'returned' => $c('HEAD_RETURNED') + $c('BUDGET_HEAD_RETURNED') + $c('PACCO_HEAD_RETURNED') + $c('OPPMO_HEAD_RETURNED') + $c('APP_PREPARER_RETURNED') + $c('GOVERNOR_RETURNED'),
                 'total_office' => (int) $byStatus->sum(),
             ];
 
             $headRecent = clone $base;
-            $recentPpmps = $headRecent->with($commonRecentRelations)->latest('updated_at')->take(100)->get();
+            if (empty($headStages) && empty($appStages) && $user->relationLoaded('office') && $user->office) {
+                $headRelations = array_diff_key($commonRecentRelations, ['office.head' => true]);
+                $recentPpmps = $headRecent->with($headRelations)->latest('updated_at')->take(100)->get();
+                $recentPpmps->each(fn ($p) => $p->setRelation('office', $user->office));
+            } else {
+                $recentPpmps = $headRecent->with($commonRecentRelations)->latest('updated_at')->take(100)->get();
+            }
         } elseif ($user->isBudgetOfficer()) {
             $base = Ppmp::whereDoesntHave('children')->where(function ($q) use ($user) {
                 $q->where(function ($subQ) use ($user) {
@@ -82,8 +123,7 @@ class DashboardController extends Controller
             $byStatus = (clone $base)->selectRaw('status, count(*) as cnt')->groupBy('status')->pluck('cnt', 'status');
             $c = fn (string $s): int => (int) ($byStatus[$s] ?? 0);
 
-            // Calculate approved count from existing grouped status counts without an extra round-trip
-            $myApproved = $c('OPPMO_REVIEW') + $c('HEAD_PENDING') + $c('HEAD_RETURNED');
+            $myApproved = $c('BUDGET_HEAD_REVIEW') + $c('BUDGET_HEAD_RETURNED') + $c('OPPMO_REVIEW') + $c('OPPMO_HEAD_REVIEW') + $c('OPPMO_HEAD_RETURNED') + $c('HEAD_PENDING') + $c('HEAD_RETURNED');
             $myReady = Ppmp::whereDoesntHave('children')
                 ->where('status', 'READY_TO_PRINT')
                 ->where(function ($q) use ($user) {
@@ -230,7 +270,7 @@ class DashboardController extends Controller
                 ->take(100)
                 ->get();
         } elseif ($user->isSuperAdmin()) {
-            // Super Admin: Full Executive Overview & Analytics
+
             $base = Ppmp::whereDoesntHave('children');
             $statusRows = (clone $base)->toBase()->selectRaw('status, count(*) as cnt, sum(total_budget) as budget_sum')->groupBy('status')->get()->keyBy('status');
             $c = fn (string $s): int => (int) ($statusRows[$s]->cnt ?? 0);
@@ -249,8 +289,9 @@ class DashboardController extends Controller
             $recentPpmps = $superRecent->with($commonRecentRelations)->latest('updated_at')->take(100)->get();
 
             $adminAnalytics = $this->buildAdminAnalytics($base, $metrics);
+            $endUserAnalytics = $this->buildEndUserAnalytics($recentPpmps, $metrics);
         } else {
-            // Admin role: Specialized management for Users, Amended/Supplemental, System Logs, PPMP List
+
             $base = Ppmp::whereDoesntHave('children');
             $statusRows = (clone $base)->toBase()->selectRaw('status, count(*) as cnt, sum(total_budget) as budget_sum')->groupBy('status')->get()->keyBy('status');
             $c = fn (string $s): int => (int) ($statusRows[$s]->cnt ?? 0);
@@ -279,18 +320,26 @@ class DashboardController extends Controller
                 ->get();
 
             $adminAnalytics = $this->buildAdminAnalytics($base, $metrics);
+            $endUserAnalytics = $this->buildEndUserAnalytics($recentPpmps, $metrics);
         }
 
-        // Recent Routing Actions
         $recentRoutes = PpmpRoute::with([
-            'ppmp.attachments',
-            'ppmp.monitoringProjects',
-            'fromUser',
-            'toUser',
+            'ppmp' => fn ($q) => $q->without('milestones')->select([
+                'id', 'uuid', 'tracking_number', 'ppmp_number', 'title', 'status', 'office_id', 'created_by',
+            ]),
+            'ppmp.amendment',
+            'fromUser' => fn ($q) => $q->without('pnpkiSignature'),
+            'toUser' => fn ($q) => $q->without('pnpkiSignature'),
         ])
             ->latest('id')
             ->take(8)
             ->get();
+
+        $recentRoutes->each(function ($route) {
+            if ($route->ppmp) {
+                $route->ppmp->setAppends([]);
+            }
+        });
 
         $allDashboardPpmps = collect($recentPpmps)
             ->merge($pendingAmendments ?? [])
@@ -300,11 +349,14 @@ class DashboardController extends Controller
             ->unique('id')
             ->values();
         if ($returnedRecent->isNotEmpty()) {
-            \Illuminate\Database\Eloquent\Collection::make($returnedRecent->all())->load(['reviews.reviewer', 'routes.fromUser']);
+            \Illuminate\Database\Eloquent\Collection::make($returnedRecent->all())->load([
+                'reviews.reviewer' => fn ($q) => $q->without('pnpkiSignature'),
+                'routes.fromUser' => fn ($q) => $q->without('pnpkiSignature'),
+            ]);
         }
 
         $signatories = $user->isAdmin() ? PpmpSignatory::latest('id')->get() : [];
-        $users = ($user->isSuperAdmin() || $user->isAdminRole()) ? User::with(['office', 'accountCodes'])->latest('id')->get() : [];
+        $users = ($user->isSuperAdmin() || $user->isAdminRole()) ? User::with(['office', 'accountCodes', 'pnpkiSignature'])->latest('id')->get() : [];
         $offices = ($user->isSuperAdmin() || $user->isAdminRole()) ? Office::with('head')->orderBy('name')->get() : [];
 
         return response()->json([
@@ -317,17 +369,237 @@ class DashboardController extends Controller
             'users' => $users,
             'offices' => $offices,
             'analytics' => $adminAnalytics ?? null,
+            'end_user_analytics' => $endUserAnalytics ?? null,
             'signature_settings' => \App\Models\SystemSetting::getSignatureSettings(),
         ]);
     }
 
-    /**
-     * Compute rich executive visual analytics metrics for Admin & Super Admin,
-     * including instant pre-computed datasets for all fiscal years and per fiscal year.
-     */
+    private function buildEndUserAnalytics($ppmps, array $metrics): array
+    {
+        $collection = collect($ppmps);
+
+        $isInfraPpmp = function ($ppmp): bool {
+            $items = $ppmp->relationLoaded('items') ? $ppmp->items : collect();
+            foreach ($items as $item) {
+                if (stripos((string) ($item->project_type ?? ''), 'infra') !== false) {
+                    return true;
+                }
+            }
+            return stripos((string) ($ppmp->tracking_number ?? ''), 'INFRA') !== false;
+        };
+
+        $infraCollection = $collection->filter($isInfraPpmp)->values();
+        $goodsCollection = $collection->reject($isInfraPpmp)->values();
+
+        $overall = $this->summarizePpmpCollection($collection, $metrics);
+        $overall['by_category'] = [
+            'goods_consulting' => $this->summarizePpmpCollection($goodsCollection, null),
+            'infrastructure' => $this->summarizePpmpCollection($infraCollection, null),
+        ];
+
+        $byYearMap = [];
+        $groupedByYear = $collection->groupBy(fn ($p) => (string) ($p->fiscal_year ?: date('Y')));
+        $availableYears = $groupedByYear->keys()->sortDesc()->values()->all();
+
+        foreach ($availableYears as $yr) {
+            $yrCollection = $groupedByYear->get($yr, collect())->values();
+            $yrInfra = $yrCollection->filter($isInfraPpmp)->values();
+            $yrGoods = $yrCollection->reject($isInfraPpmp)->values();
+
+            $yrSummary = $this->summarizePpmpCollection($yrCollection, null);
+            $yrSummary['by_category'] = [
+                'goods_consulting' => $this->summarizePpmpCollection($yrGoods, null),
+                'infrastructure' => $this->summarizePpmpCollection($yrInfra, null),
+            ];
+            $byYearMap[(string) $yr] = $yrSummary;
+        }
+
+        $overall['available_years'] = $availableYears;
+        $overall['by_year_map'] = $byYearMap;
+
+        return $overall;
+    }
+
+    private function summarizePpmpCollection($collection, ?array $metricsOverride = null): array
+    {
+        if ($collection->isEmpty()) {
+            return [
+                'ppmp_count' => 0,
+                'gross_budget' => 0.0,
+                'procured_budget' => 0.0,
+                'retention_budget' => 0.0,
+                'retention_ratio' => 0.0,
+                'retention_count' => 0,
+                'retention_items' => [],
+                'status_breakdown' => [
+                    ['key' => 'ready_to_print', 'label' => 'Ready to Print', 'count' => 0, 'color' => '#10b981'],
+                    ['key' => 'in_review', 'label' => 'In Review', 'count' => 0, 'color' => '#6366f1'],
+                    ['key' => 'draft', 'label' => 'Draft', 'count' => 0, 'color' => '#64748b'],
+                    ['key' => 'returned', 'label' => 'Returned', 'count' => 0, 'color' => '#f43f5e'],
+                ],
+                'by_fiscal_year' => [],
+                'by_fund_source' => [],
+            ];
+        }
+
+        $grossBudget = 0.0;
+        $retentionBudget = 0.0;
+        $procuredBudget = 0.0;
+        $retentionItems = [];
+        $fyMap = [];
+        $fundMap = [];
+        $statusCounts = [
+            'ready_to_print' => 0,
+            'in_review' => 0,
+            'draft' => 0,
+            'returned' => 0,
+        ];
+
+        foreach ($collection as $ppmp) {
+            $st = (string) ($ppmp->status ?? '');
+            if ($st === 'READY_TO_PRINT') {
+                $statusCounts['ready_to_print']++;
+            } elseif (in_array($st, ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW', 'HEAD_PENDING', 'BUDGET_HEAD_REVIEW', 'PACCO_HEAD_REVIEW', 'OPPMO_HEAD_REVIEW', 'APP_PREPARER_REVIEW', 'GOVERNOR_REVIEW'], true)) {
+                $statusCounts['in_review']++;
+            } elseif ($st === 'DRAFT') {
+                $statusCounts['draft']++;
+            } elseif (str_ends_with($st, '_RETURNED')) {
+                $statusCounts['returned']++;
+            }
+
+            $items = $ppmp->relationLoaded('items') ? $ppmp->items : collect();
+            $ppmpGross = 0.0;
+            $ppmpRet = 0.0;
+            $ppmpProcured = 0.0;
+            $maxRetPct = null;
+            $retRemarks = null;
+
+            foreach ($items as $item) {
+                $amt = (float) ($item->estimated_budget ?? 0);
+                $isRet = (bool) ($item->is_retention ?? false);
+                $ppmpGross += $amt;
+
+                if ($isRet) {
+                    $ppmpRet += $amt;
+                    if ($item->retention_percentage !== null) {
+                        $pct = (float) $item->retention_percentage;
+                        $maxRetPct = $maxRetPct === null ? $pct : max($maxRetPct, $pct);
+                    }
+                    if (!empty($item->remarks) && $retRemarks === null) {
+                        $retRemarks = $item->remarks;
+                    }
+                } else {
+                    $ppmpProcured += $amt;
+                }
+
+                $fsName = trim((string) ($item->source_of_fund ?: $ppmp->source_of_fund ?: 'General Fund'));
+                if ($fsName === '') {
+                    $fsName = 'General Fund';
+                }
+                if (!isset($fundMap[$fsName])) {
+                    $fundMap[$fsName] = ['source_of_fund' => $fsName, 'ppmp_ids' => [], 'gross_budget' => 0.0, 'retention_budget' => 0.0];
+                }
+                $fundMap[$fsName]['ppmp_ids'][$ppmp->id] = true;
+                $fundMap[$fsName]['gross_budget'] += $amt;
+                if ($isRet) {
+                    $fundMap[$fsName]['retention_budget'] += $amt;
+                }
+            }
+
+            if ($items->isEmpty() && (float) ($ppmp->total_budget ?? 0) > 0) {
+                $ppmpGross = (float) $ppmp->total_budget;
+                $ppmpProcured = $ppmpGross;
+            }
+
+            $grossBudget += $ppmpGross;
+            $retentionBudget += $ppmpRet;
+            $procuredBudget += $ppmpProcured;
+
+            $fy = (string) ($ppmp->fiscal_year ?: date('Y'));
+            if (!isset($fyMap[$fy])) {
+                $fyMap[$fy] = ['fiscal_year' => $fy, 'count' => 0, 'gross_budget' => 0.0, 'procured_budget' => 0.0, 'retention_budget' => 0.0];
+            }
+            $fyMap[$fy]['count']++;
+            $fyMap[$fy]['gross_budget'] += $ppmpGross;
+            $fyMap[$fy]['procured_budget'] += $ppmpProcured;
+            $fyMap[$fy]['retention_budget'] += $ppmpRet;
+
+            if ($ppmpRet > 0) {
+                $grossRounded = round($ppmpGross, 2);
+                $retRounded = round($ppmpRet, 2);
+                $retentionItems[] = [
+                    'ppmp_id' => (int) $ppmp->id,
+                    'ppmp_uuid' => $ppmp->uuid,
+                    'tracking_number' => $ppmp->tracking_number ?: ("PPMP #" . $ppmp->ppmp_number),
+                    'title' => $ppmp->title,
+                    'fiscal_year' => $fy,
+                    'status' => $ppmp->status,
+                    'creator_name' => $ppmp->relationLoaded('creator') ? ($ppmp->creator?->name ?? 'End-User') : 'End-User',
+                    'office_code' => $ppmp->relationLoaded('office') ? ($ppmp->office?->code ?? '') : '',
+                    'office_name' => $ppmp->relationLoaded('office') ? ($ppmp->office?->name ?? $ppmp->implementing_unit ?? '') : ($ppmp->implementing_unit ?? ''),
+                    'gross_budget' => $grossRounded,
+                    'procured_budget' => max(0.0, round($grossRounded - $retRounded, 2)),
+                    'retention_amount' => $retRounded,
+                    'retention_percentage' => $maxRetPct !== null ? $maxRetPct : ($grossRounded > 0 ? round(($retRounded / $grossRounded) * 100, 1) : 0.0),
+                    'remarks' => $retRemarks,
+                ];
+            }
+        }
+
+        usort($retentionItems, fn ($a, $b) => $b['retention_amount'] <=> $a['retention_amount']);
+        $retentionItems = array_slice($retentionItems, 0, 25);
+
+        krsort($fyMap);
+        $byFiscalYear = array_values(array_map(fn ($r) => [
+            'fiscal_year' => $r['fiscal_year'],
+            'count' => $r['count'],
+            'gross_budget' => round($r['gross_budget'], 2),
+            'procured_budget' => round($r['procured_budget'], 2),
+            'retention_budget' => round($r['retention_budget'], 2),
+        ], array_slice($fyMap, 0, 6, true)));
+
+        uasort($fundMap, fn ($a, $b) => $b['gross_budget'] <=> $a['gross_budget']);
+        $byFundSource = array_values(array_map(fn ($r) => [
+            'source_of_fund' => $r['source_of_fund'],
+            'count' => count($r['ppmp_ids']),
+            'gross_budget' => round($r['gross_budget'], 2),
+            'retention_budget' => round($r['retention_budget'], 2),
+        ], array_slice($fundMap, 0, 6, true)));
+
+        $grossRounded = round($grossBudget, 2);
+        $retRounded = round($retentionBudget, 2);
+        $procuredRounded = round($procuredBudget, 2);
+        $retentionRatio = $grossRounded > 0 ? round(($retRounded / $grossRounded) * 100, 1) : 0.0;
+
+        $statusBreakdown = $metricsOverride !== null ? [
+            ['key' => 'ready_to_print', 'label' => 'Ready to Print', 'count' => (int) ($metricsOverride['ready_to_print'] ?? 0), 'color' => '#10b981'],
+            ['key' => 'in_review', 'label' => 'In Review', 'count' => (int) ($metricsOverride['in_review'] ?? 0), 'color' => '#6366f1'],
+            ['key' => 'draft', 'label' => 'Draft', 'count' => (int) ($metricsOverride['draft'] ?? 0), 'color' => '#64748b'],
+            ['key' => 'returned', 'label' => 'Returned', 'count' => (int) (($metricsOverride['returned_by_reviewer'] ?? 0) + ($metricsOverride['head_returned'] ?? 0)), 'color' => '#f43f5e'],
+        ] : [
+            ['key' => 'ready_to_print', 'label' => 'Ready to Print', 'count' => $statusCounts['ready_to_print'], 'color' => '#10b981'],
+            ['key' => 'in_review', 'label' => 'In Review', 'count' => $statusCounts['in_review'], 'color' => '#6366f1'],
+            ['key' => 'draft', 'label' => 'Draft', 'count' => $statusCounts['draft'], 'color' => '#64748b'],
+            ['key' => 'returned', 'label' => 'Returned', 'count' => $statusCounts['returned'], 'color' => '#f43f5e'],
+        ];
+
+        return [
+            'ppmp_count' => $collection->count(),
+            'gross_budget' => $grossRounded,
+            'procured_budget' => $procuredRounded,
+            'retention_budget' => $retRounded,
+            'retention_ratio' => $retentionRatio,
+            'retention_count' => count($retentionItems),
+            'retention_items' => $retentionItems,
+            'status_breakdown' => $statusBreakdown,
+            'by_fiscal_year' => $byFiscalYear,
+            'by_fund_source' => $byFundSource,
+        ];
+    }
+
     private function buildAdminAnalytics(Builder $base, array $metrics): array
     {
-        // 1. Fiscal years distinct breakdown
+
         $fiscalYears = (clone $base)
             ->toBase()
             ->selectRaw('fiscal_year, count(*) as count, sum(total_budget) as total_budget')
@@ -342,17 +614,14 @@ class DashboardController extends Controller
                 ];
             });
 
-        // 2. Overall analytics scope (All fiscal years)
         $overall = $this->computeAnalyticsForScope($base, null);
 
-        // 3. Pre-compute analytics breakdown for each individual fiscal year
         $byFiscalYear = [];
         foreach ($fiscalYears as $fy) {
             $yearKey = (string) $fy['fiscal_year'];
             $byFiscalYear[$yearKey] = $this->computeAnalyticsForScope($base, $yearKey);
         }
 
-        // 4. Compliance Summary (Pre-proc conference & competitive vs alternative) in a single pass
         $complianceRow = PpmpItem::whereHas('ppmp', function ($q) {
             $q->whereDoesntHave('children');
         })
@@ -379,9 +648,6 @@ class DashboardController extends Controller
         ]);
     }
 
-    /**
-     * Compute analytics dataset scoped to a specific fiscal year (or null for all)
-     */
     private function computeAnalyticsForScope(Builder $base, ?string $fiscalYear = null): array
     {
         $scopedBase = clone $base;
@@ -407,7 +673,6 @@ class DashboardController extends Controller
             'pending_amendments' => (clone $scopedBase)->whereHas('amendment', fn($aq) => $aq->where('amendment_status', 'PENDING_APPROVAL'))->count(),
         ];
 
-        // 1. Budget distribution by office
         $budgetByOffice = (clone $scopedBase)
             ->toBase()
             ->join('offices', 'ppmps.office_id', '=', 'offices.id')
@@ -425,8 +690,6 @@ class DashboardController extends Controller
                 ];
             });
 
-        // 2. Procurement Mode, 4. Source of Fund, 5. Project Type, and 6. Monthly Spending Schedule
-        // Computed in a single lightweight pass over scoped items instead of 4 separate correlated subquery scans per fiscal year
         $items = PpmpItem::whereHas('ppmp', function ($q) use ($fiscalYear) {
             $q->whereDoesntHave('children');
             if ($fiscalYear) {
@@ -499,7 +762,6 @@ class DashboardController extends Controller
         $fundSources = collect($fundBuckets)->sortByDesc('total_amount')->values();
         $projectTypes = collect($typeBuckets)->sortByDesc('total_amount')->values();
 
-        // 3. Status Distribution for Visual Analytics
         $statusDistribution = [
             ['status' => 'DRAFT', 'label' => 'Drafts', 'count' => $scopedMetrics['draft'], 'color' => '#64748b'],
             ['status' => 'HEAD_PENDING', 'label' => 'Pending Office Head', 'count' => $scopedMetrics['head_pending'], 'color' => '#f59e0b'],
@@ -508,7 +770,6 @@ class DashboardController extends Controller
             ['status' => 'PENDING_AMENDMENTS', 'label' => 'Pending Amendments', 'count' => $scopedMetrics['pending_amendments'], 'color' => '#a855f7'],
         ];
 
-        // 7. Quarterly Totals
         $quarterlySchedule = [
             'Q1' => ['label' => 'Q1 (Jan - Mar)', 'amount' => $monthlySchedule[1]['amount'] + $monthlySchedule[2]['amount'] + $monthlySchedule[3]['amount'], 'count' => $monthlySchedule[1]['count'] + $monthlySchedule[2]['count'] + $monthlySchedule[3]['count']],
             'Q2' => ['label' => 'Q2 (Apr - Jun)', 'amount' => $monthlySchedule[4]['amount'] + $monthlySchedule[5]['amount'] + $monthlySchedule[6]['amount'], 'count' => $monthlySchedule[4]['count'] + $monthlySchedule[5]['count'] + $monthlySchedule[6]['count']],
@@ -516,7 +777,6 @@ class DashboardController extends Controller
             'Q4' => ['label' => 'Q4 (Oct - Dec)', 'amount' => $monthlySchedule[10]['amount'] + $monthlySchedule[11]['amount'] + $monthlySchedule[12]['amount'], 'count' => $monthlySchedule[10]['count'] + $monthlySchedule[11]['count'] + $monthlySchedule[12]['count']],
         ];
 
-        // 8. Top Procurement Projects (High-Value Items) - single joined query without N+1 Eloquent $with relations
         $topProjects = PpmpItem::whereHas('ppmp', function ($q) use ($fiscalYear) {
                 $q->whereDoesntHave('children');
                 if ($fiscalYear) {
@@ -559,7 +819,6 @@ class DashboardController extends Controller
                 ];
             });
 
-        // 9. Detailed Workflow Stages (reusing grouped $statusRows counts)
         $workflowStages = [
             ['stage' => 'DRAFT', 'label' => 'End-User Drafting', 'count' => $c('DRAFT'), 'color' => '#64748b'],
             ['stage' => 'TWG_REVIEW', 'label' => 'Technical Working Group (TWG)', 'count' => $c('TWG_REVIEW'), 'color' => '#ec4899'],

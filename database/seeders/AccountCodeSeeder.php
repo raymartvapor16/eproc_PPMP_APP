@@ -8,9 +8,7 @@ use Illuminate\Support\Facades\DB;
 
 class AccountCodeSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
+
     public function run(): void
     {
         $csvPath = database_path('seeders/chart_of_accounts.csv');
@@ -38,7 +36,6 @@ class AccountCodeSeeder extends Seeder
             $code = trim($csv[1] ?? '');
             $name = trim($csv[2] ?? '');
 
-            // Skip headers / document metadata
             if (empty($code) && empty($name)) {
                 continue;
             }
@@ -51,10 +48,8 @@ class AccountCodeSeeder extends Seeder
                 continue;
             }
 
-            // Normalize whitespace
             $name = preg_replace('/\s+/', ' ', $name);
 
-            // Is standard account code pattern: e.g. 5-02-03-220 or 1-01-01-010
             $isStandardCode = (bool) preg_match('/^[0-9]-[0-9]{2}-[0-9]{2}-[0-9]{3}$/', $code);
 
             $recordCode = $code ?: null;
@@ -65,25 +60,22 @@ class AccountCodeSeeder extends Seeder
                 $currentMain = ['code' => $code, 'name' => $name];
                 $recordCode = $code;
             } elseif (empty($code) && $currentMain) {
-                // Sub-item under current main account code
+
                 $recordCode = $currentMain['code'];
                 $parentName = $currentMain['name'];
 
-                // Check if subName starts with sub-code pattern: e.g. "-0003 - CY2021 Land" or "-02 - R/M OFFICE EQUIPMENT"
                 if (preg_match('/^-\s*([0-9a-zA-Z.]+)\s*-\s*(.+)$/', $name, $matches)) {
                     $subCode = trim($matches[1]);
                 }
             } elseif (empty($code)) {
-                // Orphan leading row without code, e.g. "- - Flood Control System"
+
                 if (preg_match('/^-\s*-\s*(.+)$/', $name, $m)) {
                     $name = trim($m[1]);
                 }
             }
 
-            // Derive account class
             $accountClass = AccountCode::deriveAccountClass($recordCode);
 
-            // Formulate full description
             if ($recordCode && $parentName && $parentName !== $name) {
                 $fullDesc = "{$recordCode} • {$parentName} ({$name})";
             } elseif ($recordCode) {
@@ -92,10 +84,9 @@ class AccountCodeSeeder extends Seeder
                 $fullDesc = $name;
             }
 
-            // Deduplication key
             $key = strtolower(($recordCode ?: '') . '|' . $name);
             if (isset($seen[$key])) {
-                continue; // Avoid duplicate data!
+                continue;
             }
             $seen[$key] = true;
 
@@ -116,7 +107,6 @@ class AccountCodeSeeder extends Seeder
 
         fclose($handle);
 
-        // Bulk insert in chunks of 100 for high performance
         $chunks = array_chunk($records, 100);
         foreach ($chunks as $chunk) {
             DB::table('account_codes')->upsert(
@@ -126,7 +116,6 @@ class AccountCodeSeeder extends Seeder
             );
         }
 
-        // Auto-link existing PPMPs that have matching account_code text
         $ppmps = \App\Models\Ppmp::whereNull('account_code_id')->whereNotNull('account_code')->get();
         $linkedCount = 0;
         foreach ($ppmps as $p) {

@@ -92,7 +92,6 @@ class DeveloperModeTest extends TestCase
             'entity_type' => 'system_settings',
         ]);
 
-        // Toggle back to false
         $response2 = $this->actingAs($superAdmin)->putJson('/api/system-settings/developer-mode', [
             'developer_mode' => false,
         ]);
@@ -119,7 +118,6 @@ class DeveloperModeTest extends TestCase
         $desktopAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0';
         $mobileEmulatedAgent = 'Mozilla/5.0 (Linux; Android 14; Pixel 9) Chrome/120.0.0.0 Mobile Safari/537.36';
 
-        // 1. User logs in from desktop
         $loginRes = $this->withServerVariables(['HTTP_USER_AGENT' => $desktopAgent])
             ->postJson('/api/login', [
                 'email' => $user->email,
@@ -127,15 +125,12 @@ class DeveloperModeTest extends TestCase
             ]);
         $loginRes->assertStatus(200);
 
-        // 2. User switches to Mobile Device Emulation in DevTools (different user agent)
         $meRes = $this->withServerVariables(['HTTP_USER_AGENT' => $mobileEmulatedAgent])
             ->getJson('/api/me');
 
-        // Session must remain valid and authenticated because Developer Mode is ON
         $meRes->assertStatus(200);
         $meRes->assertJson(['user' => ['id' => $user->id]]);
 
-        // No SESSION_HIJACK_DETECTED audit log should be written
         $this->assertFalse(
             AuditLog::where('action', 'SESSION_HIJACK_DETECTED')
                 ->where('user_id', $user->id)
@@ -157,7 +152,6 @@ class DeveloperModeTest extends TestCase
         $desktopAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0';
         $attackerAgent = 'AttackerScript/2.0 (Linux x86_64)';
 
-        // 1. User logs in
         $loginRes = $this->withServerVariables(['HTTP_USER_AGENT' => $desktopAgent])
             ->postJson('/api/login', [
                 'email' => $user->email,
@@ -165,11 +159,9 @@ class DeveloperModeTest extends TestCase
             ]);
         $loginRes->assertStatus(200);
 
-        // 2. Request comes in with mismatched agent while Developer Mode is OFF
         $hijackRes = $this->withServerVariables(['HTTP_USER_AGENT' => $attackerAgent])
             ->getJson('/api/me');
 
-        // Session must be revoked
         $hijackRes->assertStatus(401);
         $hijackRes->assertJson(['code' => 'SESSION_HIJACK_PREVENTED']);
     }

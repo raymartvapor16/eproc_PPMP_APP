@@ -24,13 +24,12 @@ import {
 import { accountCodeService } from '../../services/api';
 
 export const AccountCodesManagement = () => {
-    // List & Pagination State
+
     const [accountCodes, setAccountCodes] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [stats, setStats] = useState(null);
 
-    // Filters & Pagination parameters
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [classFilter, setClassFilter] = useState('ALL');
@@ -44,7 +43,6 @@ export const AccountCodesManagement = () => {
         last_page: 1,
     });
 
-    // Modal State
     const [isFormModalOpen, setIsFormModalOpen] = useState(false);
     const [editingAccount, setEditingAccount] = useState(null);
     const [formData, setFormData] = useState({
@@ -59,15 +57,12 @@ export const AccountCodesManagement = () => {
     const [saving, setSaving] = useState(false);
     const [modalError, setModalError] = useState('');
 
-    // Delete Modal State
     const [deleteModalAccount, setDeleteModalAccount] = useState(null);
     const [deleting, setDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState('');
 
-    // Toggle status state
     const [togglingId, setTogglingId] = useState(null);
 
-    // Feedback notification banner
     const [feedback, setFeedback] = useState({ type: '', text: '' });
 
     const showFeedback = (type, text) => {
@@ -75,7 +70,6 @@ export const AccountCodesManagement = () => {
         setTimeout(() => setFeedback({ type: '', text: '' }), 5000);
     };
 
-    // Debounce search query to prevent lag
     useEffect(() => {
         const handler = setTimeout(() => {
             setDebouncedSearch(searchQuery.trim());
@@ -84,7 +78,6 @@ export const AccountCodesManagement = () => {
         return () => clearTimeout(handler);
     }, [searchQuery]);
 
-    // Fetch Stats
     const fetchStats = async () => {
         try {
             const res = await accountCodeService.getStats();
@@ -94,7 +87,6 @@ export const AccountCodesManagement = () => {
         }
     };
 
-    // Fetch Paginated Account Codes
     const fetchCodes = useCallback(async (isBackground = false) => {
         if (!isBackground) setLoading(true);
         else setRefreshing(true);
@@ -138,7 +130,6 @@ export const AccountCodesManagement = () => {
         fetchStats();
     }, []);
 
-    // Open Add Modal
     const handleOpenAdd = () => {
         setEditingAccount(null);
         setFormData({
@@ -154,7 +145,6 @@ export const AccountCodesManagement = () => {
         setIsFormModalOpen(true);
     };
 
-    // Open Edit Modal
     const handleOpenEdit = (acc) => {
         setEditingAccount(acc);
         setFormData({
@@ -170,7 +160,6 @@ export const AccountCodesManagement = () => {
         setIsFormModalOpen(true);
     };
 
-    // Handle Form Save
     const handleSave = async (e) => {
         e.preventDefault();
         setSaving(true);
@@ -203,7 +192,6 @@ export const AccountCodesManagement = () => {
         }
     };
 
-    // Toggle Status
     const handleToggleStatus = async (acc) => {
         setTogglingId(acc.id);
         try {
@@ -220,7 +208,6 @@ export const AccountCodesManagement = () => {
         }
     };
 
-    // Delete Account
     const handleDelete = async () => {
         if (!deleteModalAccount) return;
         setDeleting(true);
@@ -239,7 +226,6 @@ export const AccountCodesManagement = () => {
         }
     };
 
-    // Class badge color helper
     const getClassBadge = (cls) => {
         switch (cls) {
             case 'Expenses':
@@ -259,7 +245,7 @@ export const AccountCodesManagement = () => {
 
     return (
         <div className="space-y-6">
-            {/* Feedback notification banner */}
+
             {feedback.text && (
                 <div
                     className={`p-4 rounded-xl border flex items-center justify-between shadow-xs animate-in fade-in ${
@@ -286,7 +272,6 @@ export const AccountCodesManagement = () => {
                 </div>
             )}
 
-            {/* Header & Actions */}
             <div className="flex items-center justify-between flex-wrap gap-4 pb-4 border-b border-slate-200">
                 <div className="space-y-1">
                     <div className="flex items-center gap-2.5">
@@ -330,7 +315,6 @@ export const AccountCodesManagement = () => {
                 </div>
             </div>
 
-            {/* Statistics Cards */}
             {stats && (
                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
                     <div className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs">
@@ -368,10 +352,9 @@ export const AccountCodesManagement = () => {
                 </div>
             )}
 
-            {/* Filter and Search Bar */}
             <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-2xs space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
-                    {/* Search Input */}
+
                     <div className="sm:col-span-6 relative">
                         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                         <input
@@ -392,7 +375,6 @@ export const AccountCodesManagement = () => {
                         )}
                     </div>
 
-                    {/* Class Filter */}
                     <div className="sm:col-span-3">
                         <select
                             value={classFilter}
@@ -412,7 +394,6 @@ export const AccountCodesManagement = () => {
                         </select>
                     </div>
 
-                    {/* Status Filter */}
                     <div className="sm:col-span-2">
                         <select
                             value={statusFilter}
@@ -428,7 +409,6 @@ export const AccountCodesManagement = () => {
                         </select>
                     </div>
 
-                    {/* Per Page Selector */}
                     <div className="sm:col-span-1">
                         <select
                             value={perPage}
@@ -448,7 +428,6 @@ export const AccountCodesManagement = () => {
                 </div>
             </div>
 
-            {/* Table */}
             <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs">
@@ -566,7 +545,6 @@ export const AccountCodesManagement = () => {
                     </table>
                 </div>
 
-                {/* Pagination Controls */}
                 <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between flex-wrap gap-2 text-xs text-slate-600">
                     <div>
                         Showing <span className="font-bold text-slate-900">{paginationMeta.from || 0}</span> to{' '}
@@ -602,7 +580,6 @@ export const AccountCodesManagement = () => {
                 </div>
             </div>
 
-            {/* Add / Edit Form Modal */}
             {isFormModalOpen && (
                 <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden my-8">
@@ -741,7 +718,6 @@ export const AccountCodesManagement = () => {
                 </div>
             )}
 
-            {/* Delete Confirmation Modal */}
             {deleteModalAccount && (
                 <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
                     <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden p-6 space-y-4">
@@ -806,4 +782,3 @@ export const AccountCodesManagement = () => {
         </div>
     );
 };
-

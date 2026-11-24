@@ -33,14 +33,11 @@ export const DatabaseBackupManagement = () => {
     const [refreshing, setRefreshing] = useState(false);
     const [notification, setNotification] = useState(null);
 
-    // Active sub-view or tab: 'backup' | 'decrypt'
     const [activeTab, setActiveTab] = useState('backup');
 
-    // Modals state
     const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [showDownloadModal, setShowDownloadModal] = useState(false);
 
-    // Password Setup / Change Form State
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -50,7 +47,6 @@ export const DatabaseBackupManagement = () => {
     const [passwordSubmitting, setPasswordSubmitting] = useState(false);
     const [passwordError, setPasswordError] = useState(null);
 
-    // Download Authorization Form State
     const [downloadBackupPassword, setDownloadBackupPassword] = useState('');
     const [downloadAccountPassword, setDownloadAccountPassword] = useState('');
     const [showDownloadBackupPass, setShowDownloadBackupPass] = useState(false);
@@ -59,7 +55,6 @@ export const DatabaseBackupManagement = () => {
     const [downloading, setDownloading] = useState(false);
     const [downloadError, setDownloadError] = useState(null);
 
-    // Decrypt Tool State
     const [decryptFile, setDecryptFile] = useState(null);
     const [decryptPassword, setDecryptPassword] = useState('');
     const [showDecryptPass, setShowDecryptPass] = useState(false);
@@ -89,7 +84,6 @@ export const DatabaseBackupManagement = () => {
         fetchStatus();
     }, []);
 
-    // Handle Setting or Updating Password
     const handleSavePassword = async (e) => {
         e.preventDefault();
         setPasswordError(null);
@@ -140,7 +134,6 @@ export const DatabaseBackupManagement = () => {
         }
     };
 
-    // Handle Dual-Factor Authorization & Single-Use Ephemeral Download
     const handleDownload = async (e) => {
         e.preventDefault();
         setDownloadError(null);
@@ -152,7 +145,7 @@ export const DatabaseBackupManagement = () => {
 
         setDownloading(true);
         try {
-            // Step 1: Request single-use ephemeral download token (verifies MFA & enforces anti-brute-force)
+
             const tokenRes = await databaseBackupService.requestToken({
                 password: downloadBackupPassword,
                 account_password: downloadAccountPassword || undefined,
@@ -164,7 +157,6 @@ export const DatabaseBackupManagement = () => {
                 throw new Error('Server did not return a valid download authorization token.');
             }
 
-            // Step 2: Download dump with single-use token (token burns immediately)
             const res = await databaseBackupService.downloadWithToken(token);
 
             let filename = `eproc_finalize_backup_${new Date().toISOString().slice(0, 10)}${encryptDump ? '.sql.enc' : '.sql'}`;
@@ -203,7 +195,7 @@ export const DatabaseBackupManagement = () => {
                     const parsed = JSON.parse(text);
                     errorMsg = parsed.message || parsed.errors?.password?.[0] || parsed.errors?.account_password?.[0] || errorMsg;
                 } catch {
-                    // fallback
+
                 }
             } else if (err.response?.data?.message) {
                 errorMsg = err.response.data.message;
@@ -216,7 +208,6 @@ export const DatabaseBackupManagement = () => {
         }
     };
 
-    // Handle Decrypting an Uploaded Encrypted Backup (.sql.enc)
     const handleDecrypt = async (e) => {
         e.preventDefault();
         setDecryptError(null);
@@ -268,7 +259,7 @@ export const DatabaseBackupManagement = () => {
                     const parsed = JSON.parse(text);
                     errorMsg = parsed.message || errorMsg;
                 } catch {
-                    // fallback
+
                 }
             } else if (err.response?.data?.message) {
                 errorMsg = err.response.data.message;
@@ -284,7 +275,7 @@ export const DatabaseBackupManagement = () => {
 
     return (
         <div className="space-y-6">
-            {/* Notification Banner */}
+
             {notification && (
                 <div
                     className={`p-4 rounded-xl flex items-start justify-between gap-3 text-sm font-medium border shadow-xs animate-in fade-in duration-200 ${
@@ -311,7 +302,6 @@ export const DatabaseBackupManagement = () => {
                 </div>
             )}
 
-            {/* Header Card */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-start gap-4">
@@ -374,17 +364,16 @@ export const DatabaseBackupManagement = () => {
                 </div>
             </div>
 
-            {/* TAB: BACKUP EXPORT & SECURITY MANAGEMENT */}
             {activeTab === 'backup' && (
                 <>
-                    {/* Security Status Banner */}
+
                     {loading ? (
                         <div className="bg-white rounded-2xl border border-slate-200 p-8 flex items-center justify-center text-slate-500 gap-3">
                             <RefreshCw className="w-5 h-5 animate-spin text-blue-600" />
                             <span className="text-xs font-semibold">Verifying database backup security status...</span>
                         </div>
                     ) : !hasPassword ? (
-                        /* PASSWORD NOT CONFIGURED BANNER */
+
                         <div className="bg-gradient-to-r from-amber-50 via-rose-50 to-amber-50 rounded-2xl border-2 border-amber-300 p-6 shadow-xs">
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                                 <div className="flex items-start gap-3.5">
@@ -423,7 +412,7 @@ export const DatabaseBackupManagement = () => {
                             </div>
                         </div>
                     ) : (
-                        /* PASSWORD ACTIVE BANNER */
+
                         <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 rounded-2xl border border-emerald-200 p-6 shadow-xs">
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                                 <div className="flex items-start gap-3.5">
@@ -469,7 +458,6 @@ export const DatabaseBackupManagement = () => {
                         </div>
                     )}
 
-                    {/* Threat Defense Highlights Bar */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
                             <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs mb-1">
@@ -512,9 +500,8 @@ export const DatabaseBackupManagement = () => {
                         </div>
                     </div>
 
-                    {/* Two-Column Overview & Action Grid */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* Database Metrics Card */}
+
                         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
                             <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
                                 <Server className="w-4 h-4 text-blue-600" />
@@ -565,7 +552,6 @@ export const DatabaseBackupManagement = () => {
                             </div>
                         </div>
 
-                        {/* Download Backup Action Card */}
                         <div className="lg:col-span-2 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 rounded-2xl p-6 text-white border border-slate-800 shadow-md relative overflow-hidden flex flex-col justify-between">
                             <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -643,7 +629,6 @@ export const DatabaseBackupManagement = () => {
                 </>
             )}
 
-            {/* TAB: DECRYPT TOOL */}
             {activeTab === 'decrypt' && (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-6">
                     <div className="max-w-2xl">
@@ -724,7 +709,6 @@ export const DatabaseBackupManagement = () => {
                         </div>
                     </form>
 
-                    {/* Offline Terminal Decryption Reference */}
                     <div className="p-4 rounded-xl bg-slate-900 text-slate-300 border border-slate-800 text-xs space-y-2 max-w-2xl">
                         <div className="flex items-center gap-2 font-bold text-white text-[11px] uppercase tracking-wider">
                             <Terminal className="w-3.5 h-3.5 text-emerald-400" />
@@ -737,7 +721,6 @@ export const DatabaseBackupManagement = () => {
                 </div>
             )}
 
-            {/* ─── MODAL 1: DUAL-FACTOR AUTHORIZATION TO DOWNLOAD ─── */}
             {showDownloadModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
                     <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden">
@@ -772,7 +755,6 @@ export const DatabaseBackupManagement = () => {
                                 </div>
                             )}
 
-                            {/* Factor 1: Account Login Password */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                                     1. Super Admin Account Password <span className="text-rose-500">*</span>
@@ -800,7 +782,6 @@ export const DatabaseBackupManagement = () => {
                                 </p>
                             </div>
 
-                            {/* Factor 2: Manual Backup Security Password */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                                     2. Manual Backup Security Master Key <span className="text-rose-500">*</span>
@@ -827,7 +808,6 @@ export const DatabaseBackupManagement = () => {
                                 </p>
                             </div>
 
-                            {/* Encryption Mode Radio / Selection */}
                             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
                                 <label className="block text-xs font-black text-slate-800 uppercase tracking-wider">
                                     Export Format &amp; Protection Level
@@ -911,7 +891,6 @@ export const DatabaseBackupManagement = () => {
                 </div>
             )}
 
-            {/* ─── MODAL 2: CREATE OR ROTATE PASSWORD ─── */}
             {showPasswordModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
                     <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
@@ -948,7 +927,6 @@ export const DatabaseBackupManagement = () => {
                                 </div>
                             )}
 
-                            {/* Current Password (only when updating) */}
                             {hasPassword && (
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -974,7 +952,6 @@ export const DatabaseBackupManagement = () => {
                                 </div>
                             )}
 
-                            {/* New Password */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                                     {hasPassword ? 'New Backup Password' : 'Create Backup Password'}{' '}
@@ -1003,7 +980,6 @@ export const DatabaseBackupManagement = () => {
                                 </p>
                             </div>
 
-                            {/* Confirm Password */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                                     Confirm Backup Password <span className="text-rose-500">*</span>

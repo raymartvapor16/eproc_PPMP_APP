@@ -59,7 +59,6 @@ class ProcurementModeManagementTest extends TestCase
             'is_active' => true,
         ]);
 
-        // Seed initial modes if table is refreshed
         if (ProcurementMode::count() === 0) {
             $this->seedModes();
         }
@@ -107,7 +106,7 @@ class ProcurementModeManagementTest extends TestCase
 
     public function test_end_user_receives_active_modes_only(): void
     {
-        // Deactivate one mode
+
         $mode = ProcurementMode::where('code', 'LV')->first();
         $mode->update(['is_active' => false]);
 
@@ -122,7 +121,7 @@ class ProcurementModeManagementTest extends TestCase
 
     public function test_admin_can_view_all_modes_with_usage_counts(): void
     {
-        // Create an inactive mode
+
         $inactive = ProcurementMode::create([
             'name' => 'Special Modality Test',
             'code' => 'SMT',
@@ -184,7 +183,6 @@ class ProcurementModeManagementTest extends TestCase
     {
         $mode = ProcurementMode::where('code', 'LV')->first();
 
-        // Create a PPMP item referencing this mode
         $ppmp = Ppmp::create([
             'uuid' => (string) \Illuminate\Support\Str::uuid(),
             'ppmp_number' => 'PPMP-2026-0001',
@@ -204,7 +202,6 @@ class ProcurementModeManagementTest extends TestCase
             'estimated_budget' => 50000,
         ]);
 
-        // Create a Monitoring project referencing this mode
         $proj = MonitoringProject::create([
             'ppmp_id' => $ppmp->id,
             'project_title' => 'Venue Rental Monitoring',
@@ -222,7 +219,6 @@ class ProcurementModeManagementTest extends TestCase
 
         $updateResponse->assertStatus(200);
 
-        // Verify PPMP item and Monitoring project were synchronized to new name
         $this->assertEquals('Lease of Real Property and Venue (RA 12009)', $item->fresh()->procurement_mode);
         $this->assertEquals('Lease of Real Property and Venue (RA 12009)', $proj->fresh()->procurement_mode);
     }
@@ -242,7 +238,6 @@ class ProcurementModeManagementTest extends TestCase
     {
         $mode = ProcurementMode::where('code', 'CB')->first();
 
-        // Attach an item to this mode
         $ppmp = Ppmp::create([
             'uuid' => (string) \Illuminate\Support\Str::uuid(),
             'ppmp_number' => 'PPMP-2026-0002',

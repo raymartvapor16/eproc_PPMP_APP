@@ -4,7 +4,7 @@ import { ShieldCheck, ArrowLeft, Lock, FileText, CheckCircle2, Building, Eye, Us
 export const PrivacyPolicyPage = ({ onBack }) => {
     return (
         <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
-            {/* Top Navigation Bar */}
+
             <header className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 shadow-md">
                 <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -20,15 +20,15 @@ export const PrivacyPolicyPage = ({ onBack }) => {
                         )}
                         <div className="flex items-center gap-2.5">
                             <div className="flex items-center gap-1.5 shrink-0">
-                                <img 
-                                    src="/images/logo.png" 
-                                    alt="Province of Davao del Sur Seal" 
-                                    className="w-8 h-8 object-contain drop-shadow-sm" 
+                                <img
+                                    src="/images/logo.png"
+                                    alt="Province of Davao del Sur Seal"
+                                    className="w-8 h-8 object-contain drop-shadow-sm"
                                 />
-                                <img 
-                                    src="/images/pmo.jpeg" 
-                                    alt="OPPMO Seal" 
-                                    className="w-8 h-8 object-contain rounded-full border border-white/20 shadow-xs" 
+                                <img
+                                    src="/images/pmo.jpeg"
+                                    alt="OPPMO Seal"
+                                    className="w-8 h-8 object-contain rounded-full border border-white/20 shadow-xs"
                                 />
                             </div>
                             <div>
@@ -51,7 +51,6 @@ export const PrivacyPolicyPage = ({ onBack }) => {
                 </div>
             </header>
 
-            {/* Hero Banner */}
             <section className="relative overflow-hidden py-12 px-4 sm:px-6 lg:px-8 border-b border-slate-800/80 bg-gradient-to-b from-slate-900 to-slate-950">
                 <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-blue-600/15 rounded-full blur-3xl pointer-events-none" />
                 <div className="max-w-4xl mx-auto text-center relative z-10 space-y-3">
@@ -71,9 +70,8 @@ export const PrivacyPolicyPage = ({ onBack }) => {
                 </div>
             </section>
 
-            {/* Main Policy Content */}
             <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex-1 space-y-8">
-                {/* Introduction Callout */}
+
                 <div className="bg-blue-950/40 border border-blue-500/30 rounded-2xl p-5 sm:p-6 text-blue-100 space-y-3 shadow-lg backdrop-blur-xs">
                     <h3 className="text-sm font-bold uppercase tracking-wider text-blue-300 flex items-center gap-2">
                         <ShieldCheck className="w-4 h-4 text-blue-400" />
@@ -84,7 +82,6 @@ export const PrivacyPolicyPage = ({ onBack }) => {
                     </p>
                 </div>
 
-                {/* Section 1: Scope & Legal Basis */}
                 <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-sm">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold">
@@ -107,7 +104,6 @@ export const PrivacyPolicyPage = ({ onBack }) => {
                     </div>
                 </div>
 
-                {/* Section 2: Information Collected */}
                 <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-sm">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold">
@@ -158,7 +154,6 @@ export const PrivacyPolicyPage = ({ onBack }) => {
                     </div>
                 </div>
 
-                {/* Section 3: Purpose & Processing */}
                 <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-sm">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold">
@@ -179,7 +174,6 @@ export const PrivacyPolicyPage = ({ onBack }) => {
                     </div>
                 </div>
 
-                {/* Section 4: Data Sharing, Storage & Retention */}
                 <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-sm">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold">
@@ -201,7 +195,6 @@ export const PrivacyPolicyPage = ({ onBack }) => {
                     </div>
                 </div>
 
-                {/* Section 5: Data Subject Rights */}
                 <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-sm">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-bold">
@@ -246,7 +239,6 @@ export const PrivacyPolicyPage = ({ onBack }) => {
                     </div>
                 </div>
 
-                {/* Section 6: Contact & Inquiries */}
                 <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 space-y-3 shadow-sm">
                     <h3 className="text-sm font-bold text-white uppercase tracking-wide flex items-center gap-2">
                         <Building className="w-4 h-4 text-blue-400" />
@@ -263,7 +255,6 @@ export const PrivacyPolicyPage = ({ onBack }) => {
                     </div>
                 </div>
 
-                {/* Return Action */}
                 {onBack && (
                     <div className="text-center pt-4 pb-8">
                         <button
@@ -278,7 +269,6 @@ export const PrivacyPolicyPage = ({ onBack }) => {
                 )}
             </main>
 
-            {/* Footer */}
             <footer className="border-t border-slate-800 py-6 text-center text-xs text-slate-500 bg-slate-950">
                 <p>&copy; {new Date().getFullYear()} Province of Davao del Sur. All Rights Reserved.</p>
                 <p className="text-[11px] text-slate-600 mt-1">E-Procurement PPMP/APP System &bull; Republic of the Philippines</p>

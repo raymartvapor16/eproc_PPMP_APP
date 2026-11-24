@@ -103,7 +103,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
     const [maintenanceModalSys, setMaintenanceModalSys] = useState(null);
     const [activeSection, setActiveSection] = useState('home');
 
-    // Separate department head and staff members
     const departmentHead = teamMembers.find(
         (m) =>
             m.position?.toLowerCase().includes('department head') ||
@@ -113,7 +112,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
 
     const staffMembers = teamMembers.filter((m) => m.id !== departmentHead?.id);
 
-    // Horizontal sliding state for staff members carousel
     const [teamSlide, setTeamSlide] = useState(0);
     const [isTeamPaused, setIsTeamPaused] = useState(false);
     const [cardsPerView, setCardsPerView] = useState(2);
@@ -140,13 +138,13 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
 
     const maxTeamSlide = Math.max(0, staffMembers.length - cardsPerView);
 
-    // Automatic slide in horizontal transition (every 3.8s, pauses on hover)
     useEffect(() => {
         if (staffMembers.length <= cardsPerView || isTeamPaused) return;
 
         const interval = setInterval(() => {
+            if (typeof document !== 'undefined' && document.hidden) return;
             setTeamSlide((prev) => (prev >= maxTeamSlide ? 0 : prev + 1));
-        }, 3800);
+        }, 4500);
 
         return () => clearInterval(interval);
     }, [staffMembers.length, cardsPerView, maxTeamSlide, isTeamPaused]);
@@ -188,7 +186,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                 setScrolled(isScrolled);
             }
 
-            // Presentation Slide Spy
             const sectionIds = ['home', 'systems', 'about', 'team', 'contact'];
             const scrollPos = currentScrollY + 220;
             let currentSec = 'home';
@@ -220,6 +217,30 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
+    useEffect(() => {
+        const sections = document.querySelectorAll('.presentation-slide-entry');
+        if (!sections.length) return;
+
+        if (typeof IntersectionObserver === 'undefined') {
+            sections.forEach((sec) => sec.classList.add('is-revealed'));
+            return;
+        }
+
+        const revealObserver = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('is-revealed');
+                        revealObserver.unobserve(entry.target);
+                    }
+                });
+            },
+            { threshold: 0.12, rootMargin: '0px 0px -40px 0px' }
+        );
+
+        sections.forEach((sec) => revealObserver.observe(sec));
+        return () => revealObserver.disconnect();
+    }, []);
 
     useEffect(() => {
         const fetchPublicData = async () => {
@@ -260,7 +281,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
         return () => window.removeEventListener('portal-systems:updated', handleSystemsUpdated);
     }, []);
 
-
     const handleSystemClick = (sys) => {
         if (sys?.status === 'inactive') {
             setMaintenanceModalSys(sys);
@@ -276,7 +296,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
             return;
         }
 
-        // If user is logged in, verify authorized system access for internal route
         if (user && !canUserAccessSystem(user, rawUrl)) {
             setRestrictedModalSys(sys);
             return;
@@ -297,7 +316,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
             return;
         }
 
-        // Default to E-Procurement PPMP/APP System
         onLaunchEproc();
     };
 
@@ -324,9 +342,7 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
 
     return (
         <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-amber-500 selection:text-slate-950">
-            {/* ─────────────────────────────────────────────────────────────
-                1. STICKY TOP NAVBAR
-            ───────────────────────────────────────────────────────────── */}
+
             <header
                 className={`fixed top-0 inset-x-0 z-50 transition-all duration-300 ${
                     scrolled
@@ -335,9 +351,9 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                 }`}
             >
                 <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 flex items-center justify-between">
-                    {/* Brand */}
-                    <div 
-                        className="flex items-center gap-2 sm:gap-3 cursor-pointer group transition-all duration-300 hover:opacity-95 shrink-0" 
+
+                    <div
+                        className="flex items-center gap-2 sm:gap-3 cursor-pointer group transition-all duration-300 hover:opacity-95 shrink-0"
                         onClick={() => scrollTo('home')}
                     >
                         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
@@ -367,7 +383,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                         </div>
                     </div>
 
-                    {/* Desktop Presentation Navigation Tabs (Visible on lg and above screens to avoid tablet collision) */}
                     <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5 p-1 rounded-2xl bg-slate-900/85 border border-slate-800/90 backdrop-blur-xl shadow-inner">
                         {navTabs.map((tab) => {
                             const isActive = activeSection === tab.id;
@@ -383,7 +398,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                 >
                                     <span className="tracking-wide uppercase font-semibold">{tab.label}</span>
 
-                                    {/* Active Indicator Pulse Dot */}
                                     {isActive && (
                                         <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_8px_#f59e0b]" />
                                     )}
@@ -392,7 +406,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                         })}
                     </nav>
 
-                    {/* Action Button */}
                     <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                         {user ? (
                             <button
@@ -414,7 +427,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                     </div>
                 </div>
 
-                {/* Mobile / Tablet Slide Switcher Bar (Visible on screens below lg: 1024px including iPad Mini 768px) */}
                 <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto no-scrollbar py-2 px-4 bg-slate-950/95 border-t border-slate-900">
                     {navTabs.map((tab) => {
                         const isActive = activeSection === tab.id;
@@ -438,48 +450,45 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                 </div>
             </header>
 
-            {/* ─────────────────────────────────────────────────────────────
-                2. HERO SECTION
-            ───────────────────────────────────────────────────────────── */}
             <section id="home" className="relative pt-32 pb-24 md:pt-44 md:pb-36 overflow-hidden">
-                {/* Background Ambience */}
+
                 <div
                     className="absolute inset-0 bg-cover bg-center opacity-20"
                     style={{ backgroundImage: `url('/images/bg.jpg')` }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-b from-slate-950/70 via-slate-950/85 to-slate-950 pointer-events-none" />
 
-                {/* Interactive Spider / Constellation Particle Web Network */}
                 <SpiderParticlesCanvas className="absolute inset-0 pointer-events-none z-0" />
 
-                {/* Animated Gradient Glow Orbs */}
-                <div className="landing-aura-glow absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-gradient-to-tr from-blue-600/25 via-indigo-500/20 to-amber-500/20 blur-[120px] rounded-full pointer-events-none z-0" />
+                <div
+                    className="landing-aura-glow absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[620px] h-[360px] rounded-full pointer-events-none z-0"
+                    style={{
+                        background:
+                            'radial-gradient(ellipse at center, rgba(59, 130, 246, 0.22) 0%, rgba(99, 102, 241, 0.14) 45%, rgba(245, 158, 11, 0.08) 70%, transparent 100%)',
+                    }}
+                />
 
                 <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center presentation-hero-entry">
-                    {/* Presentation Horizontal Aperture Light Beam */}
+
                     <div className="presentation-aperture-beam" />
 
-                    {/* Presentation Badge */}
-                    <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-slate-900/90 border border-amber-500/40 text-amber-300 text-xs font-bold uppercase tracking-wider shadow-lg shadow-amber-500/10 mb-6 backdrop-blur-md transition-all duration-300 hover:scale-105 hover:border-amber-400 hover:bg-slate-900 cursor-default">
-                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                    <div className="lively-hero-badge inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-slate-900/90 border border-amber-500/40 text-amber-300 text-xs font-bold uppercase tracking-wider shadow-lg shadow-amber-500/10 mb-6 backdrop-blur-md transition-all duration-300 hover:scale-105 hover:border-amber-400 hover:bg-slate-900 cursor-default">
+                        <span className="w-2 h-2 rounded-full bg-amber-400" />
                         <span className="text-slate-200">Republic of the Philippines • Province of Davao del Sur</span>
                     </div>
 
-                    {/* Headline */}
-                    <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white max-w-5xl mx-auto leading-[1.15]">
+                    <h1 className="lively-hero-title text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white max-w-5xl mx-auto leading-[1.15]">
                         Office of the Provincial Procurement{' '}
                         <span className="bg-gradient-to-r from-amber-400 via-amber-200 to-amber-400 bg-clip-text text-transparent drop-shadow-sm">
                             Management Officer
                         </span>
                     </h1>
 
-                    {/* Subheading */}
-                    <p className="text-base sm:text-lg text-slate-300 max-w-3xl mx-auto mt-6 leading-relaxed">
+                    <p className="lively-hero-subtitle text-base sm:text-lg text-slate-300 max-w-3xl mx-auto mt-6 leading-relaxed">
                         Integrated Digital Procurement Governance, Automated PPMP/APP Workflow Lifecycle, and Real-Time Project Implementation Monitoring for the Provincial Government.
                     </p>
 
-                    {/* CTA Buttons */}
-                    <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
+                    <div className="lively-hero-cta mt-9 flex flex-wrap items-center justify-center gap-4">
                         <button
                             onClick={handleSafeLaunchEproc}
                             className="group inline-flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm tracking-wide uppercase shadow-xl shadow-blue-600/30 border border-blue-400/30 transition-all duration-300 hover:scale-105 hover:shadow-blue-500/40 hover:brightness-105 active:scale-95"
@@ -498,21 +507,16 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                         </button>
                     </div>
 
-                    {/* ─────────────────────────────────────────────────────────────
-                        Key Stats / Statutory Pillars with Floating Presentation Opening
-                    ───────────────────────────────────────────────────────────── */}
                     <div className="mt-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 max-w-6xl mx-auto perspective-[1200px]">
-                        {/* Card 1: Statutory Compliance (Amber) */}
+
                         <div className="presentation-card-1">
                             <div className="landing-card-float-1 h-full">
                                 <div className="group relative overflow-hidden rounded-3xl p-6 bg-gradient-to-b from-slate-900/90 via-slate-900/70 to-slate-950/95 border border-amber-500/25 hover:border-amber-400/80 backdrop-blur-xl shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-amber-500/20 transition-all duration-500 ease-out hover:-translate-y-3 hover:scale-[1.03] text-left flex flex-col justify-between h-full cursor-default">
-                                    {/* Top Accent Gradient Bar */}
+
                                     <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-500 via-yellow-300 to-amber-500 opacity-70 group-hover:opacity-100 group-hover:h-1.5 transition-all duration-300" />
-                                    
-                                    {/* Ambient Background Aura */}
+
                                     <div className="absolute -right-8 -top-8 w-32 h-32 bg-amber-500/15 rounded-full blur-2xl pointer-events-none group-hover:bg-amber-500/25 transition-colors duration-500" />
-                                    
-                                    {/* Shimmer Reflection */}
+
                                     <div className="shimmer-shine opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
 
                                     <div>
@@ -546,7 +550,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                             </div>
                         </div>
 
-                        {/* Card 2: Digital PPMP Lifecycle (Blue) */}
                         <div className="presentation-card-2">
                             <div className="landing-card-float-2 h-full">
                                 <div className="group relative overflow-hidden rounded-3xl p-6 bg-gradient-to-b from-slate-900/90 via-slate-900/70 to-slate-950/95 border border-blue-500/25 hover:border-blue-400/80 backdrop-blur-xl shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-blue-500/20 transition-all duration-500 ease-out hover:-translate-y-3 hover:scale-[1.03] text-left flex flex-col justify-between h-full cursor-default">
@@ -585,7 +588,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                             </div>
                         </div>
 
-                        {/* Card 3: Real-Time PIMS Tracking (Emerald) */}
                         <div className="presentation-card-3">
                             <div className="landing-card-float-3 h-full">
                                 <div className="group relative overflow-hidden rounded-3xl p-6 bg-gradient-to-b from-slate-900/90 via-slate-900/70 to-slate-950/95 border border-emerald-500/25 hover:border-emerald-400/80 backdrop-blur-xl shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-emerald-500/20 transition-all duration-500 ease-out hover:-translate-y-3 hover:scale-[1.03] text-left flex flex-col justify-between h-full cursor-default">
@@ -624,7 +626,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                             </div>
                         </div>
 
-                        {/* Card 4: Zero Loss Encrypted Audit (Purple) */}
                         <div className="presentation-card-4">
                             <div className="landing-card-float-4 h-full">
                                 <div className="group relative overflow-hidden rounded-3xl p-6 bg-gradient-to-b from-slate-900/90 via-slate-900/70 to-slate-950/95 border border-purple-500/25 hover:border-purple-400/80 backdrop-blur-xl shadow-xl shadow-black/40 hover:shadow-2xl hover:shadow-purple-500/20 transition-all duration-500 ease-out hover:-translate-y-3 hover:scale-[1.03] text-left flex flex-col justify-between h-full cursor-default">
@@ -666,11 +667,8 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                 </div>
             </section>
 
-            {/* ─────────────────────────────────────────────────────────────
-                3. PROVINCIAL SYSTEMS CATALOG (CARDS) - SLIDE 02
-            ───────────────────────────────────────────────────────────── */}
             <section id="systems" className="py-20 scroll-mt-20 relative bg-slate-900/50 border-t border-slate-800/60 overflow-hidden presentation-slide-entry">
-                {/* Section Slide Aperture Light Beam */}
+
                 <div className="presentation-aperture-beam" />
 
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -719,13 +717,13 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                                         : 'border-blue-500/30 hover:border-blue-400 hover:shadow-2xl hover:shadow-blue-500/15 hover:-translate-y-2 hover:scale-[1.02]'
                                                 }`}
                                             >
-                                                {/* Subtle Shimmer Sweep */}
+
                                                 {!isInactive && (
                                                     <div className="shimmer-shine opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
                                                 )}
 
                                                 <div>
-                                                    {/* Top Tag & Icon */}
+
                                                     <div className="flex items-start justify-between gap-3 mb-5">
                                                         <div
                                                             className={`p-3 rounded-xl border transition-all duration-300 shadow-inner ${
@@ -768,18 +766,15 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                                         </div>
                                                     </div>
 
-                                                    {/* System Title */}
                                                     <h3 className={`text-lg font-bold transition-colors duration-300 ${isInactive ? 'text-slate-300' : 'text-white group-hover:text-amber-400'}`}>
                                                         {sys.name}
                                                     </h3>
 
-                                                    {/* Description */}
                                                     <p className="text-xs text-slate-300 mt-2.5 leading-relaxed line-clamp-3 transition-colors duration-300 group-hover:text-slate-200">
                                                         {sys.description}
                                                     </p>
                                                 </div>
 
-                                                {/* Launch CTA */}
                                                 <div className="mt-6 pt-4 border-t border-slate-800">
                                                     {isInactive ? (
                                                         <button
@@ -823,21 +818,15 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                 </div>
             </section>
 
-            {/* ─────────────────────────────────────────────────────────────
-                4. ABOUT OPPMO OFFICE SECTION - SLIDE 03
-            ───────────────────────────────────────────────────────────── */}
             <section id="about" className="py-20 scroll-mt-20 relative overflow-hidden presentation-slide-entry">
-                {/* Background Spider / Constellation Network Canvas */}
-                <SpiderParticlesCanvas className="absolute inset-0 pointer-events-none z-0 opacity-80" />
 
-                {/* Section Slide Aperture Light Beam */}
                 <div className="presentation-aperture-beam" />
 
                 <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 z-10">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
                         <div>
                             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-500/10 text-amber-400 text-xs font-mono font-bold uppercase tracking-wider border border-amber-500/30 mb-3 shadow-xs transition-all duration-300 hover:scale-105 cursor-default">
-                                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                                <span className="w-2 h-2 rounded-full bg-amber-400" />
                                 <Building2 className="w-3.5 h-3.5" />
                                 <span>STATUTORY MANDATE &amp; PILLARS</span>
                             </div>
@@ -851,7 +840,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                 In strict compliance with <em>Republic Act No. 9184</em> and the New GPRA <em>Republic Act No. 12009</em>, we oversee the standardization of Project Procurement Management Plans (PPMP), consolidation into the official Annual Procurement Plan (APP), and real-time execution monitoring.
                             </p>
 
-                            {/* Core Pillars with Presentation Stagger & Float */}
                             <div className="mt-8 space-y-3.5">
                                 <div className="presentation-stagger-1">
                                     <div className="landing-card-float-1">
@@ -912,7 +900,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                             </div>
                         </div>
 
-                        {/* Visual Right Column with Float & Stagger */}
                         <div className="relative presentation-stagger-4">
                             <div className="landing-card-float-4">
                                 <div className="group relative mx-auto rounded-3xl overflow-hidden border border-slate-700/80 hover:border-slate-600 shadow-2xl bg-slate-900 transition-all duration-500 hover:-translate-y-1.5 hover:shadow-2xl hover:shadow-black/60">
@@ -945,11 +932,8 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                 </div>
             </section>
 
-            {/* ─────────────────────────────────────────────────────────────
-                5. OPPMO TEAM & LEADERSHIP SECTION - SLIDE 04
-            ───────────────────────────────────────────────────────────── */}
             <section id="team" className="py-20 scroll-mt-20 relative bg-slate-900/40 border-t border-slate-800/60 overflow-hidden presentation-slide-entry">
-                {/* Section Slide Aperture Light Beam */}
+
                 <div className="presentation-aperture-beam" />
 
                 <div className="relative w-full px-3 sm:px-6 md:px-8 lg:px-10 xl:px-12 2xl:px-14 z-10">
@@ -978,11 +962,9 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                         </div>
                     ) : (
                         <div className="flex flex-col lg:flex-row gap-5 xl:gap-6 items-stretch w-full">
-                            {/* ─────────────────────────────────────────────────────────────
-                                LEFT: PROVINCIAL GOVERNMENT DEPARTMENT HEAD (SOLITARY CARD)
-                            ───────────────────────────────────────────────────────────── */}
+
                             {departmentHead && (
-                                <div className="w-full lg:w-[33.33%] xl:w-[25%] 2xl:w-[20%] shrink-0 flex flex-col">
+                                <div className="presentation-stagger-1 w-full lg:w-[33.33%] xl:w-[25%] 2xl:w-[20%] shrink-0 flex flex-col">
                                     <div className="h-10 flex items-center gap-2 mb-3">
                                         <Award className="w-4 h-4 text-amber-400 shrink-0" />
                                         <span className="text-xs font-mono font-bold uppercase tracking-wider text-amber-300 truncate">
@@ -990,21 +972,17 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                         </span>
                                     </div>
 
-                                    {/* Dedicated Solitary Department Head Card */}
                                     <div className="group/head relative bg-gradient-to-b from-slate-900/95 via-slate-900/85 to-slate-950/95 rounded-2xl overflow-hidden border-2 border-amber-400/50 hover:border-amber-300 shadow-2xl shadow-amber-500/10 hover:shadow-amber-500/25 transition-all duration-500 flex flex-col h-full hover:-translate-y-1.5 backdrop-blur-xl">
-                                        {/* Top Accent Gradient Line */}
+
                                         <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-500 via-yellow-300 to-amber-500 z-10" />
 
-                                        {/* Shimmer sweep reflection */}
                                         <div className="shimmer-shine opacity-0 group-hover/head:opacity-100 transition-opacity duration-700 z-10 pointer-events-none" />
 
-                                        {/* Corner Leadership Badge */}
                                         <div className="absolute top-4 left-4 z-20 px-3 py-1 rounded-full bg-slate-950/85 backdrop-blur-md border border-amber-400/60 text-amber-300 font-mono text-[10px] font-bold tracking-wider uppercase flex items-center gap-1.5 shadow-xl">
                                             <Award className="w-3.5 h-3.5 text-amber-400" />
                                             <span>DEPARTMENT HEAD</span>
                                         </div>
 
-                                        {/* Portrait */}
                                         <div className="relative aspect-[4/4.3] w-full bg-slate-950/90 overflow-hidden">
                                             {departmentHead.photo_url ? (
                                                 <>
@@ -1025,7 +1003,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                             )}
                                         </div>
 
-                                        {/* Body */}
                                         <div className="p-5 flex flex-col justify-between flex-1">
                                             <div>
                                                 <h3 className="text-lg sm:text-xl font-black text-white group-hover/head:text-amber-300 transition-colors duration-200 tracking-tight leading-snug">
@@ -1053,10 +1030,7 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                 </div>
                             )}
 
-                            {/* ─────────────────────────────────────────────────────────────
-                                RIGHT: OPPMO STAFF MEMBERS (CAROUSEL / SLIDER ASIDE)
-                            ───────────────────────────────────────────────────────────── */}
-                            <div className={`${departmentHead ? 'w-full lg:w-[66.67%] xl:w-[75%] 2xl:w-[80%] flex-1 min-w-0' : 'w-full'} flex flex-col justify-between`}>
+                            <div className={`presentation-stagger-2 ${departmentHead ? 'w-full lg:w-[66.67%] xl:w-[75%] 2xl:w-[80%] flex-1 min-w-0' : 'w-full'} flex flex-col justify-between`}>
                                 <div className="h-10 flex items-center justify-between mb-3">
                                     <div className="flex items-center gap-2">
                                         <Users className="w-4 h-4 text-sky-400 shrink-0" />
@@ -1065,7 +1039,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                         </span>
                                     </div>
 
-                                    {/* Carousel Controls */}
                                     {staffMembers.length > cardsPerView && (
                                         <div className="flex items-center gap-2 shrink-0">
                                             <button
@@ -1088,8 +1061,7 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                     )}
                                 </div>
 
-                                {/* Carousel Viewport */}
-                                <div 
+                                <div
                                     className="relative overflow-hidden py-1 -mx-2 sm:-mx-2.5 flex-1 flex flex-col justify-start"
                                     onMouseEnter={() => setIsTeamPaused(true)}
                                     onMouseLeave={() => setIsTeamPaused(false)}
@@ -1106,15 +1078,13 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                                 key={member.id}
                                                 className="shrink-0 px-2 sm:px-2.5 w-full sm:w-1/2 lg:w-1/2 xl:w-1/3 2xl:w-1/4 flex flex-col h-full"
                                             >
-                                                {/* Staff Member Card */}
+
                                                 <div className="group/card relative bg-gradient-to-b from-slate-900/95 via-slate-900/80 to-slate-950/95 rounded-2xl overflow-hidden border border-slate-800/90 hover:border-sky-400/60 shadow-xl shadow-black/50 hover:shadow-2xl hover:shadow-sky-500/15 transition-all duration-500 flex flex-col h-full hover:-translate-y-1.5 backdrop-blur-xl">
-                                                    {/* Top Accent Gradient Line */}
+
                                                     <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-sky-400 via-blue-400 to-sky-400 opacity-70 group-hover/card:opacity-100 transition-all duration-300 z-10" />
 
-                                                    {/* Shimmer sweep reflection */}
                                                     <div className="shimmer-shine opacity-0 group-hover/card:opacity-100 transition-opacity duration-700 z-10 pointer-events-none" />
 
-                                                    {/* Photo Portrait */}
                                                     <div className="relative aspect-[4/4.3] w-full bg-slate-950/90 overflow-hidden">
                                                         {member.photo_url ? (
                                                             <>
@@ -1138,7 +1108,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                                         )}
                                                     </div>
 
-                                                    {/* Body */}
                                                     <div className="p-5 flex flex-col justify-between flex-1">
                                                         <div>
                                                             <h4 className="text-lg sm:text-xl font-bold text-white group-hover/card:text-sky-300 transition-colors duration-200 tracking-tight leading-snug">
@@ -1163,7 +1132,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                     </div>
                                 </div>
 
-                                {/* Pagination Dots */}
                                 {staffMembers.length > cardsPerView && (
                                     <div className="flex items-center justify-center gap-2 mt-4">
                                         {Array.from({ length: maxTeamSlide + 1 }).map((_, i) => (
@@ -1186,25 +1154,25 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                 </div>
             </section>
 
-            {/* ─────────────────────────────────────────────────────────────
-                6. CONTACT & LOCATION SECTION - SLIDE 05
-            ───────────────────────────────────────────────────────────── */}
             <section id="contact" className="py-20 scroll-mt-20 relative bg-slate-950 overflow-hidden presentation-slide-entry">
-                {/* Background Spider / Constellation Network Canvas */}
-                <SpiderParticlesCanvas className="absolute inset-0 pointer-events-none z-0 opacity-80" />
 
-                {/* Section Slide Aperture Light Beam */}
                 <div className="presentation-aperture-beam" />
 
                 <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 z-10">
                     <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-blue-950 rounded-3xl p-8 sm:p-12 border border-slate-800 shadow-2xl relative overflow-hidden transition-all duration-500 hover:border-slate-700/80 hover:shadow-2xl hover:shadow-black/50">
-                        <div className="landing-aura-glow absolute top-0 right-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+                        <div
+                            className="landing-aura-glow absolute top-0 right-0 w-96 h-96 rounded-full pointer-events-none"
+                            style={{
+                                background:
+                                    'radial-gradient(circle at center, rgba(245, 158, 11, 0.12) 0%, transparent 70%)',
+                            }}
+                        />
 
                         <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
                             <div className="presentation-stagger-1">
                                 <div className="landing-card-float-1">
                                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 text-xs font-mono font-bold uppercase tracking-wider border border-amber-500/30 mb-3 shadow-xs">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                                         <span>OFFICIAL COORDINATION &amp; INQUIRIES</span>
                                     </div>
                                     <h2 className="text-2xl sm:text-3xl font-black text-white mt-1">
@@ -1239,7 +1207,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                 </div>
                             </div>
 
-                            {/* Direct Action Card */}
                             <div className="presentation-stagger-2 h-full">
                                 <div className="landing-card-float-2 h-full">
                                     <div className="bg-slate-950/70 hover:bg-slate-950/90 rounded-2xl p-6 border border-slate-700/80 hover:border-slate-600 backdrop-blur-md flex flex-col justify-between transition-all duration-500 hover:-translate-y-1.5 hover:shadow-2xl hover:shadow-black/50 group h-full">
@@ -1283,9 +1250,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                 </div>
             </section>
 
-            {/* ─────────────────────────────────────────────────────────────
-                7. FOOTER
-            ───────────────────────────────────────────────────────────── */}
             <footer className="py-10 border-t border-slate-900 bg-slate-950 text-xs text-slate-400">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
                     <div className="flex items-center gap-3 transition-transform duration-300 hover:scale-[1.01]">
@@ -1309,7 +1273,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                 </div>
             </footer>
 
-            {/* System Inactive / Under Maintenance Modal */}
             {maintenanceModalSys && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
                     <div className="bg-slate-900 border border-amber-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl relative overflow-hidden">
@@ -1355,7 +1318,6 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                 </div>
             )}
 
-            {/* Restricted System Access Modal */}
             {restrictedModalSys && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
                     <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">

@@ -1,307 +1,399 @@
 import React, { useEffect, useRef } from 'react';
 
-/**
- * SpiderParticlesCanvas
- * Renders an interactive constellation / spider-web particle mesh canvas.
- * Particles float smoothly and connect with luminous web threads when in proximity,
- * dynamically anchoring and weaving to the user's cursor.
- */
-export const SpiderParticlesCanvas = ({
-    className = 'absolute inset-0 pointer-events-none',
-    particleCount,
-    connectionDistance = 125,
-    cursorRadius = 165,
-}) => {
+const DEFAULT_PALETTE = [
+    '#38bdf8',
+    '#60a5fa',
+    '#818cf8',
+    '#fbbf24',
+    '#34d399',
+    '#e2e8f0',
+];
+
+export function SpiderParticlesCanvas({
+    className = '',
+    particleCount = null,
+    linkDistance = 135,
+    cursorDistance = 185,
+    palette = DEFAULT_PALETTE,
+    opacity = 1,
+}) {
     const canvasRef = useRef(null);
 
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const ctx = canvas.getContext('2d');
+        const prefersReducedMotion =
+            typeof window !== 'undefined' &&
+            window.matchMedia &&
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        const ctx = canvas.getContext('2d', { alpha: true });
         if (!ctx) return;
 
-        let animationFrameId;
+        let animationFrameId = null;
+        let isRunning = false;
+        let isInViewport = true;
+        let isTabVisible = typeof document !== 'undefined' ? !document.hidden : true;
+        let lastFrameTime = 0;
+        const FRAME_INTERVAL = 1000 / 30;
+
+        let particles = [];
         let width = 0;
         let height = 0;
-        let dpr = window.devicePixelRatio || 1;
-        let isVisible = true;
+        let cachedRect = { left: 0, top: 0, width: 0, height: 0 };
 
-        // IntersectionObserver to pause loop when section is scrolled out of viewport
+        const mouse = {
+            x: null,
+            y: null,
+            vx: 0,
+            vy: 0,
+            lastX: null,
+            lastY: null,
+            active: false,
+        };
+
+        const hexToRgb = (hex) => {
+            const clean = hex.replace('#', '');
+            const num = parseInt(clean, 16);
+            return {
+                r: (num >> 16) & 255,
+                g: (num >> 8) & 255,
+                b: num & 255,
+            };
+        };
+
+        const rgbPalette = palette.map(hexToRgb);
+
+        class Particle {
+            constructor(w, h) {
+                this.x = Math.random() * w;
+                this.y = Math.random() * h;
+                const speed = 0.16 + Math.random() * 0.28;
+                const angle = Math.random() * Math.PI * 2;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.baseVx = this.vx;
+                this.baseVy = this.vy;
+                this.radius = 1.3 + Math.random() * 1.6;
+                this.color = rgbPalette[Math.floor(Math.random() * rgbPalette.length)];
+                this.alpha = 0.45 + Math.random() * 0.4;
+                this.pulseSpeed = 0.012 + Math.random() * 0.015;
+                this.pulsePhase = Math.random() * Math.PI * 2;
+            }
+
+            update(w, h) {
+                this.pulsePhase += this.pulseSpeed;
+
+                if (mouse.active && mouse.x !== null && mouse.y !== null) {
+                    const dx = mouse.x - this.x;
+                    const dy = mouse.y - this.y;
+                    const distSq = dx * dx + dy * dy;
+                    const maxDistSq = cursorDistance * cursorDistance;
+
+                    if (distSq < maxDistSq && distSq > 1) {
+                        const dist = Math.sqrt(distSq);
+                        const force = (cursorDistance - dist) / cursorDistance;
+
+                        if (dist > 48) {
+                            this.vx += (dx / dist) * force * 0.02;
+                            this.vy += (dy / dist) * force * 0.02;
+                        } else {
+                            this.vx -= (dx / dist) * force * 0.04;
+                            this.vy -= (dy / dist) * force * 0.04;
+                        }
+
+                        this.vx += mouse.vx * force * 0.006;
+                        this.vy += mouse.vy * force * 0.006;
+                    }
+                }
+
+                this.vx += (this.baseVx - this.vx) * 0.025;
+                this.vy += (this.baseVy - this.vy) * 0.025;
+
+                const maxSpeed = 1.35;
+                const speedSq = this.vx * this.vx + this.vy * this.vy;
+                if (speedSq > maxSpeed * maxSpeed) {
+                    const currentSpeed = Math.sqrt(speedSq);
+                    this.vx = (this.vx / currentSpeed) * maxSpeed;
+                    this.vy = (this.vy / currentSpeed) * maxSpeed;
+                }
+
+                this.x += this.vx;
+                this.y += this.vy;
+
+                const pad = 16;
+                if (this.x < -pad) this.x = w + pad;
+                else if (this.x > w + pad) this.x = -pad;
+                if (this.y < -pad) this.y = h + pad;
+                else if (this.y > h + pad) this.y = -pad;
+            }
+
+            draw(context) {
+                const pulse = 0.85 + Math.sin(this.pulsePhase) * 0.15;
+                const currentAlpha = Math.min(1, Math.max(0.15, this.alpha * pulse));
+                const { r, g, b } = this.color;
+
+                context.beginPath();
+                context.arc(this.x, this.y, this.radius * 2.1, 0, Math.PI * 2);
+                context.fillStyle = `rgba(${r}, ${g}, ${b}, ${currentAlpha * 0.18})`;
+                context.fill();
+
+                context.beginPath();
+                context.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                context.fillStyle = `rgba(${r}, ${g}, ${b}, ${currentAlpha})`;
+                context.fill();
+            }
+        }
+
+        const updateCachedRect = () => {
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            cachedRect = {
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height,
+            };
+        };
+
+        const initParticles = () => {
+            const rect = canvas.getBoundingClientRect();
+            width = Math.max(1, rect.width || window.innerWidth);
+            height = Math.max(1, rect.height || window.innerHeight);
+            cachedRect = {
+                left: rect.left,
+                top: rect.top,
+                width,
+                height,
+            };
+
+            const dpr = Math.min(window.devicePixelRatio || 1, 1.25);
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+            const computedCount =
+                particleCount !== null
+                    ? Math.min(particleCount, 36)
+                    : Math.min(32, Math.max(16, Math.floor((width * height) / 36000)));
+
+            particles = Array.from({ length: computedCount }, () => new Particle(width, height));
+        };
+
+        const handleMouseMove = (e) => {
+            if (!isInViewport || !isTabVisible) return;
+            const x = e.clientX - cachedRect.left;
+            const y = e.clientY - cachedRect.top;
+
+            if (x >= 0 && x <= cachedRect.width && y >= 0 && y <= cachedRect.height) {
+                if (mouse.lastX !== null && mouse.lastY !== null) {
+                    mouse.vx = x - mouse.lastX;
+                    mouse.vy = y - mouse.lastY;
+                }
+                mouse.x = x;
+                mouse.y = y;
+                mouse.lastX = x;
+                mouse.lastY = y;
+                mouse.active = true;
+            } else {
+                mouse.active = false;
+            }
+        };
+
+        const handleMouseLeave = () => {
+            mouse.active = false;
+            mouse.x = null;
+            mouse.y = null;
+        };
+
+        const handleTouchMove = (e) => {
+            if (!isInViewport || !isTabVisible || !e.touches || e.touches.length === 0) return;
+            const touch = e.touches[0];
+            const x = touch.clientX - cachedRect.left;
+            const y = touch.clientY - cachedRect.top;
+
+            if (x >= 0 && x <= cachedRect.width && y >= 0 && y <= cachedRect.height) {
+                mouse.x = x;
+                mouse.y = y;
+                mouse.active = true;
+            } else {
+                mouse.active = false;
+            }
+        };
+
+        const handleTouchEnd = () => {
+            mouse.active = false;
+        };
+
+        const renderFrame = () => {
+            ctx.clearRect(0, 0, width, height);
+
+            mouse.vx *= 0.9;
+            mouse.vy *= 0.9;
+
+            const len = particles.length;
+            const linkDistSq = linkDistance * linkDistance;
+            const cursorDistSq = cursorDistance * cursorDistance;
+
+            for (let i = 0; i < len; i++) {
+                const p1 = particles[i];
+                if (!prefersReducedMotion) {
+                    p1.update(width, height);
+                }
+                p1.draw(ctx);
+
+                for (let j = i + 1; j < len; j++) {
+                    const p2 = particles[j];
+                    const dx = p1.x - p2.x;
+                    const dy = p1.y - p2.y;
+                    const distSq = dx * dx + dy * dy;
+
+                    if (distSq < linkDistSq) {
+                        const dist = Math.sqrt(distSq);
+                        const alpha = (1 - dist / linkDistance) * 0.22;
+                        const { r, g, b } = p1.color;
+                        ctx.beginPath();
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+                        ctx.lineWidth = 0.75;
+                        ctx.stroke();
+                    }
+                }
+
+                if (mouse.active && mouse.x !== null && mouse.y !== null) {
+                    const mdx = mouse.x - p1.x;
+                    const mdy = mouse.y - p1.y;
+                    const mDistSq = mdx * mdx + mdy * mdy;
+
+                    if (mDistSq < cursorDistSq) {
+                        const mDist = Math.sqrt(mDistSq);
+                        const ratio = 1 - mDist / cursorDistance;
+                        const lineAlpha = ratio * 0.48;
+                        const { r, g, b } = p1.color;
+
+                        ctx.beginPath();
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(mouse.x, mouse.y);
+                        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${lineAlpha})`;
+                        ctx.lineWidth = 0.75 + ratio * 0.85;
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            if (mouse.active && mouse.x !== null && mouse.y !== null) {
+                ctx.beginPath();
+                ctx.arc(mouse.x, mouse.y, 2.2, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(251, 191, 36, 0.75)';
+                ctx.fill();
+            }
+        };
+
+        const animate = (timestamp) => {
+            if (!isRunning) return;
+
+            if (timestamp - lastFrameTime >= FRAME_INTERVAL) {
+                lastFrameTime = timestamp;
+                renderFrame();
+            }
+
+            animationFrameId = requestAnimationFrame(animate);
+        };
+
+        const startLoop = () => {
+            if (prefersReducedMotion) {
+                renderFrame();
+                return;
+            }
+            if (!isRunning && isInViewport && isTabVisible) {
+                isRunning = true;
+                lastFrameTime = 0;
+                animationFrameId = requestAnimationFrame(animate);
+            }
+        };
+
+        const stopLoop = () => {
+            isRunning = false;
+            if (animationFrameId !== null) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+        };
+
+        const syncLoopState = () => {
+            if (isInViewport && isTabVisible && !prefersReducedMotion) {
+                startLoop();
+            } else {
+                stopLoop();
+            }
+        };
+
+        initParticles();
+        renderFrame();
+
         let observer = null;
         if (typeof IntersectionObserver !== 'undefined') {
             observer = new IntersectionObserver(
                 ([entry]) => {
-                    isVisible = entry.isIntersecting;
+                    isInViewport = entry.isIntersecting;
+                    if (isInViewport) {
+                        updateCachedRect();
+                    }
+                    syncLoopState();
                 },
                 { threshold: 0.02 }
             );
             observer.observe(canvas);
         }
 
-        // Mouse tracking
-        const mouse = {
-            x: null,
-            y: null,
-            radius: cursorRadius,
-            isActive: false,
+        const handleVisibilityChange = () => {
+            isTabVisible = !document.hidden;
+            syncLoopState();
         };
 
-        // Provincial palette for spider nodes
-        const colors = [
-            { r: 255, g: 255, b: 255 }, // Crisp White
-            { r: 56, g: 189, b: 248 },  // Sky Blue (500)
-            { r: 125, g: 211, b: 252 }, // Light Sky (300)
-            { r: 251, g: 191, b: 36 },  // Warm Amber
-            { r: 45, g: 212, b: 191 },  // Vibrant Cyan
-        ];
-
-        class Particle {
-            constructor(w, h) {
-                this.x = Math.random() * w;
-                this.y = Math.random() * h;
-                this.radius = Math.random() * 1.8 + 1.2; // 1.2px to 3.0px
-                this.color = colors[Math.floor(Math.random() * colors.length)];
-                this.vx = (Math.random() - 0.5) * 0.65;
-                this.vy = (Math.random() - 0.5) * 0.65;
-                this.baseAlpha = Math.random() * 0.45 + 0.4; // 0.4 to 0.85
-                this.alpha = this.baseAlpha;
-                this.pulseSpeed = Math.random() * 0.015 + 0.008;
-                this.pulseAngle = Math.random() * Math.PI * 2;
-            }
-
-            update(w, h) {
-                // Gentle pulsing glow
-                this.pulseAngle += this.pulseSpeed;
-                this.alpha = this.baseAlpha + Math.sin(this.pulseAngle) * 0.18;
-
-                // Move
-                this.x += this.vx;
-                this.y += this.vy;
-
-                // Bounce off edges
-                if (this.x < 0) {
-                    this.x = 0;
-                    this.vx *= -1;
-                } else if (this.x > w) {
-                    this.x = w;
-                    this.vx *= -1;
-                }
-
-                if (this.y < 0) {
-                    this.y = 0;
-                    this.vy *= -1;
-                } else if (this.y > h) {
-                    this.y = h;
-                    this.vy *= -1;
-                }
-
-                // Interactive cursor elasticity (spider web pull)
-                if (mouse.isActive && mouse.x !== null && mouse.y !== null) {
-                    const dx = mouse.x - this.x;
-                    const dy = mouse.y - this.y;
-                    const distance = Math.hypot(dx, dy);
-
-                    if (distance < mouse.radius) {
-                        const forceDirectionX = dx / distance;
-                        const forceDirectionY = dy / distance;
-                        const maxDistance = mouse.radius;
-                        const force = (maxDistance - distance) / maxDistance;
-                        const directionX = forceDirectionX * force * 0.4;
-                        const directionY = forceDirectionY * force * 0.4;
-
-                        this.x += directionX;
-                        this.y += directionY;
-                    }
-                }
-            }
-
-            draw(context) {
-                context.save();
-                context.beginPath();
-                context.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                context.fillStyle = `rgba(${this.color.r}, ${this.color.g}, ${this.color.b}, ${Math.max(0.1, this.alpha)})`;
-                context.shadowColor = `rgba(${this.color.r}, ${this.color.g}, ${this.color.b}, 0.8)`;
-                context.shadowBlur = 6;
-                context.fill();
-                context.restore();
-            }
-        }
-
-        let particles = [];
-
-        const initParticles = (w, h) => {
-            const count = particleCount || Math.min(85, Math.max(35, Math.floor((w * h) / 18000)));
-            particles = [];
-            for (let i = 0; i < count; i++) {
-                particles.push(new Particle(w, h));
-            }
-        };
-
+        let resizeTimer = null;
         const handleResize = () => {
-            if (!canvas.parentElement) return;
-            const rect = canvas.parentElement.getBoundingClientRect();
-            width = rect.width;
-            height = rect.height;
-            dpr = window.devicePixelRatio || 1;
-
-            canvas.width = width * dpr;
-            canvas.height = height * dpr;
-            canvas.style.width = `${width}px`;
-            canvas.style.height = `${height}px`;
-
-            ctx.scale(dpr, dpr);
-            initParticles(width, height);
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                initParticles();
+                renderFrame();
+            }, 150);
         };
 
-        handleResize();
-        window.addEventListener('resize', handleResize);
-
-        // Global mouse listeners on window so interaction works through overlay content
-        const handleMouseMove = (e) => {
-            if (!canvas) return;
-            const rect = canvas.getBoundingClientRect();
-            const clientX = e.clientX;
-            const clientY = e.clientY;
-
-            // Check if mouse is within vertical bounds of canvas with padding
-            if (
-                clientX >= rect.left &&
-                clientX <= rect.right &&
-                clientY >= rect.top &&
-                clientY <= rect.bottom
-            ) {
-                mouse.x = clientX - rect.left;
-                mouse.y = clientY - rect.top;
-                mouse.isActive = true;
-            } else {
-                mouse.isActive = false;
-            }
-        };
-
-        const handleMouseLeave = () => {
-            mouse.isActive = false;
-        };
-
-        const handleTouchMove = (e) => {
-            if (!canvas || !e.touches || e.touches.length === 0) return;
-            const rect = canvas.getBoundingClientRect();
-            const touch = e.touches[0];
-            if (
-                touch.clientX >= rect.left &&
-                touch.clientX <= rect.right &&
-                touch.clientY >= rect.top &&
-                touch.clientY <= rect.bottom
-            ) {
-                mouse.x = touch.clientX - rect.left;
-                mouse.y = touch.clientY - rect.top;
-                mouse.isActive = true;
-            } else {
-                mouse.isActive = false;
-            }
-        };
-
-        const handleTouchEnd = () => {
-            mouse.isActive = false;
-        };
-
+        window.addEventListener('resize', handleResize, { passive: true });
+        window.addEventListener('scroll', updateCachedRect, { passive: true });
         window.addEventListener('mousemove', handleMouseMove, { passive: true });
-        window.addEventListener('mouseleave', handleMouseLeave);
+        window.addEventListener('mouseout', handleMouseLeave, { passive: true });
         window.addEventListener('touchmove', handleTouchMove, { passive: true });
-        window.addEventListener('touchend', handleTouchEnd);
+        window.addEventListener('touchend', handleTouchEnd, { passive: true });
+        document.addEventListener('visibilitychange', handleVisibilityChange);
 
-        // Render Loop
-        const animate = () => {
-            if (!isVisible) {
-                animationFrameId = requestAnimationFrame(animate);
-                return;
-            }
-
-            ctx.clearRect(0, 0, width, height);
-
-            // Connect nearby particles (spider web threads)
-            for (let a = 0; a < particles.length; a++) {
-                for (let b = a + 1; b < particles.length; b++) {
-                    const dx = particles[a].x - particles[b].x;
-                    const dy = particles[a].y - particles[b].y;
-                    const dist = Math.hypot(dx, dy);
-
-                    if (dist < connectionDistance) {
-                        const opacity = (1 - dist / connectionDistance) * 0.38;
-                        ctx.beginPath();
-                        ctx.moveTo(particles[a].x, particles[a].y);
-                        ctx.lineTo(particles[b].x, particles[b].y);
-                        ctx.strokeStyle = `rgba(148, 197, 240, ${opacity})`;
-                        ctx.lineWidth = 0.85;
-                        ctx.stroke();
-                    }
-                }
-            }
-
-            // Connect cursor to nearby particles (interactive web anchor)
-            if (mouse.isActive && mouse.x !== null && mouse.y !== null) {
-                for (let i = 0; i < particles.length; i++) {
-                    const dx = mouse.x - particles[i].x;
-                    const dy = mouse.y - particles[i].y;
-                    const dist = Math.hypot(dx, dy);
-
-                    if (dist < mouse.radius) {
-                        const opacity = (1 - dist / mouse.radius) * 0.65;
-                        ctx.beginPath();
-                        ctx.moveTo(particles[i].x, particles[i].y);
-                        ctx.lineTo(mouse.x, mouse.y);
-                        // Subtle gold/cyan hybrid web thread connecting to cursor
-                        ctx.strokeStyle = `rgba(186, 230, 253, ${opacity})`;
-                        ctx.lineWidth = 1.1;
-                        ctx.shadowColor = 'rgba(56, 189, 248, 0.6)';
-                        ctx.shadowBlur = 4;
-                        ctx.stroke();
-                        ctx.shadowBlur = 0; // reset
-                    }
-                }
-
-                // Cursor center particle beacon
-                ctx.save();
-                ctx.beginPath();
-                ctx.arc(mouse.x, mouse.y, 2.5, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(251, 191, 36, 0.9)';
-                ctx.shadowColor = 'rgba(251, 191, 36, 0.9)';
-                ctx.shadowBlur = 8;
-                ctx.fill();
-                ctx.restore();
-            }
-
-            // Update & draw particles
-            for (let i = 0; i < particles.length; i++) {
-                particles[i].update(width, height);
-                particles[i].draw(ctx);
-            }
-
-            animationFrameId = requestAnimationFrame(animate);
-        };
-
-        animate();
+        syncLoopState();
 
         return () => {
-            cancelAnimationFrame(animationFrameId);
-            if (observer) {
-                observer.disconnect();
-            }
+            stopLoop();
+            clearTimeout(resizeTimer);
+            if (observer) observer.disconnect();
             window.removeEventListener('resize', handleResize);
+            window.removeEventListener('scroll', updateCachedRect);
             window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseleave', handleMouseLeave);
+            window.removeEventListener('mouseout', handleMouseLeave);
             window.removeEventListener('touchmove', handleTouchMove);
             window.removeEventListener('touchend', handleTouchEnd);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-    }, [particleCount, connectionDistance, cursorRadius]);
+    }, [particleCount, linkDistance, cursorDistance, palette]);
 
     return (
         <canvas
             ref={canvasRef}
-            className={className}
-            style={{ display: 'block' }}
+            style={{ opacity }}
+            className={`pointer-events-none select-none ${className}`}
             aria-hidden="true"
         />
     );
-};
+}
 
+export default SpiderParticlesCanvas;

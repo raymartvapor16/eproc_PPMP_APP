@@ -56,7 +56,7 @@ const formatDateLong = (dateStr) => {
 export const parseToDate = (dateStr) => {
     if (!dateStr) return null;
     let s = String(dateStr).trim();
-    // If raw SQL format without timezone (e.g. "2026-10-15 13:01:47"), attach +08:00 (Manila)
+
     if (/^\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}(:\d{2})?(\.\d+)?$/.test(s)) {
         s = s.replace(' ', 'T') + '+08:00';
     }
@@ -103,9 +103,6 @@ export const getNowPhDateTime = () => {
 
 const formatDateTime = formatPhDateTime;
 
-/**
- * 1. Official Single Supplier Evaluation Form Print/PDF Modal (matches resources/views/pdf/download.blade.php)
- */
 export function EvaluationFormPrintModal({ evaluation, onClose }) {
     if (!evaluation) return null;
 
@@ -211,7 +208,7 @@ export function EvaluationFormPrintModal({ evaluation, onClose }) {
                 }
             `}</style>
             <div className="eval-print-modal-container bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
-                {/* Top Action Bar (Hidden in Print) */}
+
                 <div className="no-print bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
                     <div>
                         <h3 className="text-base font-bold">Official Supplier's Evaluation Form</h3>
@@ -238,9 +235,8 @@ export function EvaluationFormPrintModal({ evaluation, onClose }) {
                     </div>
                 </div>
 
-                {/* Printable Document Body */}
                 <div className="eval-print-sheet p-6 sm:p-8 overflow-y-auto text-slate-900 text-xs leading-relaxed">
-                    {/* Official Header */}
+
                     <table className="w-full border-collapse mb-2.5">
                         <tbody>
                             <tr>
@@ -269,7 +265,6 @@ export function EvaluationFormPrintModal({ evaluation, onClose }) {
                         </tbody>
                     </table>
 
-                    {/* Evaluation Details */}
                     <div className="eval-avoid-break mb-2.5">
                         <div className="font-bold mb-1 bg-slate-100 px-2.5 py-1 border-l-4 border-blue-600 text-[11px] uppercase tracking-wide">
                             Evaluation Details
@@ -316,7 +311,6 @@ export function EvaluationFormPrintModal({ evaluation, onClose }) {
                         </table>
                     </div>
 
-                    {/* Evaluation Criteria Table */}
                     <div className="eval-avoid-break mb-2.5">
                         <table className="w-full border-collapse border border-slate-400 text-[11px]">
                             <thead>
@@ -354,7 +348,6 @@ export function EvaluationFormPrintModal({ evaluation, onClose }) {
                         </table>
                     </div>
 
-                    {/* Overall Rating */}
                     <div className="eval-avoid-break mb-2.5">
                         <div
                             className={`py-1.5 px-3 text-center font-bold text-xs rounded-lg border ${
@@ -369,7 +362,6 @@ export function EvaluationFormPrintModal({ evaluation, onClose }) {
                         </div>
                     </div>
 
-                    {/* Digital Authorization */}
                     <div className="eval-avoid-break">
                         <div className="font-bold mb-1.5 bg-slate-100 px-2.5 py-1 border-l-4 border-blue-600 text-[11px] uppercase tracking-wide">
                             Digital Authorization
@@ -380,7 +372,7 @@ export function EvaluationFormPrintModal({ evaluation, onClose }) {
                                 repApproval ? 'grid-cols-3' : 'grid-cols-2'
                             }`}
                         >
-                            {/* Prepared By */}
+
                             <div className="border border-slate-300 rounded-xl p-2.5 text-center bg-white">
                                 <div className="text-[9.5px] font-bold tracking-wider text-blue-800 uppercase mb-0.5">
                                     PREPARED BY
@@ -414,7 +406,6 @@ export function EvaluationFormPrintModal({ evaluation, onClose }) {
                                 )}
                             </div>
 
-                            {/* Head Authorization */}
                             <div className="border border-slate-300 rounded-xl p-2.5 text-center bg-white">
                                 <div className="text-[9.5px] font-bold tracking-wider text-blue-800 uppercase mb-0.5">
                                     HEAD AUTHORIZATION
@@ -442,7 +433,6 @@ export function EvaluationFormPrintModal({ evaluation, onClose }) {
                                 )}
                             </div>
 
-                            {/* Representative Staff (Optional Column) */}
                             {repApproval && (
                                 <div className="border border-slate-300 rounded-xl p-2.5 text-center bg-white">
                                     <div className="text-[9.5px] font-bold tracking-wider text-emerald-700 uppercase mb-0.5">
@@ -489,10 +479,6 @@ export function EvaluationFormPrintModal({ evaluation, onClose }) {
     );
 }
 
-/**
- * 2. Official Analytics Summary / Semester / Missing-PDF Print Modal
- *    Matches summary.blade.php, semester_summary.blade.php, and missing_pdf_pos.blade.php
- */
 export function AnalyticsReportPrintModal({ reportType, data, filters, onClose }) {
     if (!reportType) return null;
 
@@ -560,7 +546,7 @@ export function AnalyticsReportPrintModal({ reportType, data, filters, onClose }
                 }
             `}</style>
             <div className="analytics-print-modal-container bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
-                {/* Action Bar */}
+
                 <div className="no-print bg-slate-900 text-white px-6 py-4 flex items-center justify-between shrink-0">
                     <div>
                         <h3 className="text-base font-bold">
@@ -589,9 +575,8 @@ export function AnalyticsReportPrintModal({ reportType, data, filters, onClose }
                     </div>
                 </div>
 
-                {/* Printable Report Content */}
                 <div className="analytics-print-sheet p-8 overflow-y-auto text-black font-serif text-xs">
-                    {/* Official Header */}
+
                     <table className="w-full border-b-2 border-black pb-2 mb-3">
                         <tbody>
                             <tr>
@@ -622,7 +607,6 @@ export function AnalyticsReportPrintModal({ reportType, data, filters, onClose }
                         </tbody>
                     </table>
 
-                    {/* SUMMARY REPORT */}
                     {reportType === 'summary' && (
                         <>
                             <div className="text-center text-sm font-bold uppercase underline my-3">
@@ -695,7 +679,6 @@ export function AnalyticsReportPrintModal({ reportType, data, filters, onClose }
                                 </tbody>
                             </table>
 
-                            {/* Detailed Remarks */}
                             {summary.some((s) => (s.remarks || []).length > 0) && (
                                 <>
                                     <div className="font-bold text-xs border-b border-black pb-1 mb-2 uppercase">
@@ -738,7 +721,6 @@ export function AnalyticsReportPrintModal({ reportType, data, filters, onClose }
                         </>
                     )}
 
-                    {/* SEMESTER SUMMARY REPORT */}
                     {reportType === 'semester' && (
                         <>
                             <div className="text-center text-sm font-bold uppercase underline mt-3 mb-1">
@@ -841,7 +823,6 @@ export function AnalyticsReportPrintModal({ reportType, data, filters, onClose }
                         </>
                     )}
 
-                    {/* MISSING PDF POs REPORT */}
                     {reportType === 'missing_pdf' && (
                         <>
                             <div className="text-center text-sm font-bold uppercase underline mt-3 mb-1">
@@ -904,7 +885,6 @@ export function AnalyticsReportPrintModal({ reportType, data, filters, onClose }
                         </>
                     )}
 
-                    {/* Official Footer */}
                     <div className="mt-6 border-t border-black pt-2 text-center text-[10px]">
                         This report is official and computer-generated by the Supplier Evaluation System | Province of Davao del Sur.
                         <br />
@@ -915,4 +895,3 @@ export function AnalyticsReportPrintModal({ reportType, data, filters, onClose }
         </div>
     );
 }
-

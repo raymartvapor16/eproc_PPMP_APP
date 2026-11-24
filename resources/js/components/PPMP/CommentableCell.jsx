@@ -51,6 +51,7 @@ export const CommentableCell = ({
     return (
         <Component
             ref={cellRef}
+            data-commentable-cell="true"
             onClick={(e) => {
                 if (hasComments && !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(e.target.tagName)) {
                     setActiveCellKey(isOpen ? null : cellKey);
@@ -58,7 +59,7 @@ export const CommentableCell = ({
             }}
             className={baseClasses}
         >
-            {/* Google Sheets style corner triangle indicators & pill badges */}
+
             {pendingComments.length > 0 && (
                 <>
                     <span
@@ -99,7 +100,6 @@ export const CommentableCell = ({
                 </>
             )}
 
-            {/* Hover button for Reviewer to add comment if cell has no comments */}
             {!hasComments && canComment && (
                 <button
                     type="button"
@@ -116,7 +116,6 @@ export const CommentableCell = ({
 
             {children}
 
-            {/* Google Sheets Comment Card Popover */}
             {isOpen && (
                 <CellCommentPopover
                     anchorEl={cellRef.current}
@@ -153,4 +152,3 @@ export const CommentableCell = ({
 };
 
 export default CommentableCell;
-

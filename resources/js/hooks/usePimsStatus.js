@@ -1,13 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { portalSystemService } from '../services/api';
 
-/**
- * usePimsStatus:
- * Hook to dynamically track whether the PIMS system is active or inactive in the portal system catalog.
- * - Active: Triggers the new Generate PR modal workflow.
- * - Inactive: Reverts to the PIMS Publish Confirmation & Procurement Input modal (PimsPublishModal),
- *             with NO Generate PR modal shown.
- */
 export const usePimsStatus = () => {
     const [isPimsActive, setIsPimsActive] = useState(true);
     const [loading, setLoading] = useState(true);
@@ -18,7 +11,7 @@ export const usePimsStatus = () => {
             if (res.data && res.data.is_active !== undefined) {
                 setIsPimsActive(Boolean(res.data.is_active));
             } else {
-                // Fallback to checking public portal systems
+
                 const pub = await portalSystemService.getPublic();
                 const list = Array.isArray(pub.data) ? pub.data : [];
                 const found = list.some(
@@ -48,4 +41,3 @@ export const usePimsStatus = () => {
 
     return { isPimsActive, loading, refreshPimsStatus: checkStatus };
 };
-

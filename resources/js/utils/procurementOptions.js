@@ -1,8 +1,3 @@
-/**
- * Procurement Options & Deduplication Utilities
- * Canonicalizes and deduplicates options for Delivery Period, Place of Delivery, and Payment Method
- * to prevent duplicate entries and ensure dropdown options match seamlessly.
- */
 
 export const BASE_DELIVERY_PERIODS = [
     'Date of Activity',
@@ -29,10 +24,6 @@ export const BASE_PAYMENT_METHODS = [
     'One-time Payment/Credit-basis',
 ];
 
-/**
- * Standardizes a string for comparison by lowercasing, stripping extra whitespaces,
- * and normalizing dashes and slashes.
- */
 const normalizeBasic = (str) => {
     if (!str || typeof str !== 'string') return '';
     return str
@@ -51,7 +42,7 @@ export const canonicalizeDeliveryPeriod = (val) => {
 
 export const canonicalizePlaceOfDelivery = (val) => {
     const norm = normalizeBasic(val);
-    // Treat 'pgso warehouse/on-site' and 'pgso warehouse-onsite' as identical
+
     if (norm.includes('pgso') && norm.includes('warehouse') && (norm.includes('site') || norm.includes('on-site'))) {
         return 'pgso warehouse/on-site';
     }
@@ -66,10 +57,6 @@ export const canonicalizePaymentMethod = (val) => {
     return norm;
 };
 
-/**
- * Deduplicates an array of option strings using a canonicalizer function.
- * Preserves the first encountered human-friendly form.
- */
 export const deduplicateOptions = (pool = [], canonicalizeFn = normalizeBasic) => {
     const seen = new Set();
     const result = [];
@@ -88,10 +75,6 @@ export const deduplicateOptions = (pool = [], canonicalizeFn = normalizeBasic) =
     return result;
 };
 
-/**
- * Finds a matching option from the list whose canonical value matches the given value.
- * Returns the exact option string from the list if found, otherwise returns null.
- */
 export const findMatchingOption = (val, optionsList = [], canonicalizeFn = normalizeBasic) => {
     if (!val || typeof val !== 'string' || !val.trim()) return null;
     const canonTarget = canonicalizeFn(val.trim());
@@ -99,13 +82,8 @@ export const findMatchingOption = (val, optionsList = [], canonicalizeFn = norma
     return match || null;
 };
 
-/**
- * Checks if a string represents a calendar date, month, or date range from the item schedule table
- * (e.g. "10/2026", "2026-10", "10/2026 - 11/2026") rather than a contractual delivery term specification.
- */
 export const isDateScheduleString = (val) => {
     if (!val || typeof val !== 'string') return false;
     const trimmed = val.trim();
     return /^\d{1,2}\/\d{4}(\s*-\s*\d{1,2}\/\d{4})?$/.test(trimmed) || /^\d{4}-\d{2}(\s*-\s*\d{4}-\d{2})?$/.test(trimmed);
 };
-

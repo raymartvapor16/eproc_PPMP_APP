@@ -35,7 +35,7 @@ class FiscalYearTrackerTest extends TestCase
 
     public function test_tracker_number_bases_on_fiscal_year_input(): void
     {
-        // 1. Create PPMP with fiscal year 2028
+
         $res = $this->actingAs($this->endUser)->postJson('/api/ppmps', [
             'title' => 'Project for Year 2028',
             'fiscal_year' => '2028',
@@ -54,7 +54,6 @@ class FiscalYearTrackerTest extends TestCase
         $this->assertEquals('2028', $res->json('ppmp.fiscal_year'));
         $uuid = $res->json('ppmp.uuid');
 
-        // 2. Create PPMP with "CY 2029" formatted input - should sanitize and base tracker on 2029
         $res2 = $this->actingAs($this->endUser)->postJson('/api/ppmps', [
             'title' => 'Project for Year 2029',
             'fiscal_year' => 'CY 2029',
@@ -72,7 +71,6 @@ class FiscalYearTrackerTest extends TestCase
         $this->assertEquals('PIOGOODS-2029-000001', $res2->json('ppmp.tracking_number'));
         $this->assertEquals('2029', $res2->json('ppmp.fiscal_year'));
 
-        // 3. Update PPMP 1 from 2028 to 2030 - tracker number must update to 2030
         $updateRes = $this->actingAs($this->endUser)->putJson("/api/ppmps/{$uuid}", [
             'title' => 'Project for Year 2028 updated to 2030',
             'fiscal_year' => '2030',
@@ -90,7 +88,6 @@ class FiscalYearTrackerTest extends TestCase
         $this->assertEquals('PIOGOODS-2030-000001', $updateRes->json('ppmp.tracking_number'));
         $this->assertEquals('2030', $updateRes->json('ppmp.fiscal_year'));
 
-        // 4. Verify index endpoint returns available_fiscal_years
         $listRes = $this->actingAs($this->endUser)->getJson('/api/ppmps');
         $listRes->assertStatus(200);
         $this->assertArrayHasKey('available_fiscal_years', $listRes->json());

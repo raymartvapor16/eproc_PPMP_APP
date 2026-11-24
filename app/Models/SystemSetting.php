@@ -11,23 +11,13 @@ class SystemSetting extends Model
         'value',
     ];
 
-    /**
-     * In-memory cache of settings to eliminate redundant DB queries per request
-     * while staying 100% real-time accurate on updates.
-     */
     protected static ?array $memoryCache = null;
 
-    /**
-     * Clear in-memory setting cache (useful between tests or after updates).
-     */
     public static function flushCache(): void
     {
         static::$memoryCache = null;
     }
 
-    /**
-     * Load all system settings into memory in a single query.
-     */
     protected static function loadAllIntoCache(): void
     {
         if (static::$memoryCache !== null) {
@@ -41,20 +31,13 @@ class SystemSetting extends Model
         }
     }
 
-    /**
-     * Retrieve a setting value by key with optional default.
-     */
     public static function get(string $key, mixed $default = null): mixed
     {
         try {
             static::loadAllIntoCache();
 
             if (!array_key_exists($key, static::$memoryCache)) {
-                $setting = static::where('key', $key)->first();
-                if (!$setting) {
-                    return $default;
-                }
-                static::$memoryCache[$key] = $setting->value;
+                return $default;
             }
 
             $val = static::$memoryCache[$key];
@@ -77,9 +60,6 @@ class SystemSetting extends Model
         }
     }
 
-    /**
-     * Store or update a setting value.
-     */
     public static function set(string $key, mixed $value): static
     {
         if (is_bool($value)) {
@@ -102,37 +82,31 @@ class SystemSetting extends Model
         return $record;
     }
 
-    /**
-     * Check if developer mode is enabled.
-     */
     public static function isDeveloperMode(): bool
     {
         return (bool) static::get('developer_mode', false);
     }
 
-    /**
-     * Check if Cloudflare Turnstile security verification is enabled on Login & Registration.
-     */
     public static function isTurnstileEnabled(): bool
     {
         return (bool) static::get('turnstile_enabled', true);
     }
 
-    /**
-     * Get signature insertion settings for PPMP, APP, and Attachment List.
-     */
+    public static function isPnpkiEnabled(): bool
+    {
+        return (bool) static::get('pnpki_enabled', true);
+    }
+
     public static function getSignatureSettings(): array
     {
         return [
+            'pnpki_enabled' => static::isPnpkiEnabled(),
             'ppmp' => (bool) static::get('signature_insertion_ppmp', true),
             'app' => (bool) static::get('signature_insertion_app', true),
             'attachment_list' => (bool) static::get('signature_insertion_attachment_list', true),
         ];
     }
 
-    /**
-     * Check if signature insertion is enabled for a given document type ('ppmp', 'app', 'attachment_list').
-     */
     public static function isSignatureInsertionEnabled(string $documentType): bool
     {
         $settings = static::getSignatureSettings();
@@ -149,4 +123,3 @@ class SystemSetting extends Model
         return true;
     }
 }
-

@@ -25,7 +25,9 @@ import {
     Bell,
     Check,
     GitBranch,
-    GitMerge
+    GitMerge,
+    Users,
+    X
 } from 'lucide-react';
 import { monitoringService, ppmpService, procurementModeService } from '../../services/api';
 import { formatCurrency } from '../../components/UI/StatusBadge';
@@ -40,10 +42,12 @@ export const MonitoringDashboard = ({
     onLogout,
     onNavigate,
 }) => {
-    // Only OPPMO Monitors and Admins can manage monitoring projects and steps
-    // End-users, Office Heads, and Reviewers (Budget Officer, TWG, PACCO, etc.) are view-only
+
     const canManageMonitoring = Boolean(
         user && ['super_admin', 'admin', 'monitor', 'oppmo'].includes(user.role)
+    );
+    const isAdminOrSuperAdmin = Boolean(
+        user && ['super_admin', 'admin'].includes(user.role)
     );
 
     const [projects, setProjects] = useState([]);
@@ -51,31 +55,65 @@ export const MonitoringDashboard = ({
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
-    // Filters
-    const [selectedCategory, setSelectedCategory] = useState('ALL'); // 'ALL' | 'GOODS_CONSULTING' | 'INFRA'
-    const [selectedMode, setSelectedMode] = useState('ALL'); // 'ALL' or specific mode name
-    const [selectedDivision, setSelectedDivision] = useState('ALL'); // 'ALL' | 'pr_division' | 'technical_division' | 'bac_support_division' | 'contracting_division'
+    const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+    const [authUsers, setAuthUsers] = useState([]);
+    const [selectedAuthUserIds, setSelectedAuthUserIds] = useState([]);
+    const [authSearch, setAuthSearch] = useState('');
+    const [loadingAuthUsers, setLoadingAuthUsers] = useState(false);
+    const [savingAuthUsers, setSavingAuthUsers] = useState(false);
+
+    const handleOpenAuthModal = async () => {
+        setIsAuthModalOpen(true);
+        setLoadingAuthUsers(true);
+        try {
+            const res = await monitoringService.getAuthorizedUsers();
+            const list = res.data?.users || [];
+            setAuthUsers(list);
+            setSelectedAuthUserIds(
+                list.filter((u) => Boolean(u.can_view_all_monitoring_ppmp)).map((u) => u.id)
+            );
+        } catch (err) {
+            console.error('Failed to load users for monitoring authorization:', err);
+            alert(err.response?.data?.message || 'Failed to load users.');
+            setIsAuthModalOpen(false);
+        } finally {
+            setLoadingAuthUsers(false);
+        }
+    };
+
+    const handleSaveAuthUsers = async () => {
+        setSavingAuthUsers(true);
+        try {
+            await monitoringService.updateAuthorizedUsers(selectedAuthUserIds);
+            setIsAuthModalOpen(false);
+        } catch (err) {
+            console.error('Failed to update monitoring view-all authorization:', err);
+            alert(err.response?.data?.message || 'Failed to save authorization.');
+        } finally {
+            setSavingAuthUsers(false);
+        }
+    };
+
+    const [selectedCategory, setSelectedCategory] = useState('ALL');
+    const [selectedMode, setSelectedMode] = useState('ALL');
+    const [selectedDivision, setSelectedDivision] = useState('ALL');
     const [searchQuery, setSearchQuery] = useState('');
     const [modesList, setModesList] = useState([]);
 
-    // Modals
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [selectedProjectForDetail, setSelectedProjectForDetail] = useState(null);
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
-    // Pagination State (Default 9 cards per page)
     const [currentPage, setCurrentPage] = useState(1);
     const [perPage, setPerPage] = useState(9);
     const projectsGridRef = React.useRef(null);
 
-    // Pending PIMS reminders
     const [pendingPpmps, setPendingPpmps] = useState([]);
     const [pimsSearchQuery, setPimsSearchQuery] = useState('');
     const [isPimsQueueOpen, setIsPimsQueueOpen] = useState(false);
     const [selectedPpmpForPublish, setSelectedPpmpForPublish] = useState(null);
     const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
 
-    // Filter pending PPMPs by Tracker Number, title, or office unit
     const filteredPendingPpmps = useMemo(() => {
         if (!pimsSearchQuery.trim()) return pendingPpmps;
         const q = pimsSearchQuery.trim().toLowerCase();
@@ -87,7 +125,6 @@ export const MonitoringDashboard = ({
         });
     }, [pendingPpmps, pimsSearchQuery]);
 
-    // Inline PR ID editing on cards
     const [prIdInputs, setPrIdInputs] = useState({});
     const [savingPrId, setSavingPrId] = useState({});
     const [prIdErrors, setPrIdErrors] = useState({});
@@ -157,7 +194,6 @@ export const MonitoringDashboard = ({
         loadData();
     }, [selectedCategory, selectedMode, selectedDivision]);
 
-    // Listen to updates from other tabs / modals
     useEffect(() => {
         const handleUpdate = () => loadData(true);
         window.addEventListener('monitoring:updated', handleUpdate);
@@ -168,7 +204,6 @@ export const MonitoringDashboard = ({
         };
     }, []);
 
-    // Load active modes of procurement dynamically from database
     useEffect(() => {
         let isMounted = true;
         const loadModes = () => {
@@ -195,7 +230,6 @@ export const MonitoringDashboard = ({
         };
     }, []);
 
-    // Instant real-time fast search (0ms latency, zero delay)
     const filteredProjects = useMemo(() => {
         if (!searchQuery.trim()) return projects;
         const q = searchQuery.trim().toLowerCase();
@@ -219,12 +253,10 @@ export const MonitoringDashboard = ({
         });
     }, [projects, searchQuery]);
 
-    // Reset to page 1 whenever filters or search query change
     useEffect(() => {
         setCurrentPage(1);
     }, [selectedCategory, selectedMode, selectedDivision, searchQuery]);
 
-    // Pagination calculations based on instant filtered projects
     const totalEntries = filteredProjects.length;
     const totalPages = Math.max(1, Math.ceil(totalEntries / perPage));
     const startIndex = (currentPage - 1) * perPage;
@@ -272,10 +304,10 @@ export const MonitoringDashboard = ({
 
     return (
         <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
-            {/* Top Navigation Bar */}
+
             <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800/80 px-4 sm:px-6 py-3.5">
                 <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-                    {/* Brand / Logo */}
+
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 shrink-0">
                             <Layers className="w-5 h-5" />
@@ -295,7 +327,6 @@ export const MonitoringDashboard = ({
                         </div>
                     </div>
 
-                    {/* Navigation Actions */}
                     <div className="flex items-center gap-2">
                         <SystemSwitcherDropdown
                             user={user}
@@ -316,7 +347,6 @@ export const MonitoringDashboard = ({
                             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-blue-400' : ''}`} />
                         </button>
 
-                        {/* User Badge */}
                         <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
                             <div className="text-right hidden md:block">
                                 <div className="text-xs font-bold text-white leading-tight">{user?.name}</div>
@@ -336,9 +366,8 @@ export const MonitoringDashboard = ({
                 </div>
             </header>
 
-            {/* Main Content Area */}
             <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
-                {/* Hero / Welcome Banner */}
+
                 <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 border border-blue-900/50 p-6 shadow-xl">
                     <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-radial from-blue-500/10 to-transparent pointer-events-none" />
                     <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -356,7 +385,7 @@ export const MonitoringDashboard = ({
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-                            {/* PIMS Queue Button */}
+
                             <button
                                 type="button"
                                 onClick={() => setIsPimsQueueOpen(!isPimsQueueOpen)}
@@ -371,7 +400,18 @@ export const MonitoringDashboard = ({
                                 )}
                             </button>
 
-                            {/* New Monitored Procurement */}
+                            {isAdminOrSuperAdmin && (
+                                <button
+                                    type="button"
+                                    onClick={handleOpenAuthModal}
+                                    className="px-4 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-400/30 text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-xs"
+                                    title="Select users authorized to view all published PPMPs on Monitoring System"
+                                >
+                                    <Shield className="w-4 h-4 text-emerald-400" />
+                                    <span>Authorize Viewers</span>
+                                </button>
+                            )}
+
                             {canManageMonitoring && (
                                 <button
                                     type="button"
@@ -386,9 +426,8 @@ export const MonitoringDashboard = ({
                     </div>
                 </div>
 
-                {/* KPI Metrics Strip */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                    {/* Total Projects */}
+
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 space-y-1">
                         <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                             Total Monitored
@@ -401,7 +440,6 @@ export const MonitoringDashboard = ({
                         </div>
                     </div>
 
-                    {/* Goods & Consulting */}
                     <div className="bg-slate-900/80 border border-blue-900/40 rounded-xl p-3.5 space-y-1">
                         <div className="text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1">
                             <Layers className="w-3 h-3" /> Goods / Consulting
@@ -412,7 +450,6 @@ export const MonitoringDashboard = ({
                         <div className="text-[11px] text-slate-400">Class 1 Procurements</div>
                     </div>
 
-                    {/* INFRA */}
                     <div className="bg-slate-900/80 border border-amber-900/40 rounded-xl p-3.5 space-y-1">
                         <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
                             <Building2 className="w-3 h-3" /> Infrastructure
@@ -423,7 +460,6 @@ export const MonitoringDashboard = ({
                         <div className="text-[11px] text-slate-400">Civil & Infra Works</div>
                     </div>
 
-                    {/* PR Division */}
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 space-y-1">
                         <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                             1. PR Division
@@ -434,7 +470,6 @@ export const MonitoringDashboard = ({
                         <div className="text-[11px] text-slate-400">Review & Compliance</div>
                     </div>
 
-                    {/* Technical & BAC Support */}
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 space-y-1">
                         <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                             2 & 3. Tech / BAC
@@ -445,7 +480,6 @@ export const MonitoringDashboard = ({
                         <div className="text-[11px] text-slate-400">Canvass & Decision</div>
                     </div>
 
-                    {/* Contracting & Completed */}
                     <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 space-y-1">
                         <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
                             4. Contracting / Awarded
@@ -457,7 +491,6 @@ export const MonitoringDashboard = ({
                     </div>
                 </div>
 
-                {/* Optional PIMS Reminder Queue Drawer */}
                 {isPimsQueueOpen && (
                     <div className="bg-slate-900 rounded-2xl border border-amber-500/30 p-5 shadow-xl space-y-3 animate-in fade-in duration-150">
                         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
@@ -481,7 +514,7 @@ export const MonitoringDashboard = ({
                             </div>
 
                             <div className="flex items-center gap-2.5 shrink-0">
-                                {/* Search PPMP Tracker Number */}
+
                                 <div className="relative min-w-[220px] sm:min-w-[280px]">
                                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
                                     <input
@@ -571,9 +604,8 @@ export const MonitoringDashboard = ({
                     </div>
                 )}
 
-                {/* Filter and Search Bar */}
                 <div className="bg-slate-900/90 rounded-2xl border border-slate-800 p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    {/* Category Tabs: Goods & Consulting vs INFRA */}
+
                     <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-xl border border-slate-800 shrink-0">
                         <button
                             type="button"
@@ -612,9 +644,8 @@ export const MonitoringDashboard = ({
                         </button>
                     </div>
 
-                    {/* Mode & Division Selectors & Search */}
                     <div className="flex flex-wrap items-center gap-2.5 flex-1 justify-end">
-                        {/* Mode Filter */}
+
                         <select
                             value={selectedMode}
                             onChange={(e) => setSelectedMode(e.target.value)}
@@ -628,7 +659,6 @@ export const MonitoringDashboard = ({
                             ))}
                         </select>
 
-                        {/* Division Filter */}
                         <select
                             value={selectedDivision}
                             onChange={(e) => setSelectedDivision(e.target.value)}
@@ -641,7 +671,6 @@ export const MonitoringDashboard = ({
                             <option value="contracting_division">4. Contracting Division</option>
                         </select>
 
-                        {/* Search Input */}
                         <div className="relative min-w-[220px] flex-1 max-w-xs">
                             <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5 pointer-events-none" />
                             <input
@@ -666,7 +695,6 @@ export const MonitoringDashboard = ({
                     </div>
                 </div>
 
-                {/* Projects Grid / List */}
                 {loading ? (
                     <div className="py-20 text-center space-y-3">
                         <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
@@ -738,7 +766,7 @@ export const MonitoringDashboard = ({
                                         className="bg-slate-900 rounded-2xl border border-slate-800 hover:border-blue-500/50 p-5 shadow-lg transition duration-200 flex flex-col justify-between cursor-pointer group hover:bg-slate-900/95"
                                     >
                                         <div className="space-y-3">
-                                            {/* Top Badges */}
+
                                             <div className="flex items-center justify-between gap-2 flex-wrap">
                                                 <div className="flex items-center gap-1.5 flex-wrap">
                                                     <span
@@ -782,7 +810,6 @@ export const MonitoringDashboard = ({
                                                 </span>
                                             </div>
 
-                                            {/* Title / Description (What enduser procure is) */}
                                             <div>
                                                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">
                                                     What End-User Is Procuring:
@@ -792,7 +819,6 @@ export const MonitoringDashboard = ({
                                                 </h3>
                                             </div>
 
-                                            {/* Project Meta Information */}
                                             <div className="space-y-1.5 pt-1 text-xs text-slate-400">
                                                 {proj.abc_amount && (
                                                     <div className="flex items-center justify-between">
@@ -809,7 +835,6 @@ export const MonitoringDashboard = ({
                                                     </div>
                                                 )}
 
-                                                {/* PIMS PR ID (From Provincial PIMS System) */}
                                                 {proj.pims_pr_id && editingPrIdFor !== proj.id ? (
                                                     <div
                                                         className="flex items-center justify-between pt-0.5"
@@ -944,7 +969,6 @@ export const MonitoringDashboard = ({
                                                 )}
                                             </div>
 
-                                            {/* 4 Division Visual Pipeline Stepper */}
                                             <div className="pt-2">
                                                 <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold mb-1.5">
                                                     <span>Current Stage:</span>
@@ -953,7 +977,6 @@ export const MonitoringDashboard = ({
                                                     </span>
                                                 </div>
 
-                                                {/* Progress Bar */}
                                                 <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
                                                     <div
                                                         className="bg-gradient-to-r from-blue-500 to-emerald-400 h-full rounded-full transition-all duration-300"
@@ -963,7 +986,6 @@ export const MonitoringDashboard = ({
                                             </div>
                                         </div>
 
-                                        {/* Card Footer */}
                                         <div className="pt-4 mt-3 border-t border-slate-800/80 flex items-center justify-between">
                                             <span className="text-[11px] font-mono text-slate-400">
                                                 {completedSteps}/{steps.length} steps completed
@@ -982,9 +1004,8 @@ export const MonitoringDashboard = ({
                             })}
                         </div>
 
-                        {/* Pagination & Entries Control Bar */}
                         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
-                            {/* Left: Entries Info & Per-Page Selector */}
+
                             <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
                                 <span>
                                     Showing <span className="font-bold text-white">{totalEntries === 0 ? 0 : startIndex + 1}</span> to{' '}
@@ -1007,10 +1028,9 @@ export const MonitoringDashboard = ({
                                 </div>
                             </div>
 
-                            {/* Right: Page Navigation Buttons */}
                             {totalPages > 1 && (
                                 <div className="flex items-center gap-1.5 flex-wrap justify-center">
-                                    {/* First Button */}
+
                                     <button
                                         type="button"
                                         disabled={currentPage <= 1}
@@ -1020,7 +1040,6 @@ export const MonitoringDashboard = ({
                                         First
                                     </button>
 
-                                    {/* Prev Button */}
                                     <button
                                         type="button"
                                         disabled={currentPage <= 1}
@@ -1031,7 +1050,6 @@ export const MonitoringDashboard = ({
                                         <ChevronLeft className="w-4 h-4" />
                                     </button>
 
-                                    {/* Page Number Buttons */}
                                     {getPages(currentPage, totalPages).map((p, idx) =>
                                         p === '...' ? (
                                             <span key={`ellipsis-${idx}`} className="px-1.5 text-slate-600 font-black">
@@ -1053,7 +1071,6 @@ export const MonitoringDashboard = ({
                                         )
                                     )}
 
-                                    {/* Next Button */}
                                     <button
                                         type="button"
                                         disabled={currentPage >= totalPages}
@@ -1064,7 +1081,6 @@ export const MonitoringDashboard = ({
                                         <ChevronRight className="w-4 h-4" />
                                     </button>
 
-                                    {/* Last Button */}
                                     <button
                                         type="button"
                                         disabled={currentPage >= totalPages}
@@ -1080,7 +1096,6 @@ export const MonitoringDashboard = ({
                 )}
             </main>
 
-            {/* Project Details Modal with all 4 divisions & timeline */}
             {selectedProjectForDetail && (
                 <MonitoringProjectDetailModal
                     isOpen={isDetailModalOpen}
@@ -1095,7 +1110,6 @@ export const MonitoringDashboard = ({
                 />
             )}
 
-            {/* Direct Create / Register Procurement Project Modal */}
             <PimsPublishModal
                 isOpen={isCreateModalOpen}
                 onClose={() => setIsCreateModalOpen(false)}
@@ -1103,7 +1117,6 @@ export const MonitoringDashboard = ({
                 onSuccess={() => loadData(true)}
             />
 
-            {/* PIMS Queue Publish Modal */}
             <PimsPublishModal
                 isOpen={isPublishModalOpen}
                 onClose={() => {
@@ -1113,6 +1126,124 @@ export const MonitoringDashboard = ({
                 ppmp={selectedPpmpForPublish}
                 onSuccess={() => loadData(true)}
             />
+
+            {isAdminOrSuperAdmin && isAuthModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden flex flex-col max-h-[85vh]">
+                        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+                            <div>
+                                <h3 className="text-sm font-bold flex items-center gap-2">
+                                    <Shield className="w-4 h-4 text-emerald-400" />
+                                    <span>Authorize Users to View All Published PPMPs</span>
+                                </h3>
+                                <p className="text-[11px] text-slate-300 mt-0.5">
+                                    By default, users only see PPMPs they created. Selected users below can view all PPMPs published to PIMS.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsAuthModalOpen(false)}
+                                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-4 border-b border-slate-200 bg-slate-50">
+                            <div className="relative">
+                                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                                <input
+                                    type="text"
+                                    value={authSearch}
+                                    onChange={(e) => setAuthSearch(e.target.value)}
+                                    placeholder="Search user by name, email, role, or office..."
+                                    className="w-full text-xs pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="p-4 overflow-y-auto flex-1 space-y-2">
+                            {loadingAuthUsers ? (
+                                <div className="py-8 text-center text-xs text-slate-500">Loading users...</div>
+                            ) : (
+                                authUsers
+                                    .filter((u) => {
+                                        const q = authSearch.trim().toLowerCase();
+                                        if (!q) return true;
+                                        return (
+                                            u.name?.toLowerCase().includes(q) ||
+                                            u.email?.toLowerCase().includes(q) ||
+                                            u.role?.toLowerCase().includes(q) ||
+                                            u.office?.name?.toLowerCase().includes(q)
+                                        );
+                                    })
+                                    .map((u) => {
+                                        const checked = selectedAuthUserIds.includes(u.id);
+                                        return (
+                                            <label
+                                                key={u.id}
+                                                className={`flex items-center justify-between gap-3 p-3 rounded-xl border cursor-pointer transition ${
+                                                    checked
+                                                        ? 'bg-emerald-50 border-emerald-300'
+                                                        : 'bg-white border-slate-200 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={checked}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setSelectedAuthUserIds((prev) => [...prev, u.id]);
+                                                            } else {
+                                                                setSelectedAuthUserIds((prev) => prev.filter((id) => id !== u.id));
+                                                            }
+                                                        }}
+                                                        className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                                    />
+                                                    <div className="min-w-0">
+                                                        <div className="text-xs font-bold text-slate-900 truncate">
+                                                            {u.name}
+                                                        </div>
+                                                        <div className="text-[11px] text-slate-500 truncate">
+                                                            {u.email} • {u.office?.name || 'No Office'}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
+                                                    {u.role?.replace(/_/g, ' ')}
+                                                </span>
+                                            </label>
+                                        );
+                                    })
+                            )}
+                        </div>
+
+                        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                            <span className="text-xs text-slate-600 font-semibold">
+                                {selectedAuthUserIds.length} user(s) authorized to view all PPMPs
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAuthModalOpen(false)}
+                                    className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={savingAuthUsers}
+                                    onClick={handleSaveAuthUsers}
+                                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                                >
+                                    {savingAuthUsers ? 'Saving...' : 'Save Authorization'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { formatCurrency, formatDate } from '../UI/StatusBadge';
 import { Printer, ArrowLeft, Plus, Trash2, Edit3, Loader2, Sparkles, ShieldCheck, History, X, Eye, AlertCircle, RefreshCw, FileText } from 'lucide-react';
 import { ppmpService } from '../../services/api';
@@ -6,38 +6,24 @@ import { PimsPublishModal } from '../Monitoring/PimsPublishModal';
 import { GeneratePurchaseRequestModal } from '../PIMS/GeneratePurchaseRequestModal';
 import { PurchaseRequestPrintView } from '../PIMS/PurchaseRequestPrintView';
 import { formatDescription6Words, formatMonthYear, toMonthInputValue, MonthRangeInput } from './ProcurementPlanTable';
-import { useSignatureSettings } from '../../utils/signatureController';
+import { useSignatureSettings, isSignatoryPnpkiActive } from '../../utils/signatureController';
 import { usePimsStatus } from '../../hooks/usePimsStatus';
 import { canUserAccessSystem } from '../UI/UnauthorizedSystemAccessView';
+import { PrintExportDropdown } from '../UI/PrintExportDropdown';
+import { ResponsivePrintDocument } from '../UI/ResponsivePrintDocument';
+import { exportElementsToPdf } from '../../utils/pdfExport';
 
-/**
- * APPPrintView:
- * Annual Procurement Plan (APP) Form & Print View matching Davao del Sur standard template.
- * Header: Republic of the Philippines, PROVINCE OF DAVAO DEL SUR, ANNUAL PROCUREMENT PLAN FOR CY [Year]
- * Checkboxes: INDICATIVE / FINAL / UPDATED VERSION NO. [___]
- * Columns (11 Columns):
- *  1. Project Title
- *  2. End-User or Implementing Unit
- *  3. General Description of the Project
- *  4. Mode of Procurement
- *  5. To be covered by an Early Procurement Activity? (YES/NO)
- *  6. Criteria for Bid Evaluation (Including Sustainability and Domestic Preference) [default: LCRB]
- *  7. Start of Procurement Activity (Projected Timeline MM/YYYY)
- *  8. End of Procurement Activity (Projected Timeline MM/YYYY)
- *  9. Source of Fund (Funding Details)
- * 10. Estimated Budget / Approved Budget for the Contract (PhP)
- * 11. PROCUREMENT STRATEGY OR TOOLS / REMARKS (Other relevant descriptions)
- *
- * Signatures:
- *  - Prepared & Reviewed By: (Name & Designation based on PPMP data)
- *  - Recommending Approval: (Name & Designation based on PPMP data / BAC Secretariat / Head)
- *  - Approved by: (this is for governor) Name & Designation
- */
 export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }) => {
-    const { isEnabled } = useSignatureSettings();
+    const appPrintRef = useRef(null);
+    const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+    const { isEnabled, isPnpkiEnabled: isGlobalPnpkiEnabled } = useSignatureSettings();
     const isAppSignatureEnabled = ppmp?.signature_settings?.app !== undefined
         ? Boolean(ppmp.signature_settings.app)
         : isEnabled('app');
+    const isPnpkiSystemEnabled = ppmp?.signature_settings?.pnpki_enabled !== undefined
+        ? Boolean(ppmp.signature_settings.pnpki_enabled)
+        : isGlobalPnpkiEnabled;
 
     const savedData = ppmp?.app_data || null;
     const needsRegeneration = Boolean(savedData?.needs_regeneration);
@@ -52,14 +38,12 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
     const [saving, setSaving] = useState(false);
     const [showOldAppModal, setShowOldAppModal] = useState(false);
 
-    // PIMS & PR States
     const { isPimsActive } = usePimsStatus();
     const [isPimsPublishModalOpen, setIsPimsPublishModalOpen] = useState(false);
     const [isGeneratePrModalOpen, setIsGeneratePrModalOpen] = useState(false);
     const [selectedMonitoringProjectId, setSelectedMonitoringProjectId] = useState(null);
     const [selectedPrForPrint, setSelectedPrForPrint] = useState(null);
 
-    // Form states
     const [fiscalYear, setFiscalYear] = useState(
         savedData?.fiscal_year || ppmp?.fiscal_year || new Date().getFullYear().toString()
     );
@@ -72,23 +56,19 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
 
     const signatures = ppmp?.signatures || [];
 
-    // If scope is ATTACHMENT_LIST only, PPMP / APP were NOT changed and retain approved baseline signatures from parent.
-    // If scope is PPMP_APP, ALL, or initial plan: PPMP / APP ARE being changed, so budget & oppmo reviewer signatures MUST BE NONE until they approve this child PPMP!
     const isScopeAttachmentOnly = ppmp?.amendment_scope === 'ATTACHMENT_LIST';
 
-    // Reviewer signatures require review approval before their initial/signature is valid
-    // New routing order: TWG -> (Budget Officer or PACCO) -> OPPMO -> Ready to Print
     const hasTwgApproved = Boolean(
         ppmp?.twg_approved_at ||
-        ['BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+        ['BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'BUDGET_HEAD_REVIEW', 'BUDGET_HEAD_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'PACCO_HEAD_REVIEW', 'PACCO_HEAD_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED', 'OPPMO_HEAD_REVIEW', 'OPPMO_HEAD_RETURNED', 'APP_PREPARER_REVIEW', 'APP_PREPARER_RETURNED', 'GOVERNOR_REVIEW', 'GOVERNOR_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
     );
     const hasBudgetApproved = Boolean(
         ppmp?.budget_approved_at ||
-        ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+        ['BUDGET_HEAD_REVIEW', 'BUDGET_HEAD_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED', 'OPPMO_HEAD_REVIEW', 'OPPMO_HEAD_RETURNED', 'APP_PREPARER_REVIEW', 'APP_PREPARER_RETURNED', 'GOVERNOR_REVIEW', 'GOVERNOR_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
     );
     const hasOppmoApproved = Boolean(
         ppmp?.oppmo_approved_at ||
-        ['HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+        ['BUDGET_HEAD_REVIEW', 'BUDGET_HEAD_RETURNED', 'PACCO_HEAD_REVIEW', 'PACCO_HEAD_RETURNED', 'OPPMO_HEAD_REVIEW', 'OPPMO_HEAD_RETURNED', 'APP_PREPARER_REVIEW', 'APP_PREPARER_RETURNED', 'GOVERNOR_REVIEW', 'GOVERNOR_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
     );
     const hasHeadApproved = Boolean(
         ppmp?.head_approved_at ||
@@ -110,15 +90,43 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
         ? (signatures.find(s => s.role === 'oppmo') || ppmp?.parent?.signatures?.find(s => s.role === 'oppmo') || null)
         : (hasOppmoApproved ? signatures.find(s => s.role === 'oppmo') : null);
 
+    const budgetHeadSig = signatures.find(s => s.role === 'budget_head')
+        || (isScopeAttachmentOnly ? ppmp?.parent?.signatures?.find(s => s.role === 'budget_head') : null)
+        || null;
+    const paccoHeadSig = signatures.find(s => s.role === 'pacco_head')
+        || (isScopeAttachmentOnly ? ppmp?.parent?.signatures?.find(s => s.role === 'pacco_head') : null)
+        || null;
+    const oppmoHeadSig = signatures.find(s => s.role === 'oppmo_head')
+        || (isScopeAttachmentOnly ? ppmp?.parent?.signatures?.find(s => s.role === 'oppmo_head') : null)
+        || null;
+    const appPreparerSig = signatures.find(s => s.role === 'app_preparer')
+        || (isScopeAttachmentOnly ? ppmp?.parent?.signatures?.find(s => s.role === 'app_preparer') : null)
+        || null;
+    const governorSig = signatures.find(s => s.role === 'governor')
+        || (isScopeAttachmentOnly ? ppmp?.parent?.signatures?.find(s => s.role === 'governor') : null)
+        || null;
+
+    const isBudgetPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(budgetSig, ppmp?.budget_reviewer || ppmp?.budgetReviewer);
+    const isBudgetHeadPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(budgetHeadSig);
+    const isPaccoHeadPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(paccoHeadSig);
+    const isOppmoPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(oppmoSig, ppmp?.oppmo_reviewer || ppmp?.oppmoReviewer);
+    const isOppmoHeadPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(oppmoHeadSig);
+    const isAppPreparerPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(appPreparerSig);
+    const isGovernorPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(governorSig);
+    const displayRecommendingHeadSig = budgetHeadSig || paccoHeadSig || null;
+    const isRecommendingHeadPnpki = Boolean(
+        (budgetHeadSig && isBudgetHeadPnpki) ||
+        (!budgetHeadSig && paccoHeadSig && isPaccoHeadPnpki)
+    );
+    const hasAnyAppPnpkiSig = isBudgetPnpki || isBudgetHeadPnpki || isPaccoHeadPnpki || isOppmoPnpki || isOppmoHeadPnpki || isAppPreparerPnpki || isGovernorPnpki;
+
     const twgSig = hasTwgApproved ? signatures.find(s => s.role === 'twg') : null;
 
-    // Database active signatories (live from database ppmp_signatories table via default_signatories)
     const dbAppPrepared = ppmp?.default_signatories?.app_prepared_by;
     const dbAppReviewed = ppmp?.default_signatories?.app_reviewed_by || ppmp?.default_signatories?.bac_secretariat;
     const dbAppRecommending = ppmp?.default_signatories?.app_recommending || ppmp?.default_signatories?.budget_requirement;
     const dbAppApproved = ppmp?.default_signatories?.app_approved_by || ppmp?.default_signatories?.approved_by;
 
-    // Check if savedData has legacy preparer (Norjanna was previously saved as prepared_by before Gina was introduced)
     const isLegacyNorjannaPreparer = Boolean(
         (
             savedData?.prepared_by_name === 'NORJANNA M. CAMAGUIN, MPA' ||
@@ -126,8 +134,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
         ) && (!savedData?.reviewed_by_name || savedData?.reviewed_by_name === savedData?.prepared_by_name)
     );
 
-    // APP Signers:
-    // Prepared By: must be GINA MAE B. CARBAQUEL based on the database
     const [preparedByName, setPreparedByName] = useState(
         isLegacyNorjannaPreparer
             ? (dbAppPrepared?.name || 'GINA MAE B. CARBAQUEL')
@@ -139,7 +145,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
             : (savedData?.prepared_by_position || dbAppPrepared?.position || 'ADAS II')
     );
 
-    // Reviewed By: NORJANNA M. CAMAGUIN, MPA (PGDH - OPPMO)
     const [reviewedByName, setReviewedByName] = useState(
         savedData?.reviewed_by_name ||
         dbAppReviewed?.name ||
@@ -151,7 +156,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
         'PGDH - OPPMO'
     );
 
-    // Recommending Approval: DESSAMIE BUAT-SANCHEZ, CPA, JD (PGDH - PBO / BAC - Chairman)
     const [recommendingName, setRecommendingName] = useState(
         savedData?.recommending_name ||
         ppmp?.default_signatories?.app_recommending?.name ||
@@ -165,7 +169,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
         'PGDH - PBO / BAC - Chairman'
     );
 
-    // Approved by: Governor
     const [approvedByName, setApprovedByName] = useState(
         savedData?.approved_by_name ||
         ppmp?.default_signatories?.app_approved_by?.name ||
@@ -179,7 +182,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
         'PROVINCIAL GOVERNOR'
     );
 
-    // Helper to resolve Type of Project to be Procured (Goods, Infrastructure Projects, Consulting Services)
     const resolveProjectType = (item, ppmpData) => {
         const raw = item?.project_type || ppmpData?.items?.find(i => !i.is_header && i.project_type)?.project_type || ppmpData?.project_type || 'Goods';
         const trimmed = String(raw).trim();
@@ -196,9 +198,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
         return 'Goods';
     };
 
-    // Helper to resolve End-User or Implementing Unit cell:
-    // If PPMP has program data -> "(Implementing Office / Unit data) - (Program data)"
-    // If no program data -> "Implementing Office / Unit data"
     const resolveEndUser = (ppmpData, fallback = 'Implementing Unit') => {
         const implementingOffice = (ppmpData?.implementing_unit || ppmpData?.office?.name || '').trim();
         const program = (ppmpData?.program_name ? String(ppmpData.program_name) : '').trim();
@@ -215,15 +214,12 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
         return fallback;
     };
 
-    // Tracker number for PPMP
     const trackerNo = ppmp?.tracking_number || ppmp?.ppmp_number || '';
 
-    // Helper to format Remarks / Procurement Strategy with Tracker Number (without "Tracker No.:" label)
     const buildRemarksWithTracker = (itemRemarks) => {
         const trackerStr = trackerNo ? String(trackerNo).trim() : '';
         let existingStr = itemRemarks ? String(itemRemarks).trim() : '';
 
-        // Strip any existing "Tracker No.:" or "Tracker No:" prefix
         if (existingStr) {
             existingStr = existingStr.replace(/^Tracker No\.?:?\s*/i, '').trim();
         }
@@ -241,10 +237,9 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
         return trackerStr || existingStr;
     };
 
-    // Initial rows based on PPMP items or existing saved data
     const [rows, setRows] = useState(() => {
         const items = ppmp?.items || [];
-        const nonHeaderItems = items.filter(i => !i.is_header);
+        const nonHeaderItems = items.filter(i => !i.is_header && !i.is_retention);
 
         const defaultEndUser = resolveEndUser(ppmp);
 
@@ -262,12 +257,10 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
 
                 let updatedRow = { ...row };
 
-                // If generalDescription is empty, was previously the item description / ppmp title, or is not a recognized project type:
                 if (!isKnownType) {
                     updatedRow.generalDescription = expectedType;
                 }
 
-                // Sync End-User / Implementing Unit cell
                 const currentEndUser = String(row.endUser || '').trim();
                 if (
                     !currentEndUser ||
@@ -278,7 +271,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                     updatedRow.endUser = defaultEndUser;
                 }
 
-                // Ensure Remarks includes the tracker number and strips "Tracker No.:" prefix
                 const rawRemarks = updatedRow.procurementStrategy !== undefined && updatedRow.procurementStrategy !== null
                     ? String(updatedRow.procurementStrategy).trim()
                     : '';
@@ -331,10 +323,9 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
         ];
     });
 
-    // Helper to reload/sync rows fresh from PPMP items
     const reloadRowsFromPpmp = () => {
         const items = ppmp?.items || [];
-        const nonHeaderItems = items.filter(i => !i.is_header);
+        const nonHeaderItems = items.filter(i => !i.is_header && !i.is_retention);
         const defaultEndUser = resolveEndUser(ppmp);
 
         if (nonHeaderItems.length > 0) {
@@ -356,7 +347,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
         }
     };
 
-    // When PPMP changes or requires regeneration, automatically sync rows from latest PPMP items
     useEffect(() => {
         if (needsRegeneration) {
             reloadRowsFromPpmp();
@@ -456,31 +446,31 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                     }
                 }
             `}</style>
-            {/* Top Toolbar (Hidden when printing) */}
-            <div className="no-print bg-slate-900 text-white px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
-                <div className="flex items-center gap-3">
+
+            <div className="no-print bg-slate-900 text-white px-3 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 shadow-md">
+                <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0">
                     <button
                         onClick={onBack}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded border border-slate-700 transition cursor-pointer"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded border border-slate-700 transition cursor-pointer shrink-0"
                     >
                         <ArrowLeft className="w-4 h-4" /> Back to Workspace
                     </button>
-                    <div>
-                        <div className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2">
+                    <div className="min-w-0">
+                        <div className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2 flex-wrap">
                             <span>Annual Procurement Plan (APP) — Province of Davao del Sur</span>
                             {!canEdit && (
-                                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-900 text-indigo-200 border border-indigo-700">
+                                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-900 text-indigo-200 border border-indigo-700 shrink-0">
                                     Baseline / Old APP
                                 </span>
                             )}
                         </div>
-                        <div className="text-[11px] text-blue-400 font-mono">
+                        <div className="text-[10px] sm:text-[11px] text-blue-400 font-mono">
                             {isEditing ? 'Configuring / Edit Mode' : 'Official Clean Printable View (CY ' + fiscalYear + ')'}
                         </div>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-end gap-2 flex-wrap shrink-0">
 
                     {allowEdit && !isEditing && (
                         <button
@@ -496,14 +486,34 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                     {!isEditing ? (
                         isReadyToPrint ? (
                             <>
-                                <button
-                                    type="button"
-                                    onClick={handlePrint}
-                                    className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold uppercase tracking-wider rounded shadow transition cursor-pointer"
-                                >
-                                    <Printer className="w-4 h-4" />
-                                    PRINT APP NOW
-                                </button>
+                                <PrintExportDropdown
+                                    label="Print / Download PDF"
+                                    printLabel="Print APP"
+                                    printSublabel="Open browser print dialog"
+                                    downloadLabel="Download APP (PDF)"
+                                    downloadSublabel="Save official APP as .pdf file"
+                                    onPrint={handlePrint}
+                                    onDownloadPdf={async () => {
+                                        if (!appPrintRef.current || isExportingPdf) return;
+                                        setIsExportingPdf(true);
+                                        try {
+                                            const tracker = ppmp?.tracking_number || ppmp?.ppmp_number || ppmp?.uuid || 'APP';
+                                            await exportElementsToPdf({
+                                                element: appPrintRef.current,
+                                                filename: `APP_${tracker}.pdf`,
+                                                orientation: 'landscape',
+                                                format: 'legal',
+                                                marginMm: 6,
+                                            });
+                                        } catch (err) {
+                                            console.error('Failed to export APP PDF:', err);
+                                            alert('Failed to generate APP PDF file. Please try printing and choosing Save as PDF.');
+                                        } finally {
+                                            setIsExportingPdf(false);
+                                        }
+                                    }}
+                                    isExporting={isExportingPdf}
+                                />
                                 {canUserAccessSystem(user, '/pims') && (
                                     <button
                                         type="button"
@@ -547,7 +557,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                 </div>
             </div>
 
-            {/* Container */}
             <div className="p-4 sm:p-8 max-w-[1600px] mx-auto">
                 {needsRegeneration && allowEdit && (
                     <div className="mb-5 p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex flex-col md:flex-row md:items-center justify-between gap-3 no-print shadow-xs">
@@ -595,9 +604,9 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                     </div>
                 )}
                 {isEditing ? (
-                    /* EDIT / CUSTOMIZE FORM MODE */
+
                     <div className="space-y-6">
-                        {/* Configuration header */}
+
                         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-4">
                             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900 border-b border-slate-100 pb-2">
                                 APP Header & Version Configuration
@@ -637,14 +646,13 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                 </div>
                             </div>
                         </div>
-                    
-                        {/* Signatories Configuration Card */}
+
                         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-4">
                             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-900 border-b border-slate-100 pb-2">
                                 Signatories Configuration
                             </h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-                                {/* Prepared By */}
+
                                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
                                     <span className="font-bold text-slate-900 block uppercase">Prepared By:</span>
                                     <div>
@@ -669,7 +677,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                     </div>
                                 </div>
 
-                                {/* Reviewed By */}
                                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
                                     <span className="font-bold text-slate-900 block uppercase">Reviewed By:</span>
                                     <div>
@@ -694,7 +701,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                     </div>
                                 </div>
 
-                                {/* Recommending Approval */}
                                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
                                     <span className="font-bold text-slate-900 block uppercase">Recommending Approval:</span>
                                     <div>
@@ -719,7 +725,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                     </div>
                                 </div>
 
-                                {/* Approved by: Governor */}
                                 <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg space-y-2">
                                     <span className="font-bold text-emerald-900 block uppercase flex items-center gap-1.5">
                                         <ShieldCheck className="w-4 h-4 text-emerald-600" />
@@ -747,7 +752,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                             </div>
                         </div>
 
-                        {/* Project Details Table in Form */}
                         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-4">
                             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                                 <div>
@@ -782,7 +786,7 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                     <thead className="bg-slate-100 text-slate-800 font-bold uppercase text-[10px]">
                                         <tr>
                                             <th className="border border-slate-300 p-2 text-left min-w-[240px]">Project Title</th>
-                                            <th className="border border-slate-300 p-2 text-left w-28">End-User / Unit</th>
+                                            <th className="border border-slate-300 p-2 text-left min-w-[240px]">End-User / Unit</th>
                                             <th className="border border-slate-300 p-2 text-left w-36">General Description of the Project</th>
                                             <th className="border border-slate-300 p-2 text-left">Mode of Procurement</th>
                                             <th className="border border-slate-300 p-2 w-16">Early Proc?</th>
@@ -791,7 +795,8 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                             <th className="border border-slate-300 p-2 w-24">End (MM/YYYY)</th>
                                             <th className="border border-slate-300 p-2 text-left">Source of Fund</th>
                                             <th className="border border-slate-300 p-2 w-28 text-right">Estimated Budget</th>
-                                            <th className="border border-slate-300 p-2 text-left">Strategy / Remarks</th>
+                                            <th className="border border-slate-300 p-2 text-left">Procurement Strategy or Tools</th>
+                                            <th className="border border-slate-300 p-2 text-left">Remarks</th>
                                             <th className="border border-slate-300 p-2 w-10"></th>
                                         </tr>
                                     </thead>
@@ -807,8 +812,8 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                                     />
                                                 </td>
                                                 <td className="border border-slate-200 p-1">
-                                                    <input
-                                                        type="text"
+                                                    <textarea
+                                                        rows={2}
                                                         value={row.endUser || ''}
                                                         onChange={(e) => handleUpdateRow(idx, 'endUser', e.target.value)}
                                                         className="w-full p-1 border border-slate-200 rounded text-xs"
@@ -890,6 +895,15 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                                 <td className="border border-slate-200 p-1">
                                                     <textarea
                                                         rows={2}
+                                                        value={row.procurementStrategyTools || ''}
+                                                        onChange={(e) => handleUpdateRow(idx, 'procurementStrategyTools', e.target.value)}
+                                                        className="w-full p-1 border border-slate-200 rounded text-xs"
+                                                        placeholder="Strategy or tools..."
+                                                    />
+                                                </td>
+                                                <td className="border border-slate-200 p-1">
+                                                    <textarea
+                                                        rows={2}
                                                         value={row.procurementStrategy || ''}
                                                         onChange={(e) => handleUpdateRow(idx, 'procurementStrategy', e.target.value)}
                                                         className="w-full p-1 border border-slate-200 rounded text-xs"
@@ -917,14 +931,13 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                             <td className="p-2 text-right font-mono text-blue-900">
                                                 {formatCurrency(totalAppBudget)}
                                             </td>
-                                            <td colSpan={2}></td>
+                                            <td colSpan={3}></td>
                                         </tr>
                                     </tfoot>
                                 </table>
                             </div>
                         </div>
 
-                        {/* Bottom Actions */}
                         <div className="flex items-center justify-end gap-3 pt-2">
                             <button
                                 type="button"
@@ -945,225 +958,304 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                         </div>
                     </div>
                 ) : (
-                    /* OFFICIAL PRINT VIEW MATCHING DAVAO DEL SUR PDF TEMPLATE */
-                    <div className="bg-white text-black p-4 sm:p-6 print:p-0 print:max-w-none">
-                        {/* Header matching PDF */}
-                        <div className="flex flex-col items-center justify-center text-center relative mb-4">
+                    <ResponsivePrintDocument paperWidth={1280}>
+                    <div ref={appPrintRef} className="pdf-export-root bg-white text-black font-bold p-4 sm:p-6 print:p-0 print:max-w-none">
+
+                        <div className="flex flex-col items-center justify-center text-center relative mb-4 space-y-1">
                             <img
                                 src="/images/logo.png"
                                 alt="Province of Davao del Sur Seal"
-                                className="w-16 h-16 object-contain mb-1"
+                                className="w-18 h-18 object-contain mb-1"
                                 onError={(e) => { e.target.style.display = 'none'; }}
                             />
-                            <div className="text-[11px] uppercase tracking-wide">Republic of the Philippines</div>
-                            <div className="text-xs font-extrabold uppercase tracking-wider">PROVINCE OF DAVAO DEL SUR</div>
-                            <div className="text-xs font-extrabold uppercase tracking-wider mt-0.5">
+                            <div className="text-sm font-bold uppercase tracking-wide leading-snug whitespace-nowrap">
+                                Republic of the Philippines
+                            </div>
+                            <div className="text-lg font-extrabold uppercase tracking-wide leading-snug whitespace-nowrap">
+                                PROVINCE OF DAVAO DEL SUR
+                            </div>
+                            <div className="text-base font-extrabold uppercase tracking-wide leading-snug whitespace-nowrap">
                                 ANNUAL PROCUREMENT PLAN FOR CY {fiscalYear}
                             </div>
 
-                            {/* Checkboxes row matching PDF */}
-                            <div className="flex items-center justify-center gap-8 text-[11px] font-bold mt-2">
-                                <label className="flex items-center gap-1.5 cursor-default">
-                                    <span className={`w-3.5 h-3.5 border border-black inline-flex items-center justify-center text-[10px] leading-none ${planVersionType === 'INDICATIVE' ? 'bg-black text-white font-black' : 'bg-white'}`}>
+                            <div className="flex items-center justify-center gap-8 text-xs font-extrabold pt-1.5 whitespace-nowrap">
+                                <label className="inline-flex items-center gap-1.5 cursor-default whitespace-nowrap shrink-0">
+                                    <span className={`w-4 h-4 shrink-0 border-2 border-black inline-flex items-center justify-center text-xs leading-none ${planVersionType === 'INDICATIVE' ? 'bg-black text-white font-black' : 'bg-white'}`}>
                                         {planVersionType === 'INDICATIVE' ? '✓' : ''}
                                     </span>
-                                    <span>INDICATIVE</span>
+                                    <span className="whitespace-nowrap">INDICATIVE</span>
                                 </label>
 
-                                <label className="flex items-center gap-1.5 cursor-default">
-                                    <span className={`w-3.5 h-3.5 border border-black inline-flex items-center justify-center text-[10px] leading-none ${planVersionType === 'FINAL' ? 'bg-black text-white font-black' : 'bg-white'}`}>
+                                <label className="inline-flex items-center gap-1.5 cursor-default whitespace-nowrap shrink-0">
+                                    <span className={`w-4 h-4 shrink-0 border-2 border-black inline-flex items-center justify-center text-xs leading-none ${planVersionType === 'FINAL' ? 'bg-black text-white font-black' : 'bg-white'}`}>
                                         {planVersionType === 'FINAL' ? '✓' : ''}
                                     </span>
-                                    <span>FINAL</span>
+                                    <span className="whitespace-nowrap">FINAL</span>
                                 </label>
 
-                                <label className="flex items-center gap-1.5 cursor-default">
-                                    <span className={`w-3.5 h-3.5 border border-black inline-flex items-center justify-center text-[10px] leading-none ${planVersionType === 'UPDATED' ? 'bg-black text-white font-black' : 'bg-white'}`}>
+                                <label className="inline-flex items-center gap-1.5 cursor-default whitespace-nowrap shrink-0">
+                                    <span className={`w-4 h-4 shrink-0 border-2 border-black inline-flex items-center justify-center text-xs leading-none ${planVersionType === 'UPDATED' ? 'bg-black text-white font-black' : 'bg-white'}`}>
                                         {planVersionType === 'UPDATED' ? '✓' : ''}
                                     </span>
-                                    <span>UPDATED VERSION NO. {updatedVersionNo || ''}</span>
+                                    <span className="whitespace-nowrap">UPDATED VERSION NO. {updatedVersionNo || ''}</span>
                                 </label>
                             </div>
                         </div>
 
-                        {/* Exact 11-column APP Table */}
-                        <table className="w-full border-collapse border border-black text-[9px] leading-tight print-table">
+                        <table className="w-full table-fixed border-collapse border-2 border-black text-xs font-bold leading-snug print-table">
+                            <colgroup>
+                                <col style={{ width: '19%' }} />
+                                <col style={{ width: '19%' }} />
+                                <col style={{ width: '6%' }} />
+                                <col style={{ width: '7%' }} />
+                                <col style={{ width: '5%' }} />
+                                <col style={{ width: '6%' }} />
+                                <col style={{ width: '4.5%' }} />
+                                <col style={{ width: '4.5%' }} />
+                                <col style={{ width: '6.5%' }} />
+                                <col style={{ width: '8.5%' }} />
+                                <col style={{ width: '7%' }} />
+                                <col style={{ width: '7%' }} />
+                            </colgroup>
                             <thead>
-                                {/* Top Category Header Row */}
-                                <tr className="text-center font-bold border-b border-black">
-                                    <th colSpan={6} className="border border-black p-1 uppercase">
+
+                                <tr className="text-center font-extrabold border-b border-black bg-slate-50">
+                                    <th colSpan={6} className="border border-black p-1.5 uppercase">
                                         PROCUREMENT PROJECT DETAILS
                                     </th>
-                                    <th colSpan={2} className="border border-black p-1 uppercase">
+                                    <th colSpan={2} className="border border-black p-1.5 uppercase">
                                         PROJECTED TIMELINE (MM/YYYY)
                                     </th>
-                                    <th colSpan={2} className="border border-black p-1 uppercase">
+                                    <th colSpan={2} className="border border-black p-1.5 uppercase">
                                         FUNDING DETAILS
                                     </th>
-                                    <th rowSpan={2} className="border border-black p-1 w-[10%] align-middle uppercase">
-                                        REMARKS<br />
-                                        <span className="font-normal text-[8px] normal-case">(Other relevant descriptions of the procurement project, if applicable)</span>
+                                    <th rowSpan={2} className="border border-black p-1 text-[10px] align-bottom uppercase break-words">
+                                        PROCUREMENT STRATEGY OR TOOLS
+                                    </th>
+                                    <th rowSpan={2} className="border border-black p-1 text-[10px] align-bottom break-words">
+                                        REMARKS (Other relevant descriptions of the procurement project, if applicable)
                                     </th>
                                 </tr>
 
-                                {/* Detailed Column Headers */}
-                                <tr className="text-center font-bold border-b border-black">
-                                    <th className="border border-black p-1 w-[22%]">Project Title</th>
-                                    <th className="border border-black p-1 w-[8%]">End-User or Implementing Unit</th>
-                                    <th className="border border-black p-1 w-[7%]">General Description of the Project</th>
-                                    <th className="border border-black p-1 w-[9%]">Mode of Procurement</th>
-                                    <th className="border border-black p-1 w-[6%]">To be covered by an Early Procurement Activity? (YES/NO)</th>
-                                    <th className="border border-black p-1 w-[8%]">Criteria for Bid Evaluation (Including Sustainability and Domestic Preference)</th>
-                                    <th className="border border-black p-1 w-[6%]">Start of Procurement Activity</th>
-                                    <th className="border border-black p-1 w-[6%]">End of Procurement Activity</th>
-                                    <th className="border border-black p-1 w-[8%]">Source of Fund</th>
-                                    <th className="border border-black p-1 w-[10%]">Estimated Budget / Approved Budget for the Contract (PhP)</th>
+                                <tr className="text-center font-extrabold border-b-2 border-black bg-slate-50">
+                                    <th className="border border-black p-1.5 align-bottom">Project Title</th>
+                                    <th className="border border-black p-1.5 align-bottom">End-User or Implementing Unit</th>
+                                    <th className="border border-black p-1 text-[11px] align-bottom">General Description of the Project</th>
+                                    <th className="border border-black p-1 text-[11px] align-bottom">Mode of Procurement</th>
+                                    <th className="border border-black p-1 text-[10px] align-bottom">To be covered by an Early Procurement Activity? (Yes/No)</th>
+                                    <th className="border border-black p-1 text-[10px] align-bottom">Criteria for Bid Evaluation (Including Sustainability and Domestic Preference)</th>
+                                    <th className="border border-black p-1 text-[10px] align-bottom">Start of Procurement Activity</th>
+                                    <th className="border border-black p-1 text-[10px] align-bottom">End of Procurement Activity</th>
+                                    <th className="border border-black p-1 text-[11px] align-bottom">Source of Fund</th>
+                                    <th className="border border-black p-1 text-[10px] align-bottom">Estimated Budget /Approved Budget for the Contract (PhP)</th>
                                 </tr>
                             </thead>
                             <tbody>
+
+                                <tr className="border-b border-black bg-white">
+                                    <td colSpan={12} className="border border-black px-2 py-1 text-left font-extrabold text-xs">
+                                        General Requirements
+                                    </td>
+                                </tr>
+
                                 {rows.map((row, idx) => (
-                                    <tr key={idx} className="min-h-6">
-                                        <td className="border border-black px-1.5 py-1 align-top text-center font-bold whitespace-pre-wrap">
+                                    <tr key={idx} className="min-h-7 font-bold">
+                                        <td className="border border-black px-2 py-2 align-top text-center font-extrabold whitespace-pre-wrap break-words">
                                             {formatDescription6Words(row.projectTitle)}
                                         </td>
-                                        <td className="border border-black px-1 py-1 align-top text-center uppercase">
+                                        <td className="border border-black px-1.5 py-2 align-top text-center font-bold uppercase break-words">
                                             {row.endUser}
                                         </td>
-                                        <td className="border border-black px-1.5 py-1 align-top text-center whitespace-pre-wrap">
+                                        <td className="border border-black px-1.5 py-2 align-top text-center font-bold whitespace-pre-wrap break-words">
                                             {formatDescription6Words(row.generalDescription)}
                                         </td>
-                                        <td className="border border-black px-1 py-1 align-top text-center">
+                                        <td className="border border-black px-1.5 py-2 align-top text-center font-bold break-words">
                                             {row.modeOfProcurement}
                                         </td>
-                                        <td className="border border-black px-1 py-1 align-top text-center font-bold">
+                                        <td className="border border-black px-1.5 py-2 align-top text-center font-extrabold">
                                             {row.earlyProcurement}
                                         </td>
-                                        <td className="border border-black px-1 py-1 align-top text-center font-bold">
+                                        <td className="border border-black px-1.5 py-2 align-top text-center font-extrabold">
                                             {row.criteria || 'LCRB'}
                                         </td>
-                                        <td className="border border-black px-1 py-1 align-top text-center">
+                                        <td className="border border-black px-1.5 py-2 align-top text-center font-bold">
                                             {row.startDate ? formatMonthYear(row.startDate) : '—'}
                                         </td>
-                                        <td className="border border-black px-1 py-1 align-top text-center">
+                                        <td className="border border-black px-1.5 py-2 align-top text-center font-bold">
                                             {row.endDate ? formatMonthYear(row.endDate) : '—'}
                                         </td>
-                                        <td className="border border-black px-1 py-1 align-top text-center">
+                                        <td className="border border-black px-1.5 py-2 align-top text-center font-bold break-words">
                                             {row.sourceOfFund}
                                         </td>
-                                        <td className="border border-black px-1 py-1 align-top text-right font-mono font-bold">
+                                        <td className="border border-black px-1.5 py-2 align-top text-right tabular-nums font-extrabold break-words">
                                             {row.estimatedBudget ? formatCurrency(row.estimatedBudget) : '—'}
                                         </td>
-                                        <td className="border border-black px-1 py-1 align-top text-center whitespace-pre-wrap">
+                                        <td className="border border-black px-1.5 py-2 align-top text-center font-bold whitespace-pre-wrap break-words">
+                                            {row.procurementStrategyTools || ''}
+                                        </td>
+                                        <td className="border border-black px-1.5 py-2 align-top text-center font-bold whitespace-pre-wrap break-words">
                                             {row.procurementStrategy}
                                         </td>
                                     </tr>
                                 ))}
                             </tbody>
                             <tfoot>
-                                <tr className="border-t-2 border-black font-bold">
-                                    <td colSpan={9} className="border border-black p-1.5 text-right uppercase">
+                                <tr className="border-t-2 border-black font-extrabold text-sm bg-slate-50">
+                                    <td colSpan={9} className="border border-black p-2 text-right uppercase">
                                         Total Estimated Budget:
                                     </td>
-                                    <td className="border border-black p-1.5 text-right font-mono font-bold">
+                                    <td className="border border-black px-1.5 py-2 text-right tabular-nums font-extrabold break-words">
                                         {formatCurrency(totalAppBudget)}
                                     </td>
-                                    <td className="border border-black"></td>
+                                    <td colSpan={2} className="border border-black"></td>
                                 </tr>
                             </tfoot>
                         </table>
                         <br />
-                        {/* Signatures Section matching exact PDF Layout - balanced spacing & borderless */}
-                        <div className="mt-6 text-black text-[9px] px-2">
+
+                        <div className="mt-6 text-black text-xs font-bold px-2 print-signature-box pdf-avoid-break">
                             <div className="grid grid-cols-4 gap-4 items-start">
-                                {/* Column 1: Prepared by */}
+
                                 <div>
-                                    <div className="font-bold mb-2 text-left">Prepared by:</div>
+                                    <div className="font-extrabold mb-2 text-left">Prepared by:</div>
                                     <div className="text-center flex flex-col items-center justify-end">
+                                        {isAppSignatureEnabled && appPreparerSig?.user?.signature_path ? (
+                                            <>
+                                                <div className={`h-7 flex items-center justify-center ${!isAppPreparerPnpki ? 'no-print print:hidden' : ''}`}>
+                                                    <img
+                                                        src={`/api/users/${appPreparerSig.user.id}/signature`}
+                                                        alt="APP Preparer Signature"
+                                                        className="max-h-7 max-w-[110px] object-contain"
+                                                    />
+                                                </div>
+                                                {!isAppPreparerPnpki && <div className="hidden print:block pdf-export-spacer h-6" />}
+                                            </>
+                                        ) : (
+                                            <div className="h-6" />
+                                        )}
                                         <div className="relative inline-flex items-center justify-center">
-                                            <div className="font-bold text-xs uppercase underline text-center">
+                                            <div className="font-extrabold text-sm uppercase underline text-center whitespace-nowrap leading-snug">
                                                 {preparedByName}
                                             </div>
                                         </div>
-                                        <div className="text-[9px] uppercase mt-0.5">
+                                        <div className="text-xs font-bold uppercase whitespace-nowrap mt-0.5">
                                             {preparedByPosition}
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Column 2: Reviewed by */}
                                 <div>
-                                    <div className="font-bold mb-2 text-left">Reviewed by:</div>
+                                    <div className="font-extrabold mb-2 text-left">Reviewed by:</div>
                                     <div className="text-center flex flex-col items-center justify-end">
+                                        {isAppSignatureEnabled && oppmoHeadSig?.user?.signature_path ? (
+                                            <>
+                                                <div className={`h-7 flex items-center justify-center ${!isOppmoHeadPnpki ? 'no-print print:hidden' : ''}`}>
+                                                    <img
+                                                        src={`/api/users/${oppmoHeadSig.user.id}/signature`}
+                                                        alt="OPPMO Head Signature"
+                                                        className="max-h-7 max-w-[110px] object-contain"
+                                                    />
+                                                </div>
+                                                {!isOppmoHeadPnpki && <div className="hidden print:block pdf-export-spacer h-6" />}
+                                            </>
+                                        ) : (
+                                            <div className="h-6" />
+                                        )}
                                         <div className="relative inline-flex items-center justify-center">
-                                            <div className="font-bold text-xs uppercase underline text-center">
+                                            <div className="font-extrabold text-sm uppercase underline text-center whitespace-nowrap leading-snug">
                                                 {reviewedByName}
                                             </div>
-                                            {isAppSignatureEnabled && oppmoSig && oppmoSig.user?.signature_path && (
+                                            {isAppSignatureEnabled && oppmoSig?.user?.signature_path && (
                                                 <img
                                                     src={`/api/users/${oppmoSig.user.id}/signature`}
                                                     alt="Signature"
-                                                    className="h-6 max-w-[60px] object-contain absolute left-full ml-1.5 bottom-0 pointer-events-none"
+                                                    className={`h-6 max-w-[60px] object-contain absolute left-full ml-1.5 bottom-0 pointer-events-none ${!isOppmoPnpki ? 'no-print print:hidden' : ''}`}
                                                 />
                                             )}
                                         </div>
-                                        <div className="text-[9px] uppercase mt-0.5">
+                                        <div className="text-xs font-bold uppercase whitespace-nowrap mt-0.5">
                                             {reviewedByPosition}
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Column 3: Recommending Approval */}
                                 <div>
-                                    <div className="font-bold mb-2 text-left">Recommending Approval:</div>
+                                    <div className="font-extrabold mb-2 text-left">Recommending Approval:</div>
                                     <div className="text-center flex flex-col items-center justify-end">
+                                        {isAppSignatureEnabled && displayRecommendingHeadSig?.user?.signature_path ? (
+                                            <>
+                                                <div className={`h-7 flex items-center justify-center ${!isRecommendingHeadPnpki ? 'no-print print:hidden' : ''}`}>
+                                                    <img
+                                                        src={`/api/users/${displayRecommendingHeadSig.user.id}/signature`}
+                                                        alt="Recommending Head Signature"
+                                                        className="max-h-7 max-w-[110px] object-contain"
+                                                    />
+                                                </div>
+                                                {!isRecommendingHeadPnpki && <div className="hidden print:block pdf-export-spacer h-6" />}
+                                            </>
+                                        ) : (
+                                            <div className="h-6" />
+                                        )}
                                         <div className="relative inline-flex items-center justify-center">
-                                            <div className="font-bold text-xs uppercase underline text-center">
+                                            <div className="font-extrabold text-sm uppercase underline text-center whitespace-nowrap leading-snug">
                                                 {recommendingName}
                                             </div>
-                                            {isAppSignatureEnabled && budgetSig && budgetSig.user?.signature_path && (
+                                            {isAppSignatureEnabled && budgetSig?.user?.signature_path && (
                                                 <img
                                                     src={`/api/users/${budgetSig.user.id}/signature`}
                                                     alt="Signature"
-                                                    className="h-6 max-w-[60px] object-contain absolute left-full ml-1.5 bottom-0 pointer-events-none"
+                                                    className={`h-6 max-w-[60px] object-contain absolute left-full ml-1.5 bottom-0 pointer-events-none ${!isBudgetPnpki ? 'no-print print:hidden' : ''}`}
                                                 />
                                             )}
                                         </div>
-                                        <div className="text-[9px] uppercase mt-0.5 font-bold">
+                                        <div className="text-xs uppercase mt-0.5 font-bold whitespace-nowrap">
                                             {recommendingPosition}
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Column 4: Approved by: (this is for governor) */}
                                 <div>
-                                    <div className="font-bold mb-2 text-left">
+                                    <div className="font-extrabold mb-2 text-left">
                                         Approved by:
                                     </div>
                                     <div className="text-center flex flex-col items-center justify-end">
-                                        <div className="font-bold text-xs uppercase underline text-center">
+                                        {isAppSignatureEnabled && governorSig?.user?.signature_path ? (
+                                            <>
+                                                <div className={`h-7 flex items-center justify-center ${!isGovernorPnpki ? 'no-print print:hidden' : ''}`}>
+                                                    <img
+                                                        src={`/api/users/${governorSig.user.id}/signature`}
+                                                        alt="Governor Signature"
+                                                        className="max-h-7 max-w-[110px] object-contain"
+                                                    />
+                                                </div>
+                                                {!isGovernorPnpki && <div className="hidden print:block pdf-export-spacer h-6" />}
+                                            </>
+                                        ) : (
+                                            <div className="h-6" />
+                                        )}
+                                        <div className="font-extrabold text-sm uppercase underline text-center whitespace-nowrap leading-snug">
                                             {approvedByName}
                                         </div>
-                                        <div className="text-[9px] uppercase mt-0.5 font-bold">
+                                        <div className="text-xs uppercase mt-0.5 font-bold whitespace-nowrap">
                                             {approvedByPosition}
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* System Generated / E-Signature Validity Notice */}
                             {isAppSignatureEnabled && (
-                                <div className="mt-4 pt-2 border-t border-dotted border-slate-300 text-center">
+                                <div className={`mt-4 pt-2 border-t border-dotted border-slate-300 text-center ${!hasAnyAppPnpkiSig ? 'no-print print:hidden' : ''}`}>
                                     <p className="text-[8px] italic text-slate-600 font-sans tracking-wide">
-                                        * This is an electronically generated and certified document under the Electronic Procurement Management System. Valid even without a physical or handwritten signature.
+                                        * This is an electronically generated document under the Electronic Procurement Management System. Signatures affixed with a valid PNPKI Digital E-Signature are electronically certified; others require a physical/handwritten signature.
                                     </p>
                                 </div>
                             )}
                         </div>
                     </div>
+                    </ResponsivePrintDocument>
                 )}
             </div>
 
-            {/* Modal for viewing Previous APP Baseline */}
             {showOldAppModal && savedData?.old_app && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs no-print">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-slate-300 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
@@ -1240,7 +1332,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                 </div>
             )}
 
-            {/* 1. If PIMS is INACTIVE: Show PIMS Publish Confirmation & Procurement Input Modal (NO Generate PR modal) */}
             {!isPimsActive && (
                 <PimsPublishModal
                     isOpen={isPimsPublishModalOpen}
@@ -1252,7 +1343,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                 />
             )}
 
-            {/* 2. If PIMS is ACTIVE: Show Generate Purchase Request (PR) Popup */}
             {isPimsActive && (
                 <GeneratePurchaseRequestModal
                     isOpen={isGeneratePrModalOpen}
@@ -1265,7 +1355,6 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                 />
             )}
 
-            {/* PR Print View Modal */}
             {selectedPrForPrint && (
                 <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs">
                     <PurchaseRequestPrintView

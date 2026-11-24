@@ -8,9 +8,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         Schema::create('procurement_conditions', function (Blueprint $table) {
@@ -25,7 +23,6 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // Add additional_condition to ppmps table and expand delivery columns
         if (Schema::hasTable('ppmps')) {
             Schema::table('ppmps', function (Blueprint $table) {
                 if (!Schema::hasColumn('ppmps', 'additional_condition')) {
@@ -37,7 +34,6 @@ return new class extends Migration
             });
         }
 
-        // Seed initial standard conditions
         $now = Carbon::now();
         DB::table('procurement_conditions')->insertOrIgnore([
             [
@@ -98,9 +94,6 @@ return new class extends Migration
         ]);
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         if (Schema::hasTable('ppmps') && Schema::hasColumn('ppmps', 'additional_condition')) {

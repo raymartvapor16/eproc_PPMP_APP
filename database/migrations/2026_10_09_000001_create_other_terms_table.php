@@ -8,15 +8,13 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         Schema::create('other_terms', function (Blueprint $table) {
             $table->id();
             $table->string('name')->unique();
-            $table->string('category')->default('CSE'); // 'CSE', 'NON-CSE', 'GENERAL'
+            $table->string('category')->default('CSE');
             $table->text('description');
             $table->boolean('is_active')->default(true);
             $table->integer('display_order')->default(0);
@@ -25,9 +23,8 @@ return new class extends Migration
 
         $now = Carbon::now();
 
-        // Seed Green Specifications (from standard guidelines) & Other Terms
         DB::table('other_terms')->insertOrIgnore([
-            // A. COMMON-USE SUPPLIES & EQUIPMENT (CSE)
+
             [
                 'name' => 'Green Spec: Multi-Copy Paper & Record Books',
                 'category' => 'CSE',
@@ -101,7 +98,6 @@ return new class extends Migration
                 'updated_at' => $now,
             ],
 
-            // B. NON-COMMON-USE SUPPLIES & EQUIPMENT (NON-CSE)
             [
                 'name' => 'Green Spec: Computer, Monitor & Laptop',
                 'category' => 'NON-CSE',
@@ -193,7 +189,6 @@ return new class extends Migration
                 'updated_at' => $now,
             ],
 
-            // GENERAL / POL / CONTRACTUAL
             [
                 'name' => 'POL Condition (Fuel & Lubricants)',
                 'category' => 'GENERAL',
@@ -215,9 +210,6 @@ return new class extends Migration
         ]);
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('other_terms');

@@ -50,7 +50,7 @@ class OtherTermManagementTest extends TestCase
 
     public function test_seeded_other_terms_and_green_specs_exist()
     {
-        // Check CSE Green Specs
+
         $this->assertDatabaseHas('other_terms', [
             'name' => 'Green Spec: Multi-Copy Paper & Record Books',
             'category' => 'CSE',
@@ -61,7 +61,6 @@ class OtherTermManagementTest extends TestCase
             'category' => 'CSE',
         ]);
 
-        // Check NON-CSE Green Specs
         $this->assertDatabaseHas('other_terms', [
             'name' => 'Green Spec: Computer, Monitor & Laptop',
             'category' => 'NON-CSE',
@@ -72,7 +71,6 @@ class OtherTermManagementTest extends TestCase
             'category' => 'NON-CSE',
         ]);
 
-        // Check General Terms
         $this->assertDatabaseHas('other_terms', [
             'name' => 'POL Condition (Fuel & Lubricants)',
             'category' => 'GENERAL',
@@ -81,7 +79,7 @@ class OtherTermManagementTest extends TestCase
 
     public function test_end_user_can_fetch_active_terms_only()
     {
-        // Deactivate one term
+
         OtherTerm::where('name', 'Green Spec: Plastic Chairs')->update(['is_active' => false]);
 
         $response = $this->actingAs($this->endUser)

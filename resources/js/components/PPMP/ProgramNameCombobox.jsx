@@ -3,14 +3,6 @@ import { createPortal } from 'react-dom';
 import { Search, ChevronDown, Check, X, Plus, Edit3, Bookmark, Compass } from 'lucide-react';
 import { programNameService } from '../../services/api';
 
-/**
- * ProgramNameCombobox:
- * High-performance searchable dropdown for LGU PPMP Program Names.
- * In accordance with requirements:
- * - Mounted via createPortal to document.body (fixed position, high z-index, zero table overflow clipping).
- * - Displays ONLY the Program Name (not responsibility center).
- * - Sector filtering and instant search.
- */
 export const ProgramNameCombobox = ({
     value = '',
     onChange,
@@ -36,7 +28,6 @@ export const ProgramNameCombobox = ({
     const menuRef = useRef(null);
     const searchInputRef = useRef(null);
 
-    // Calculate fixed viewport position for portal dropdown
     const updatePosition = useCallback(() => {
         if (!triggerRef.current) return;
         const rect = triggerRef.current.getBoundingClientRect();
@@ -45,7 +36,6 @@ export const ProgramNameCombobox = ({
         const estimatedHeight = 380;
         const openUpward = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
 
-        // Desired width matches trigger or at least 380px, bounded by viewport
         const targetWidth = Math.min(Math.max(rect.width, 380), window.innerWidth - 24);
         let left = rect.left;
         if (left + targetWidth > window.innerWidth - 12) {
@@ -67,7 +57,6 @@ export const ProgramNameCombobox = ({
         });
     }, []);
 
-    // Load program names if not passed via props
     useEffect(() => {
         if (Array.isArray(programNames) && programNames.length > 0) {
             setProgramsList(programNames);
@@ -103,12 +92,10 @@ export const ProgramNameCombobox = ({
         };
     }, [programNames]);
 
-    // Keep custom text in sync with value
     useEffect(() => {
         setCustomText(value || '');
     }, [value]);
 
-    // Manage dropdown open state, position, and close events
     useEffect(() => {
         if (!isOpen) return;
 
@@ -152,7 +139,6 @@ export const ProgramNameCombobox = ({
         };
     }, [isOpen, updatePosition]);
 
-    // Available sectors for filter pills
     const sectors = useMemo(() => {
         const set = new Set();
         programsList.forEach(p => {
@@ -161,7 +147,6 @@ export const ProgramNameCombobox = ({
         return Array.from(set).sort();
     }, [programsList]);
 
-    // Fast in-memory filtering
     const filteredPrograms = useMemo(() => {
         const q = searchQuery.trim().toLowerCase();
         return programsList.filter(item => {
@@ -179,7 +164,7 @@ export const ProgramNameCombobox = ({
     }, [programsList, searchQuery, sectorFilter]);
 
     const handleSelect = (record) => {
-        // As requested: Only the program name is returned/displayed (NOT responsibility center)
+
         const cleanName = record.name.trim();
 
         if (onChange) {
@@ -208,14 +193,13 @@ export const ProgramNameCombobox = ({
         setIsCustomMode(false);
     };
 
-    // Clean sector label helper
     const formatSectorPill = (sec) => {
         return sec.replace(/^(I|II|III|IV|V|VI|VII|VIII)\.\s*/, '');
     };
 
     return (
         <div className={`relative w-full ${className}`}>
-            {/* Custom Edit Mode if user switches to free text input */}
+
             {isCustomMode ? (
                 <div className="space-y-1 bg-blue-50/60 p-2 rounded-md border border-blue-200">
                     <div className="flex items-center justify-between text-[10px] font-bold text-blue-900 px-0.5">
@@ -246,7 +230,7 @@ export const ProgramNameCombobox = ({
                     </div>
                 </div>
             ) : value ? (
-                /* Selected Program Name Card */
+
                 <div
                     ref={triggerRef}
                     className="space-y-1 bg-blue-50/60 p-2 rounded-md border border-blue-200 group transition hover:border-blue-300"
@@ -284,7 +268,7 @@ export const ProgramNameCombobox = ({
                     </div>
                 </div>
             ) : (
-                /* Empty state: + Program Name button */
+
                 <div className="flex justify-center" ref={triggerRef}>
                     <button
                         type="button"
@@ -299,7 +283,6 @@ export const ProgramNameCombobox = ({
                 </div>
             )}
 
-            {/* Dropdown Popover via Portal into document.body */}
             {isOpen && coords && createPortal(
                 <div
                     ref={menuRef}
@@ -314,7 +297,7 @@ export const ProgramNameCombobox = ({
                     }}
                     className="bg-white border border-slate-300 rounded-xl shadow-2xl flex flex-col text-xs overflow-hidden animate-in fade-in zoom-in-95 duration-100"
                 >
-                    {/* Popover Header with Search Bar */}
+
                     <div className="p-2.5 bg-slate-50 border-b border-slate-200 space-y-2 shrink-0">
                         <div className="relative">
                             <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -337,7 +320,6 @@ export const ProgramNameCombobox = ({
                             )}
                         </div>
 
-                        {/* Sector Filter Tabs */}
                         <div
                             className="flex items-center gap-1 overflow-x-auto text-[10px] font-bold py-0.5"
                             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
@@ -370,7 +352,6 @@ export const ProgramNameCombobox = ({
                         </div>
                     </div>
 
-                    {/* Results Count Bar */}
                     <div className="px-3 py-1 bg-slate-100/60 border-b border-slate-200 flex items-center justify-between text-[10px] text-slate-500 shrink-0">
                         <span>
                             {filteredPrograms.length} program{filteredPrograms.length !== 1 ? 's' : ''} found
@@ -379,7 +360,6 @@ export const ProgramNameCombobox = ({
                         <span className="font-semibold text-slate-600">LGU Program Directory</span>
                     </div>
 
-                    {/* Results List - No horizontal scrollbar */}
                     <div className="flex-1 overflow-y-auto overflow-x-hidden divide-y divide-slate-100 min-h-0">
                         {loading ? (
                             <div className="p-6 text-center text-xs text-slate-500">
@@ -422,7 +402,7 @@ export const ProgramNameCombobox = ({
                                                     {record.sector}
                                                 </div>
                                             )}
-                                            {/* Showing strictly the Program Name only */}
+
                                             <div className="text-xs font-bold text-slate-900 break-words line-clamp-2">
                                                 {record.name}
                                             </div>
@@ -439,7 +419,6 @@ export const ProgramNameCombobox = ({
                         )}
                     </div>
 
-                    {/* Popover Footer */}
                     <div className="p-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-[11px] shrink-0">
                         <button
                             type="button"
@@ -467,4 +446,3 @@ export const ProgramNameCombobox = ({
         </div>
     );
 };
-

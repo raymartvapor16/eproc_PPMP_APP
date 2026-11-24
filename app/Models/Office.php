@@ -58,7 +58,7 @@ class Office extends Model
         }
 
         $user = User::where('office_id', $this->id)
-            ->where('role', 'head')
+            ->withRole('head')
             ->where('is_active', true)
             ->first();
 
@@ -83,7 +83,7 @@ class Office extends Model
     public function getHeadUsers()
     {
         $users = User::where('office_id', $this->id)
-            ->where('role', 'head')
+            ->withRole('head')
             ->where('is_active', true)
             ->get();
 

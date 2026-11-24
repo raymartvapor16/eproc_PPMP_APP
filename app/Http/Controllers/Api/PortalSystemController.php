@@ -9,20 +9,13 @@ use Illuminate\Http\Request;
 
 class PortalSystemController extends Controller
 {
-    /**
-     * Public list of systems for the landing page and system status checks
-     * (Includes both active and inactive systems so inactive systems can display
-     *  "Inactive / Under Maintenance" state and block access).
-     */
+
     public function publicIndex(): JsonResponse
     {
         $systems = PortalSystem::orderBy('sort_order', 'asc')->orderBy('id', 'asc')->get();
         return response()->json($systems);
     }
 
-    /**
-     * Check if PIMS system is currently active in the portal catalog
-     */
     public function pimsStatus(): JsonResponse
     {
         $pims = PortalSystem::where('link_url', '/pims')
@@ -40,25 +33,18 @@ class PortalSystemController extends Controller
         ]);
     }
 
-    /**
-     * Super Admin list of all systems
-     */
     public function index(Request $request): JsonResponse
     {
         $systems = PortalSystem::orderBy('sort_order', 'asc')->orderBy('id', 'asc')->get();
         return response()->json($systems);
     }
 
-    /**
-     * Normalize link URL and determine if it is external
-     */
     protected function normalizeLinkData(array $data): array
     {
         if (isset($data['link_url'])) {
             $url = trim($data['link_url']);
             $isExternal = !empty($data['is_external']);
 
-            // Detect external URL if starts with http://, https://, //, or looks like a web domain without leading /
             if (preg_match('#^(https?://|//)#i', $url)) {
                 $isExternal = true;
             } elseif (!str_starts_with($url, '/') && !str_starts_with($url, '#') && str_contains($url, '.')) {
@@ -75,9 +61,6 @@ class PortalSystemController extends Controller
         return $data;
     }
 
-    /**
-     * Super Admin create system
-     */
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -112,9 +95,6 @@ class PortalSystemController extends Controller
         ], 201);
     }
 
-    /**
-     * Super Admin update system
-     */
     public function update(Request $request, int $id): JsonResponse
     {
         $system = PortalSystem::findOrFail($id);
@@ -141,9 +121,6 @@ class PortalSystemController extends Controller
         ]);
     }
 
-    /**
-     * Super Admin delete system
-     */
     public function destroy(int $id): JsonResponse
     {
         $system = PortalSystem::findOrFail($id);
@@ -154,9 +131,6 @@ class PortalSystemController extends Controller
         ]);
     }
 
-    /**
-     * Super Admin toggle active status
-     */
     public function toggleStatus(int $id): JsonResponse
     {
         $system = PortalSystem::findOrFail($id);

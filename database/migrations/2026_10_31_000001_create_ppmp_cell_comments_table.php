@@ -6,9 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         Schema::create('ppmp_cell_comments', function (Blueprint $table) {
@@ -23,7 +21,7 @@ return new class extends Migration
             $table->foreignId('reviewer_id')->constrained('users')->cascadeOnDelete();
             $table->string('reviewer_name');
             $table->string('reviewer_role', 50);
-            $table->string('status', 30)->default('pending')->index(); // 'pending', 'complied'
+            $table->string('status', 30)->default('pending')->index();
             $table->text('compliance_note')->nullable();
             $table->foreignId('complied_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('complied_at')->nullable();
@@ -34,12 +32,8 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('ppmp_cell_comments');
     }
 };
-

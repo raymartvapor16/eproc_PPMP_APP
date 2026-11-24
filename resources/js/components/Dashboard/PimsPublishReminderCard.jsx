@@ -27,18 +27,13 @@ const MONTH_NAMES = [
     'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
-/**
- * Parses month and year from a start_date string (e.g., "2026-08", "8/2026", "August 2026", "2026-08 - 2026-09").
- */
 export const parseStartMonthYear = (startDateStr) => {
     if (!startDateStr) return null;
     const str = String(startDateStr).trim();
     if (!str) return null;
 
-    // Take the start part if it's a range
     const cleanStr = str.split(' - ')[0].split(' to ')[0].trim();
 
-    // 1. Try ISO format: "2026-08" or "2026-08-15"
     const isoMatch = cleanStr.match(/^(\d{4})-(\d{1,2})/);
     if (isoMatch) {
         const year = parseInt(isoMatch[1], 10);
@@ -48,7 +43,6 @@ export const parseStartMonthYear = (startDateStr) => {
         }
     }
 
-    // 2. Try MM/YYYY or M/YYYY
     const slashMatch = cleanStr.match(/^(\d{1,2})\/(\d{4})/);
     if (slashMatch) {
         const month = parseInt(slashMatch[1], 10);
@@ -58,7 +52,6 @@ export const parseStartMonthYear = (startDateStr) => {
         }
     }
 
-    // 3. Try textual month name: "August 2026" or "August"
     for (let i = 0; i < MONTH_NAMES.length; i++) {
         const mName = MONTH_NAMES[i];
         if (cleanStr.toLowerCase().includes(mName.toLowerCase())) {
@@ -71,9 +64,6 @@ export const parseStartMonthYear = (startDateStr) => {
     return null;
 };
 
-/**
- * Extracts all Start of Procurement Activity schedules from a PPMP's items.
- */
 export const getPpmpStartOfActivity = (ppmp) => {
     const items = ppmp?.items || [];
     const valid = [];
@@ -93,10 +83,8 @@ export const getPpmpStartOfActivity = (ppmp) => {
 
     if (valid.length === 0) return null;
 
-    // Sort by earliest scheduled month/year
     valid.sort((a, b) => a.year - b.year || a.month - b.month);
 
-    // Group unique month-years for display
     const uniqueMonthYears = [];
     const seen = new Set();
     valid.forEach((v) => {
@@ -114,33 +102,26 @@ export const getPpmpStartOfActivity = (ppmp) => {
     };
 };
 
-/**
- * Calculates reminder urgency and message based on the current date and scheduled activity month.
- */
 export const getPimsReminderInfo = (startSchedule, customDate = null) => {
     if (!startSchedule || !startSchedule.primary) return null;
 
     const now = customDate ? new Date(customDate) : new Date();
     const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1; // 1-12
+    const currentMonth = now.getMonth() + 1;
     const currentDay = now.getDate();
     const currentMonthName = MONTH_NAMES[currentMonth - 1];
 
     const lastDayOfMonth = new Date(currentYear, currentMonth, 0).getDate();
     const daysLeftInMonth = lastDayOfMonth - currentDay;
 
-    // "Nearly the end of the month": Day 20 onwards or <= 10 days remaining
     const isNearEndOfMonth = currentDay >= 20 || daysLeftInMonth <= 10;
 
     const targetYear = startSchedule.primary.year;
     const targetMonth = startSchedule.primary.month;
     const monthName = startSchedule.primary.monthName;
 
-    // Difference in months between target schedule and current date
     const monthsDiff = (targetYear - currentYear) * 12 + (targetMonth - currentMonth);
 
-    // 1. Month Overdue / Past Target (monthsDiff < 0)
-    // E.g. target was September, but current month is October or later
     if (monthsDiff < 0) {
         return {
             isUrgent: true,
@@ -155,10 +136,9 @@ export const getPimsReminderInfo = (startSchedule, customDate = null) => {
         };
     }
 
-    // 2. Target Month is NOW (monthsDiff === 0)
     if (monthsDiff === 0) {
         if (isNearEndOfMonth) {
-            // High-priority URGENT: Current month IS the scheduled activity month AND it is near the end of this month
+
             return {
                 isUrgent: true,
                 isNearEnd: true,
@@ -172,7 +152,6 @@ export const getPimsReminderInfo = (startSchedule, customDate = null) => {
             };
         }
 
-        // Target Month Active (earlier in the target month, e.g. Days 1-19)
         return {
             isUrgent: false,
             isNearEnd: false,
@@ -186,8 +165,6 @@ export const getPimsReminderInfo = (startSchedule, customDate = null) => {
         };
     }
 
-    // 3. Upcoming Next Month (monthsDiff === 1)
-    // E.g. Today is October 2026, and target is November 2026
     if (monthsDiff === 1) {
         return {
             isUrgent: false,
@@ -202,7 +179,6 @@ export const getPimsReminderInfo = (startSchedule, customDate = null) => {
         };
     }
 
-    // 4. Future Scheduled (monthsDiff > 1)
     return {
         isUrgent: false,
         isNearEnd: false,
@@ -216,13 +192,9 @@ export const getPimsReminderInfo = (startSchedule, customDate = null) => {
     };
 };
 
-/**
- * PimsPublishReminderCard:
- * Displayed on the End User Dashboard to remind users when a PPMP's Start of Procurement Activity
- * is scheduled and nearing the end of the month, prompting them to publish the PPMP to PIMS.
- */
-export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
+export const PimsPublishReminderCard = ({ ppmps = [], hasPimsAccess = false, onOpenPpmp }) => {
     const { isPimsActive } = usePimsStatus();
+    const canUsePimsPrGenerator = Boolean(isPimsActive && hasPimsAccess);
     const [publishedMap, setPublishedMap] = useState(() => {
         try {
             const stored = localStorage.getItem('pims_published_ppmps');
@@ -232,7 +204,7 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
         }
     });
 
-    const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'urgent' | 'published'
+    const [activeTab, setActiveTab] = useState('pending');
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [selectedPpmpForPublish, setSelectedPpmpForPublish] = useState(null);
     const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
@@ -241,7 +213,6 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
     const [isGeneratePrModalOpen, setIsGeneratePrModalOpen] = useState(false);
     const [selectedPrForPrint, setSelectedPrForPrint] = useState(null);
 
-    // Sync published map across events
     useEffect(() => {
         const handleSync = () => {
             try {
@@ -257,7 +228,6 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
         };
     }, []);
 
-    // Keep publishedMap clean with backend truth
     useEffect(() => {
         if (!ppmps || ppmps.length === 0) return;
         setPublishedMap((prev) => {
@@ -319,19 +289,18 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
             window.dispatchEvent(new CustomEvent('monitoring:updated'));
             window.dispatchEvent(new CustomEvent('pims:published'));
         } else {
-            if (isPimsActive) {
-                // If PIMS is active -> directly open Generate PR modal
+            if (canUsePimsPrGenerator) {
+
                 setSelectedPpmpUuidForPr(ppmp.uuid);
                 setIsGeneratePrModalOpen(true);
             } else {
-                // If PIMS is inactive -> PIMS publish modal is back! No generate PR modal!
+
                 setSelectedPpmpForPublish(ppmp);
                 setIsPublishModalOpen(true);
             }
         }
     };
 
-    // Calculate reminders for all PPMPs with a Start of Procurement Activity in any workflow status
     const reminderItems = useMemo(() => {
         const list = [];
 
@@ -353,7 +322,6 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
             });
         });
 
-        // Sort: Urgent first, then by earliest activity date
         list.sort((a, b) => {
             if (a.isPublished !== b.isPublished) return a.isPublished ? 1 : -1;
             if (a.reminderInfo.isUrgent !== b.reminderInfo.isUrgent) {
@@ -372,21 +340,18 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
     const pendingCount = reminderItems.filter((i) => !i.isPublished).length;
     const publishedCount = reminderItems.filter((i) => i.isPublished).length;
 
-    // Auto-switch away from urgent tab if there are no urgent items
     useEffect(() => {
         if (urgentCount === 0 && activeTab === 'urgent') {
             setActiveTab('pending');
         }
     }, [urgentCount, activeTab]);
 
-    // Current month info
     const now = new Date();
     const currentMonthName = MONTH_NAMES[now.getMonth()];
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const daysRemaining = daysInMonth - now.getDate();
     const isCurrentNearEnd = now.getDate() >= 20 || daysRemaining <= 10;
 
-    // Filter displayed list based on active tab
     const displayedItems = useMemo(() => {
         if (activeTab === 'urgent') {
             return reminderItems.filter((i) => !i.isPublished && i.reminderInfo.isUrgent);
@@ -394,7 +359,7 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
         if (activeTab === 'published') {
             return reminderItems.filter((i) => i.isPublished);
         }
-        // Default: Pending reminders
+
         return reminderItems.filter((i) => !i.isPublished);
     }, [reminderItems, activeTab]);
 
@@ -404,7 +369,7 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
 
     return (
         <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden transition-all duration-200">
-            {/* Header Banner */}
+
             <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 text-amber-300 flex items-center justify-center shrink-0 shadow-xs">
@@ -467,7 +432,7 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
 
             {!isCollapsed && (
                 <>
-                    {/* Navigation Tabs Bar */}
+
                     <div className="flex items-center justify-between px-5 pt-3 border-b border-slate-200 bg-slate-50/70 flex-wrap gap-2">
                         <div className="flex items-center gap-2">
                             <button
@@ -526,7 +491,6 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
                         </div>
                     </div>
 
-                    {/* Reminders List */}
                     <div className="divide-y divide-slate-100 max-h-[420px] overflow-y-auto">
                         {displayedItems.length === 0 ? (
                             <div className="p-8 text-center bg-slate-50/50">
@@ -560,7 +524,7 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
                                         }`}
                                     >
                                         <div className="space-y-1.5 flex-1 min-w-0">
-                                            {/* Top badges */}
+
                                             <div className="flex items-center gap-2 flex-wrap">
                                                 <span className="font-mono text-xs font-extrabold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
                                                     {ppmp.tracking_number || ppmp.ppmp_number || 'PPMP'}
@@ -568,13 +532,11 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
 
                                                 <StatusBadge status={ppmp.status} />
 
-                                                {/* Start of Activity Badge */}
                                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-200">
                                                     <Calendar className="w-3 h-3 text-indigo-700" />
                                                     Start of Activity: {schedule.summaryLabel}
                                                 </span>
 
-                                                {/* Urgency Badge */}
                                                 {!isPublished && (
                                                     <span
                                                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider ${
@@ -602,12 +564,10 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
                                                 )}
                                             </div>
 
-                                            {/* Project Title */}
                                             <h3 className="text-xs sm:text-sm font-bold text-slate-900 truncate" title={ppmp.title}>
                                                 {ppmp.title}
                                             </h3>
 
-                                            {/* Reminder Notification Box */}
                                             <div
                                                 className={`text-xs p-2.5 rounded-xl border flex items-start gap-2 ${
                                                     isPublished
@@ -647,7 +607,6 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
                                             </div>
                                         </div>
 
-                                        {/* Actions */}
                                         <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 shrink-0">
                                             <div className="text-right hidden sm:block">
                                                 <span className="text-[10px] text-slate-400 block font-bold uppercase">Budget</span>
@@ -727,8 +686,7 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
                 </>
             )}
 
-            {/* 1. If PIMS is INACTIVE: Show PIMS Publish Confirmation & Procurement Input Modal (NO Generate PR modal) */}
-            {!isPimsActive && (
+            {!canUsePimsPrGenerator && (
                 <PimsPublishModal
                     isOpen={isPublishModalOpen}
                     onClose={() => {
@@ -745,8 +703,7 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
                 />
             )}
 
-            {/* 2. If PIMS is ACTIVE: Show Generate Purchase Request (PR) Popup */}
-            {isPimsActive && (
+            {canUsePimsPrGenerator && (
                 <GeneratePurchaseRequestModal
                     isOpen={isGeneratePrModalOpen}
                     onClose={() => {
@@ -771,7 +728,6 @@ export const PimsPublishReminderCard = ({ ppmps = [], onOpenPpmp }) => {
                 />
             )}
 
-            {/* 3. PR Print View */}
             {selectedPrForPrint && (
                 <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs">
                     <PurchaseRequestPrintView

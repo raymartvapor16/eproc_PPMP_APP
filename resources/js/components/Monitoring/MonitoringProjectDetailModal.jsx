@@ -24,7 +24,11 @@ import {
 } from 'lucide-react';
 import { MonitoringStepItem } from './MonitoringStepItem';
 import { AddStepModal } from './AddStepModal';
-import { monitoringService } from '../../services/api';
+import { PPMPPrintView } from '../PPMP/PPMPPrintView';
+import { APPPrintView } from '../PPMP/APPPrintView';
+import { PPMPAttachmentListView } from '../PPMP/PPMPAttachmentListView';
+import { PPMPMarketScopingView } from '../PPMP/PPMPMarketScopingView';
+import { monitoringService, ppmpService } from '../../services/api';
 import { formatCurrency } from '../UI/StatusBadge';
 
 export const MonitoringProjectDetailModal = ({
@@ -35,20 +39,26 @@ export const MonitoringProjectDetailModal = ({
     canManage = true,
     onProjectUpdated,
 }) => {
-    // Only OPPMO Monitors and Admins can manage monitoring projects and steps.
-    // End-users, Office Heads, and Reviewers (Budget Officer, TWG, PACCO, etc.) are view-only.
+
     const isManageable = Boolean(
         canManage &&
         user &&
         ['super_admin', 'admin', 'monitor', 'oppmo'].includes(user.role)
     );
+    const isAdminOrSuperAdmin = Boolean(
+        canManage &&
+        user &&
+        ['super_admin', 'admin'].includes(user.role)
+    );
 
     const [project, setProject] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [activeDivision, setActiveDivision] = useState('pr_division'); // pr_division, technical_division, bac_support_division, contracting_division, history
+    const [activeDivision, setActiveDivision] = useState('pr_division');
     const [isAddStepModalOpen, setIsAddStepModalOpen] = useState(false);
+    const [previewDocType, setPreviewDocType] = useState(null);
+    const [previewPpmp, setPreviewPpmp] = useState(null);
+    const [loadingPreview, setLoadingPreview] = useState(false);
 
-    // PIMS PR ID state & handler
     const [isEditingPrId, setIsEditingPrId] = useState(false);
     const [prIdInput, setPrIdInput] = useState('');
     const [savingPrId, setSavingPrId] = useState(false);
@@ -110,6 +120,52 @@ export const MonitoringProjectDetailModal = ({
         if (onProjectUpdated) onProjectUpdated(updatedProject);
     };
 
+    const handleOpenChecklistDoc = async (docType) => {
+        const ppmpUuid = project?.pims_review_checklist?.ppmp_uuid || project?.ppmp?.uuid;
+        if (!ppmpUuid) {
+            alert('No linked PPMP record found for this monitoring project.');
+            return;
+        }
+        setPreviewDocType(docType);
+        if (previewPpmp && previewPpmp.uuid === ppmpUuid) {
+            return;
+        }
+        setLoadingPreview(true);
+        try {
+            const res = await ppmpService.getOne(ppmpUuid);
+            setPreviewPpmp(res.data?.ppmp || res.data);
+        } catch (err) {
+            console.error('Failed to load PPMP document preview:', err);
+            alert(err.response?.data?.message || 'Failed to load PPMP document details.');
+            setPreviewDocType(null);
+        } finally {
+            setLoadingPreview(false);
+        }
+    };
+
+    const handleMoveStep = async (division, stepId, direction) => {
+        const divSteps = getDivisionSteps(division);
+        const idx = divSteps.findIndex((s) => s.id === stepId);
+        const targetIdx = idx + direction;
+        if (idx < 0 || targetIdx < 0 || targetIdx >= divSteps.length) return;
+
+        const reordered = [...divSteps];
+        const [moved] = reordered.splice(idx, 1);
+        reordered.splice(targetIdx, 0, moved);
+
+        try {
+            const res = await monitoringService.reorderSteps(
+                project.id,
+                division,
+                reordered.map((s) => s.id)
+            );
+            handleStepUpdated(res.data.project);
+        } catch (err) {
+            console.error(err);
+            alert(err.response?.data?.message || 'Failed to reorder steps.');
+        }
+    };
+
     if (loading || !project) {
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
@@ -139,7 +195,6 @@ export const MonitoringProjectDetailModal = ({
 
     const isCbMode = project.procurement_mode === 'CB' || project.procurement_mode?.toLowerCase().includes('competitive');
 
-    // Calculate division progress percentage
     const calcProgress = (stepList) => {
         if (!stepList.length) return 0;
         const done = stepList.filter((s) => s.status === 'COMPLETED' || s.status === 'APPROVED').length;
@@ -152,7 +207,7 @@ export const MonitoringProjectDetailModal = ({
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl overflow-hidden flex flex-col max-h-[95vh]">
-                {/* Header Banner */}
+
                 <div className="px-6 py-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-900 text-white shrink-0">
                     <div className="flex items-start justify-between gap-4">
                         <div className="space-y-1.5 flex-1 min-w-0">
@@ -252,7 +307,6 @@ export const MonitoringProjectDetailModal = ({
                                 )}
                             </div>
 
-                            {/* Linked Tracker PPMP Versions (Amended / Supplemental) */}
                             {project.amendment_history && project.amendment_history.length > 1 && (
                                 <div className="mt-2.5 p-3 rounded-xl bg-purple-950/60 border border-purple-500/40 text-xs text-purple-100">
                                     <div className="flex items-center justify-between mb-2">
@@ -298,7 +352,6 @@ export const MonitoringProjectDetailModal = ({
                                 </div>
                             )}
 
-                            {/* Prompt to input PIMS PR ID if missing or editing */}
                             {isManageable && (!project.pims_pr_id || isEditingPrId) && (
                                 <div className="mt-3 p-3 rounded-xl bg-amber-500/20 border border-amber-400/40 flex flex-wrap items-center justify-between gap-3 text-amber-200">
                                     <div className="flex items-center gap-2 text-xs font-semibold">
@@ -355,7 +408,6 @@ export const MonitoringProjectDetailModal = ({
                         </button>
                     </div>
 
-                    {/* Overall Progress Bar */}
                     <div className="mt-4 pt-3 border-t border-white/10 flex items-center gap-4">
                         <div className="flex-1 bg-white/10 rounded-full h-2 overflow-hidden">
                             <div
@@ -369,10 +421,9 @@ export const MonitoringProjectDetailModal = ({
                     </div>
                 </div>
 
-                {/* Division Stage Tabs */}
                 <div className="bg-slate-100 border-b border-slate-200 px-4 flex items-center justify-between overflow-x-auto shrink-0 gap-2">
                     <div className="flex items-center gap-1 py-2">
-                        {/* 1. PR Division */}
+
                         <button
                             type="button"
                             onClick={() => setActiveDivision('pr_division')}
@@ -389,7 +440,6 @@ export const MonitoringProjectDetailModal = ({
                             </span>
                         </button>
 
-                        {/* 2. Technical Division */}
                         <button
                             type="button"
                             onClick={() => setActiveDivision('technical_division')}
@@ -406,7 +456,6 @@ export const MonitoringProjectDetailModal = ({
                             </span>
                         </button>
 
-                        {/* 3. BAC Support Division */}
                         <button
                             type="button"
                             onClick={() => setActiveDivision('bac_support_division')}
@@ -423,7 +472,6 @@ export const MonitoringProjectDetailModal = ({
                             </span>
                         </button>
 
-                        {/* 4. Contracting Division */}
                         <button
                             type="button"
                             onClick={() => setActiveDivision('contracting_division')}
@@ -440,7 +488,6 @@ export const MonitoringProjectDetailModal = ({
                             </span>
                         </button>
 
-                        {/* History Log */}
                         <button
                             type="button"
                             onClick={() => setActiveDivision('history')}
@@ -471,7 +518,6 @@ export const MonitoringProjectDetailModal = ({
                     )}
                 </div>
 
-                {/* Division Content */}
                 <div className="p-6 overflow-y-auto flex-1 bg-slate-50/50">
                     {activeDivision === 'pr_division' && (
                         <div className="space-y-4">
@@ -481,21 +527,34 @@ export const MonitoringProjectDetailModal = ({
                                     PR Division Workflow Process
                                 </h4>
                                 <p className="mt-0.5 text-blue-800">
-                                    Monitor create & publish to PIMS → Release PR to end-user → Receive PR docs from end-user → Review PR (Approve / Suspend if compliance needed) → Release to Technical Division.
+                                    Monitor create & publish to PIMS → Approve PIMS (PR Reviewer & PR Controlled) → Release PR to end-user → Receive PR docs from end-user → Review PR (Approve / Suspend if compliance needed) → Release to Technical Division.
                                 </p>
                             </div>
 
                             <div className="mt-2">
-                                {prSteps.map((step, idx) => (
-                                    <MonitoringStepItem
-                                        key={step.id}
-                                        step={step}
-                                        index={idx}
-                                        projectId={project.id}
-                                        canManage={isManageable}
-                                        onStepUpdated={handleStepUpdated}
-                                    />
-                                ))}
+                                {prSteps.map((step, idx) => {
+                                    const isPimsReviewStep = step.step_order === 1 || step.step_name?.toLowerCase().includes('monitor the create, publish');
+                                    const isApprovePimsStep = step.step_name?.toLowerCase().includes('approve pims');
+                                    return (
+                                        <MonitoringStepItem
+                                            key={step.id}
+                                            step={step}
+                                            index={idx}
+                                            projectId={project.id}
+                                            canManage={isPimsReviewStep ? isAdminOrSuperAdmin : isManageable}
+                                            isAdminOrSuperAdmin={isAdminOrSuperAdmin}
+                                            isPimsReviewStep={isPimsReviewStep}
+                                            isApprovePimsStep={isApprovePimsStep}
+                                            pimsChecklist={isPimsReviewStep ? project.pims_review_checklist : null}
+                                            adminOnlyNotice={isPimsReviewStep && isManageable && !isAdminOrSuperAdmin}
+                                            isFirst={idx === 0}
+                                            isLast={idx === prSteps.length - 1}
+                                            onMoveStep={(dir) => handleMoveStep('pr_division', step.id, dir)}
+                                            onPreviewChecklistDoc={isPimsReviewStep ? handleOpenChecklistDoc : null}
+                                            onStepUpdated={handleStepUpdated}
+                                        />
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
@@ -533,7 +592,11 @@ export const MonitoringProjectDetailModal = ({
                                         index={idx}
                                         projectId={project.id}
                                         canManage={isManageable}
+                                        isAdminOrSuperAdmin={isAdminOrSuperAdmin}
                                         isTechnicalCb={isCbMode && idx === techSteps.length - 1}
+                                        isFirst={idx === 0}
+                                        isLast={idx === techSteps.length - 1}
+                                        onMoveStep={(dir) => handleMoveStep('technical_division', step.id, dir)}
                                         onStepUpdated={handleStepUpdated}
                                     />
                                 ))}
@@ -563,7 +626,11 @@ export const MonitoringProjectDetailModal = ({
                                             index={idx}
                                             projectId={project.id}
                                             canManage={isManageable}
+                                            isAdminOrSuperAdmin={isAdminOrSuperAdmin}
                                             isBacDecision={isDecisionStep}
+                                            isFirst={idx === 0}
+                                            isLast={idx === bacSteps.length - 1}
+                                            onMoveStep={(dir) => handleMoveStep('bac_support_division', step.id, dir)}
                                             onStepUpdated={handleStepUpdated}
                                         />
                                     );
@@ -592,6 +659,10 @@ export const MonitoringProjectDetailModal = ({
                                         index={idx}
                                         projectId={project.id}
                                         canManage={isManageable}
+                                        isAdminOrSuperAdmin={isAdminOrSuperAdmin}
+                                        isFirst={idx === 0}
+                                        isLast={idx === contractingSteps.length - 1}
+                                        onMoveStep={(dir) => handleMoveStep('contracting_division', step.id, dir)}
                                         onStepUpdated={handleStepUpdated}
                                     />
                                 ))}
@@ -648,7 +719,6 @@ export const MonitoringProjectDetailModal = ({
                     )}
                 </div>
 
-                {/* Footer Modal Controls */}
                 <div className="px-6 py-4 bg-white border-t border-slate-200 flex items-center justify-between shrink-0">
                     <div className="text-xs text-slate-500">
                         OPPMO Office Procurement Monitoring • Province of Davao del Sur
@@ -663,14 +733,86 @@ export const MonitoringProjectDetailModal = ({
                 </div>
             </div>
 
-            {/* Add Step Modal */}
             <AddStepModal
                 isOpen={isAddStepModalOpen}
                 onClose={() => setIsAddStepModalOpen(false)}
                 projectId={project.id}
                 division={activeDivision === 'history' ? 'pr_division' : activeDivision}
+                isAdminOrSuperAdmin={isAdminOrSuperAdmin}
                 onSuccess={handleStepUpdated}
             />
+
+            {previewDocType && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-xs">
+                    <div className={`bg-white rounded-2xl shadow-2xl border border-slate-200 w-full h-[94vh] flex flex-col overflow-hidden ${
+                        previewDocType === 'ppmp' || previewDocType === 'app'
+                            ? 'max-w-[96vw]'
+                            : 'max-w-6xl'
+                    }`}>
+                        <div className="px-5 py-3 bg-slate-900 text-white flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-2 text-xs sm:text-sm font-bold">
+                                <FileText className="w-4 h-4 text-blue-400" />
+                                <span>
+                                    {previewDocType === 'ppmp' && 'PPMP Document Preview (Landscape)'}
+                                    {previewDocType === 'app' && 'Annual Procurement Plan (APP) Preview (Landscape)'}
+                                    {previewDocType === 'attachment_list' && 'List of Attachment / Detailed Specifications Preview'}
+                                    {previewDocType === 'market_scoping' && 'Market Scoping Form Preview'}
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPreviewDocType(null)}
+                                className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold text-white flex items-center gap-1 cursor-pointer transition"
+                            >
+                                <X className="w-4 h-4" />
+                                <span>Close</span>
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-auto bg-slate-100">
+                            {loadingPreview || !previewPpmp ? (
+                                <div className="h-full flex flex-col items-center justify-center gap-3 p-8">
+                                    <div className="w-9 h-9 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                                    <div className="text-xs font-bold text-slate-700">Loading document preview...</div>
+                                </div>
+                            ) : (
+                                <div className={previewDocType === 'ppmp' || previewDocType === 'app' ? 'min-w-[1320px] w-full' : 'w-full'}>
+                                    {previewDocType === 'ppmp' && (
+                                        <PPMPPrintView
+                                            ppmp={previewPpmp}
+                                            onBack={() => setPreviewDocType(null)}
+                                        />
+                                    )}
+                                    {previewDocType === 'app' && (
+                                        <APPPrintView
+                                            ppmp={previewPpmp}
+                                            user={user}
+                                            canEdit={false}
+                                            onBack={() => setPreviewDocType(null)}
+                                        />
+                                    )}
+                                    {previewDocType === 'attachment_list' && (
+                                        <PPMPAttachmentListView
+                                            ppmp={previewPpmp}
+                                            user={user}
+                                            canEdit={false}
+                                            onBack={() => setPreviewDocType(null)}
+                                        />
+                                    )}
+                                    {previewDocType === 'market_scoping' && (
+                                        <PPMPMarketScopingView
+                                            ppmp={previewPpmp}
+                                            user={user}
+                                            canEdit={false}
+                                            onBack={() => setPreviewDocType(null)}
+                                        />
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

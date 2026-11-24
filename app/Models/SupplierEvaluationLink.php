@@ -26,9 +26,6 @@ class SupplierEvaluationLink extends Model
         'expires_at' => 'datetime',
     ];
 
-    /**
-     * Automatically generate token when creating
-     */
     protected static function boot()
     {
         parent::boot();
@@ -40,9 +37,6 @@ class SupplierEvaluationLink extends Model
         });
     }
 
-    /**
-     * Relationship to Evaluation
-     */
     public function evaluation(): BelongsTo
     {
         return $this->belongsTo(SupplierEvaluation::class, 'evaluation_id');
@@ -57,4 +51,3 @@ class SupplierEvaluationLink extends Model
             });
     }
 }
-

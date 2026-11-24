@@ -8,9 +8,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         Schema::create('supporting_documents', function (Blueprint $table) {
@@ -24,7 +22,6 @@ return new class extends Migration
 
         $now = Carbon::now();
 
-        // Seed initial standard supporting documents requested by user
         DB::table('supporting_documents')->insertOrIgnore([
             [
                 'name' => '3 Pre Canvass',
@@ -85,9 +82,6 @@ return new class extends Migration
         ]);
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('supporting_documents');

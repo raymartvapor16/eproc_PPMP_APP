@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-    AlertTriangle, 
-    AlertCircle, 
-    CheckCircle2, 
-    Info, 
-    X, 
+import {
+    AlertTriangle,
+    AlertCircle,
+    CheckCircle2,
+    Info,
+    X,
     Check
 } from 'lucide-react';
 
@@ -26,7 +26,6 @@ export function CustomAlertModal() {
         return () => window.removeEventListener(ALERT_EVENT_NAME, handleAlertEvent);
     }, []);
 
-    // Process next alert in queue
     useEffect(() => {
         if (!currentAlert && queue.length > 0) {
             const next = queue[0];
@@ -67,7 +66,6 @@ export function CustomAlertModal() {
         }
     };
 
-    // Auto-focus OK button when modal appears & handle Escape / Enter keys
     useEffect(() => {
         if (currentAlert) {
             const timer = setTimeout(() => {
@@ -107,7 +105,6 @@ export function CustomAlertModal() {
         isConfirm = false,
     } = currentAlert;
 
-    // Theme configuration based on alert type
     const themes = {
         warning: {
             headerBg: 'bg-gradient-to-r from-slate-900 via-amber-950/80 to-slate-900',
@@ -179,7 +176,7 @@ export function CustomAlertModal() {
     const currentTheme = themes[type] || themes.info;
 
     return (
-        <div 
+        <div
             className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150"
             role="dialog"
             aria-modal="true"
@@ -190,11 +187,11 @@ export function CustomAlertModal() {
                 }
             }}
         >
-            <div 
+            <div
                 className="bg-white rounded-2xl shadow-2xl border border-slate-200/80 w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-150 ring-1 ring-black/5"
                 onClick={(e) => e.stopPropagation()}
             >
-                {/* Header Banner */}
+
                 <div className={`px-5 py-4 ${currentTheme.headerBg} ${currentTheme.headerBorder} text-white flex items-center justify-between shrink-0`}>
                     <div className="flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-inner ${currentTheme.iconBox}`}>
@@ -222,7 +219,6 @@ export function CustomAlertModal() {
                     </button>
                 </div>
 
-                {/* Body Content */}
                 <div className="p-6 overflow-y-auto space-y-4">
                     {introText && (
                         <div className="text-sm font-medium text-slate-700 leading-relaxed whitespace-pre-line">
@@ -257,7 +253,6 @@ export function CustomAlertModal() {
                     )}
                 </div>
 
-                {/* Footer Controls */}
                 <div className="px-6 py-3.5 bg-slate-50/90 border-t border-slate-100 flex items-center justify-end gap-2.5">
                     {isConfirm && (
                         <button

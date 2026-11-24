@@ -7,6 +7,7 @@ use App\Models\AuditLog;
 use App\Models\Ppmp;
 use App\Models\PpmpAttachment;
 use App\Models\User;
+use App\Support\ReviewHeadResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -15,18 +16,12 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class PpmpAttachmentController extends Controller
 {
-    /**
-     * Upload supporting PDF document (End user or allowed reviewer)
-     * Stores in private non-public storage: storage/app/private/ppmp/
-     */
+
     public function store(Request $request, string $uuid): JsonResponse
     {
         $user = $request->user();
         $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
 
-        // Check if user has attachment upload permission:
-        // STRICT RULE: Only the End-User (creator) can attach supporting files.
-        // Reviewers (Head, Budget Officer, OPPMO, TWG) cannot attach files.
         $isCreator = $ppmp->created_by === $user->id;
         $isBeforeFormalReview = in_array($ppmp->status, [
             'DRAFT',
@@ -48,7 +43,7 @@ class PpmpAttachmentController extends Controller
         }
 
         $request->validate([
-            'file' => 'required|file|mimes:pdf,jpg,jpeg,png,webp|max:5120', // max 5MB strictly
+            'file' => 'required|file|mimes:pdf,jpg,jpeg,png,webp|max:5120',
         ]);
 
         $uploadedFile = $request->file('file');
@@ -56,7 +51,6 @@ class PpmpAttachmentController extends Controller
         $mime = $uploadedFile->getMimeType();
         $extension = strtolower($uploadedFile->getClientOriginalExtension());
 
-        // Security: Block suspicious disguised multi-extensions (e.g. file.php.pdf, script.exe.png)
         if (preg_match('/\.(php|phtml|phar|exe|bat|cmd|sh|vbs|js|jar|py|pl|url|lnk)\.(pdf|jpg|jpeg|png|webp)$/i', $origName)) {
             return response()->json(['message' => 'Disguised executable file naming detected. Upload rejected for security reasons.'], 422);
         }
@@ -72,7 +66,6 @@ class PpmpAttachmentController extends Controller
             return response()->json(['message' => 'Only PDF documents or image files (JPG, PNG, WebP) are allowed.'], 422);
         }
 
-        // Verify PDF / Image Magic Bytes to prevent MIME-spoofing and ransomware injection
         if ($mime === 'application/pdf') {
             $handle = fopen($uploadedFile->getRealPath(), 'rb');
             $header = fread($handle, 5);
@@ -101,11 +94,9 @@ class PpmpAttachmentController extends Controller
             }
         }
 
-        // Generate safe internal filename
         $internalFilename = (string) Str::uuid() . '.' . $fileExt;
         $directory = 'ppmp/' . $ppmp->id;
 
-        // Store in private disk (storage/app/private/)
         $path = $uploadedFile->storeAs($directory, $internalFilename, 'local');
 
         $requestedType = $request->input('attachment_type');
@@ -142,10 +133,6 @@ class PpmpAttachmentController extends Controller
         ], 201);
     }
 
-    /**
-     * Store external cloud document link (Only for Infrastructure Projects)
-     * e.g. Large CAD, POW, Detailed Engineering Design files on Google Drive, OneDrive, Dropbox
-     */
     public function storeLink(Request $request, string $uuid): JsonResponse
     {
         $user = $request->user();
@@ -170,7 +157,6 @@ class PpmpAttachmentController extends Controller
             ], 403);
         }
 
-        // Verify that this is an Infrastructure project
         $isInfra = Str::contains(strtolower($ppmp->project_type ?? ''), 'infra') ||
             $ppmp->items()->whereRaw('LOWER(project_type) LIKE ?', ['%infra%'])->exists();
 
@@ -188,14 +174,12 @@ class PpmpAttachmentController extends Controller
 
         $rawUrl = trim($validated['url']);
 
-        // Protocol Security Check: Strictly allow only secure https
         if (!preg_match('/^https:\/\//i', $rawUrl)) {
             return response()->json([
                 'message' => 'Security Error: Only secure SSL/TLS encrypted web URLs (https://) are accepted.'
             ], 422);
         }
 
-        // Parse and validate URL structure
         $parsed = parse_url($rawUrl);
         if (!$parsed || empty($parsed['host'])) {
             return response()->json([
@@ -205,7 +189,6 @@ class PpmpAttachmentController extends Controller
 
         $host = strtolower($parsed['host']);
 
-        // Disallow dangerous hosts, loopback, private IPs (SSRF prevention)
         if (
             in_array($host, ['localhost', '127.0.0.1', '::1'], true) ||
             preg_match('/^(10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.|169\.254\.)/', $host)
@@ -241,9 +224,6 @@ class PpmpAttachmentController extends Controller
         ], 201);
     }
 
-    /**
-     * Update an attachment's type (e.g. MARKET_SCOPING, SUPPORTING_DOC)
-     */
     public function updateType(Request $request, string $uuid, string $attachmentUuid): JsonResponse
     {
         $user = $request->user();
@@ -275,17 +255,12 @@ class PpmpAttachmentController extends Controller
         ]);
     }
 
-    /**
-     * Download attachment securely
-     */
     public function download(Request $request, string $uuid, string $attachmentUuid): BinaryFileResponse|JsonResponse
     {
         $user = $request->user();
         $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
         $resolvedUuid = PpmpAttachment::decryptUuid($attachmentUuid);
 
-        // Allow attachment lookup directly on current PPMP or any ancestor PPMP in the same tracking family
-        // Guarded with cycle detection and depth limit
         $ancestorIds = [];
         $curr = $ppmp;
         $maxDepth = 25;
@@ -334,17 +309,12 @@ class PpmpAttachmentController extends Controller
         ]);
     }
 
-    /**
-     * View/Stream attachment securely in browser
-     */
     public function view(Request $request, string $uuid, string $attachmentUuid): BinaryFileResponse|JsonResponse
     {
         $user = $request->user();
         $ppmp = Ppmp::where('uuid', $uuid)->firstOrFail();
         $resolvedUuid = PpmpAttachment::decryptUuid($attachmentUuid);
 
-        // Allow attachment lookup directly on current PPMP or any ancestor PPMP in the same tracking family
-        // Guarded with cycle detection and depth limit
         $ancestorIds = [];
         $curr = $ppmp;
         $maxDepth = 25;
@@ -389,9 +359,6 @@ class PpmpAttachmentController extends Controller
         ]);
     }
 
-    /**
-     * Delete attachment (Creator or Admin while editable)
-     */
     public function destroy(Request $request, string $uuid, string $attachmentUuid): JsonResponse
     {
         $user = $request->user();
@@ -438,35 +405,34 @@ class PpmpAttachmentController extends Controller
         return response()->json(['message' => 'Attachment removed successfully.']);
     }
 
-    /**
-     * Enforce strict role-based and office-based authorization
-     */
     private function authorizeAttachmentAccess(User $user, Ppmp $ppmp, ?PpmpAttachment $attachment = null): void
     {
         if ($user->isAdmin()) {
             return;
         }
 
-        // Request letters are accessible to any reviewer or admin evaluating the request
         if ($attachment && $attachment->attachment_type === 'REQUEST_LETTER') {
             if ($user->isAdmin() || $user->isBudgetOfficer() || $user->isOppmo() || $user->isTwg() || $user->isPacco() || $user->id === $ppmp->created_by) {
                 return;
             }
         }
 
-        // Reviewers (Budget, OPPMO, TWG, PACCO) have access once it enters review workflow or when checking ready to print
         if ($user->isBudgetOfficer() || $user->isOppmo() || $user->isTwg() || $user->isPacco()) {
             if ($ppmp->status !== 'DRAFT') {
                 return;
             }
         }
 
-        // Office Head has access to their office's PPMPs
-        if ($user->isHead() && $user->office_id === $ppmp->office_id) {
-            return;
+        if ($user->isHead()) {
+            if ($user->office_id === $ppmp->office_id) {
+                return;
+            }
+            $headStages = ReviewHeadResolver::userStagesForHead($user);
+            if (!empty($headStages) && $ppmp->status !== 'DRAFT') {
+                return;
+            }
         }
 
-        // Creator has access
         if ($user->id === $ppmp->created_by) {
             return;
         }

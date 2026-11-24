@@ -18,6 +18,7 @@ class User extends Authenticatable
         'address',
         'password',
         'role',
+        'roles',
         'office_id',
         'designation',
         'signature_path',
@@ -27,6 +28,7 @@ class User extends Authenticatable
         'approval_status',
         'rejection_reason',
         'accessible_systems',
+        'can_view_all_monitoring_ppmp',
     ];
 
     protected $hidden = [
@@ -36,6 +38,11 @@ class User extends Authenticatable
 
     protected $appends = [
         'profile_photo_url',
+        'available_roles',
+    ];
+
+    protected $with = [
+        'pnpkiSignature',
     ];
 
     public function getProfilePhotoUrlAttribute(): ?string
@@ -53,7 +60,66 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_active' => 'boolean',
             'accessible_systems' => 'array',
+            'can_view_all_monitoring_ppmp' => 'boolean',
+            'roles' => 'array',
         ];
+    }
+
+    public function canViewAllMonitoringPpmps(): bool
+    {
+        return in_array($this->role, ['super_admin', 'admin'], true) || (bool) $this->can_view_all_monitoring_ppmp;
+    }
+
+    public function getAvailableRolesAttribute(): array
+    {
+        $raw = is_array($this->roles) ? $this->roles : [];
+        $normalized = array_values(array_unique(array_filter(array_map(
+            fn ($r) => is_string($r) ? trim($r) : '',
+            $raw
+        ))));
+
+        if (empty($normalized) && !empty($this->role)) {
+            return [$this->role];
+        }
+
+        if (!empty($this->role) && !in_array($this->role, $normalized, true)) {
+            array_unshift($normalized, $this->role);
+        }
+
+        return $normalized;
+    }
+
+    public function hasMultipleRoles(): bool
+    {
+        return count($this->available_roles) > 1;
+    }
+
+    public function hasAssignedRole(string $role): bool
+    {
+        return in_array($role, $this->available_roles, true);
+    }
+
+    public function hasAnyAssignedRole(array $roles): bool
+    {
+        return count(array_intersect($roles, $this->available_roles)) > 0;
+    }
+
+    public function scopeWithRole($query, string $role)
+    {
+        return $query->where(function ($q) use ($role) {
+            $q->where('role', $role)
+                ->orWhereJsonContains('roles', $role);
+        });
+    }
+
+    public function scopeWithAnyRole($query, array $roles)
+    {
+        return $query->where(function ($q) use ($roles) {
+            $q->whereIn('role', $roles);
+            foreach ($roles as $role) {
+                $q->orWhereJsonContains('roles', $role);
+            }
+        });
     }
 
     public function office()
@@ -74,6 +140,11 @@ class User extends Authenticatable
     public function accountCodes()
     {
         return $this->belongsToMany(AccountCode::class, 'account_code_user')->withTimestamps();
+    }
+
+    public function pnpkiSignature()
+    {
+        return $this->hasOne(PnpkiSignature::class, 'user_id');
     }
 
     public function isEndUser(): bool

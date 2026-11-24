@@ -91,7 +91,6 @@ export const OppmoTeamManagement = () => {
 
         setSelectedFile(file);
 
-        // Create base64 preview
         const reader = new FileReader();
         reader.onload = (uploadEvent) => {
             const result = uploadEvent.target.result;
@@ -107,7 +106,7 @@ export const OppmoTeamManagement = () => {
         setFeedback({ type: '', text: '' });
 
         try {
-            // Using JSON or FormData if file selected
+
             let payload;
             if (selectedFile) {
                 payload = new FormData();
@@ -172,7 +171,7 @@ export const OppmoTeamManagement = () => {
 
     return (
         <div className="space-y-6">
-            {/* Header Tile */}
+
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <div className="flex items-center gap-2">
@@ -212,7 +211,6 @@ export const OppmoTeamManagement = () => {
                 </div>
             )}
 
-            {/* Members Cards Grid */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden p-6">
                 {loading ? (
                     <div className="py-20 flex flex-col items-center justify-center text-slate-500">
@@ -233,7 +231,7 @@ export const OppmoTeamManagement = () => {
                                 className="group relative bg-slate-50/80 hover:bg-white rounded-2xl p-5 border border-slate-200 hover:border-amber-400/80 hover:shadow-lg transition-all duration-200 flex flex-col justify-between"
                             >
                                 <div>
-                                    {/* Card Top: Avatar & Status */}
+
                                     <div className="flex items-start justify-between gap-3 mb-4">
                                         <div className="relative">
                                             {member.photo_url ? (
@@ -264,7 +262,6 @@ export const OppmoTeamManagement = () => {
                                         </button>
                                     </div>
 
-                                    {/* Member Info: Name and Designation ONLY */}
                                     <h3 className="font-bold text-slate-900 text-base leading-snug">
                                         {member.name}
                                     </h3>
@@ -274,7 +271,6 @@ export const OppmoTeamManagement = () => {
                                     </div>
                                 </div>
 
-                                {/* Card Actions */}
                                 <div className="mt-5 pt-3 border-t border-slate-200/80 flex items-center justify-end gap-2">
                                     <button
                                         onClick={() => handleOpenEdit(member)}
@@ -302,7 +298,6 @@ export const OppmoTeamManagement = () => {
                 )}
             </div>
 
-            {/* Modal */}
             {modalOpen && (
                 <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
                     <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -322,7 +317,7 @@ export const OppmoTeamManagement = () => {
                         </div>
 
                         <form onSubmit={handleSave} className="p-6 space-y-4">
-                            {/* Photo Upload / Preview Row */}
+
                             <div className="flex items-center gap-5 p-4 bg-slate-50 rounded-2xl border border-slate-200">
                                 <div className="relative shrink-0">
                                     {previewUrl ? (

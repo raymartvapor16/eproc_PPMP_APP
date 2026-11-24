@@ -6,7 +6,6 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>E-PROCUREMENT SYSTEM</title>
 
-    <!-- Provincial & OPPMO Tab Favicon -->
     <link id="dynamic-favicon" rel="icon" type="image/jpeg" href="/images/pmo.jpeg">
     <link rel="apple-touch-icon" href="/images/pmo.jpeg">
 
@@ -16,11 +15,13 @@
 
     <script>
         window.App = {
-            user: @json(auth()->user() ? auth()->user()->load('office') : null),
+            user: @json(auth()->user() ? auth()->user()->load(\Illuminate\Support\Facades\Schema::hasTable('pnpki_signatures') ? ['office', 'pnpkiSignature'] : ['office']) : null),
             developer_mode: @json(\App\Models\SystemSetting::isDeveloperMode()),
             portal_systems: @json(\Illuminate\Support\Facades\Schema::hasTable('portal_systems') ? \App\Models\PortalSystem::orderBy('sort_order', 'asc')->orderBy('id', 'asc')->get() : []),
             turnstile_enabled: @json(\App\Models\SystemSetting::isTurnstileEnabled()),
-            turnstile_site_key: @json((string) config('services.turnstile.site_key', ''))
+            turnstile_site_key: @json((string) config('services.turnstile.site_key', '')),
+            pnpki_enabled: @json(\App\Models\SystemSetting::isPnpkiEnabled()),
+            signature_settings: @json(\App\Models\SystemSetting::getSignatureSettings())
         };
     </script>
 

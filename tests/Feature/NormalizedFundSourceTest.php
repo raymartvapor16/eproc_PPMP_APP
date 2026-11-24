@@ -45,9 +45,6 @@ class NormalizedFundSourceTest extends TestCase
         ]);
     }
 
-    /**
-     * Test schema normalization has all required columns.
-     */
     public function test_schema_has_normalized_columns_and_foreign_keys()
     {
         $this->assertTrue(Schema::hasColumn('fund_sources', 'category'));
@@ -55,35 +52,26 @@ class NormalizedFundSourceTest extends TestCase
         $this->assertTrue(Schema::hasColumn('ppmp_items', 'fund_source_id'));
     }
 
-    /**
-     * Test FundSourceSeeder populates Trust Funds and General/Special Funds.
-     */
     public function test_seeder_populates_trust_and_general_funds()
     {
         $this->seed(FundSourceSeeder::class);
 
-        // Verify Trust Fund from Excel is present with pacco route
         $this->assertDatabaseHas('fund_sources', [
             'name' => 'PENRO CY 2026',
             'category' => 'Trust Fund',
             'workflow_route' => 'pacco',
         ]);
 
-        // Verify General Fund from Excel is present with budget route
         $this->assertDatabaseHas('fund_sources', [
             'name' => 'CY (Customize year e.g, 2026) General fund',
             'category' => 'General Fund',
             'workflow_route' => 'budget',
         ]);
 
-        // Verify total seeded count
         $trustFundCount = FundSource::where('category', 'Trust Fund')->count();
         $this->assertGreaterThanOrEqual(40, $trustFundCount);
     }
 
-    /**
-     * Test Eloquent relationships between FundSource, Ppmp, and PpmpItem.
-     */
     public function test_eloquent_relationships_work_correctly()
     {
         $fund = FundSource::create([
@@ -117,23 +105,17 @@ class NormalizedFundSourceTest extends TestCase
             'fund_source_id' => $fund->id,
         ]);
 
-        // Test Ppmp relationship to FundSource
         $this->assertNotNull($ppmp->fundSourceRef);
         $this->assertEquals($fund->id, $ppmp->fundSourceRef->id);
         $this->assertTrue($ppmp->isTrustFund());
 
-        // Test PpmpItem relationship to FundSource
         $this->assertNotNull($item->fundSource);
         $this->assertEquals($fund->id, $item->fundSource->id);
 
-        // Test FundSource inverse relationships
         $this->assertTrue($fund->ppmps->contains($ppmp));
         $this->assertTrue($fund->ppmpItems->contains($item));
     }
 
-    /**
-     * Test API filtering by category.
-     */
     public function test_api_filtering_by_category()
     {
         FundSource::create([
@@ -150,7 +132,6 @@ class NormalizedFundSourceTest extends TestCase
             'is_active' => true,
         ]);
 
-        // Filter by Trust Fund
         $response = $this->actingAs($this->endUser)
             ->getJson('/api/fund-sources?category=Trust Fund');
 
@@ -161,9 +142,6 @@ class NormalizedFundSourceTest extends TestCase
         }
     }
 
-    /**
-     * Test Admin can export fund sources to CSV with UTF-8 BOM.
-     */
     public function test_admin_can_export_fund_sources_to_csv()
     {
         $this->seed(FundSourceSeeder::class);
@@ -180,9 +158,6 @@ class NormalizedFundSourceTest extends TestCase
         $this->assertStringContainsString('CY (Customize year e.g, 2026) General fund', $content);
     }
 
-    /**
-     * Test Non-Admin cannot export fund sources.
-     */
     public function test_non_admin_cannot_export_fund_sources()
     {
         $response = $this->actingAs($this->endUser)
@@ -191,9 +166,6 @@ class NormalizedFundSourceTest extends TestCase
         $response->assertStatus(403);
     }
 
-    /**
-     * Test PPMP creation with fund_source_id synchronizes properly.
-     */
     public function test_ppmp_creation_with_fund_source_id()
     {
         $fund = FundSource::create([
@@ -244,9 +216,6 @@ class NormalizedFundSourceTest extends TestCase
         ]);
     }
 
-    /**
-     * Test Budget Officer and PACCO Reviewer can manage (create, update, delete, export) fund sources.
-     */
     public function test_budget_officer_and_pacco_reviewers_can_manage_fund_sources()
     {
         $budgetOfficer = User::factory()->create([
@@ -261,7 +230,6 @@ class NormalizedFundSourceTest extends TestCase
             'approval_status' => 'approved',
         ]);
 
-        // 1. Budget Officer creates a General Fund source
         $budgetRes = $this->actingAs($budgetOfficer)
             ->postJson('/api/fund-sources', [
                 'name' => 'Provincial Disaster Management Fund 2026',
@@ -280,7 +248,6 @@ class NormalizedFundSourceTest extends TestCase
             'workflow_route' => 'budget',
         ]);
 
-        // 2. PACCO Reviewer updates the fund source
         $paccoUpdateRes = $this->actingAs($paccoReviewer)
             ->putJson("/api/fund-sources/{$fundId}", [
                 'name' => 'Provincial Disaster Management Fund 2026 (Updated)',
@@ -297,20 +264,17 @@ class NormalizedFundSourceTest extends TestCase
             'code' => 'PDMF-REV',
         ]);
 
-        // 3. PACCO Reviewer exports fund sources to CSV
         $paccoExportRes = $this->actingAs($paccoReviewer)
             ->get('/api/fund-sources/export');
 
         $paccoExportRes->assertStatus(200);
         $paccoExportRes->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
 
-        // 4. Budget Officer exports fund sources to CSV
         $budgetExportRes = $this->actingAs($budgetOfficer)
             ->get('/api/fund-sources/export');
 
         $budgetExportRes->assertStatus(200);
 
-        // 5. Budget Officer deletes the fund source (not referenced by PPMP)
         $deleteRes = $this->actingAs($budgetOfficer)
             ->deleteJson("/api/fund-sources/{$fundId}");
 

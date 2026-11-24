@@ -29,7 +29,7 @@ export const PimsPublishModal = ({
 
     const [formData, setFormData] = useState({
         project_title: '',
-        category: 'GOODS_CONSULTING', // 'GOODS_CONSULTING' or 'INFRA'
+        category: 'GOODS_CONSULTING',
         procurement_mode: 'SVP',
         abc_amount: '',
         pr_number: '',
@@ -43,7 +43,7 @@ export const PimsPublishModal = ({
     useEffect(() => {
         if (!isOpen) return;
         if (ppmp) {
-            // Determine project category from items or default
+
             let detectedCategory = 'GOODS_CONSULTING';
             let detectedMode = 'SVP';
             const firstItem = ppmp.items?.find((i) => !i.is_header);
@@ -63,7 +63,7 @@ export const PimsPublishModal = ({
                 procurement_mode: detectedMode,
                 abc_amount: ppmp.total_budget || '',
                 pr_number: ppmp.tracking_number || ppmp.ppmp_number || '',
-                pims_pr_id: ppmp.pims_pr_id || ppmp.tracking_number || ppmp.ppmp_number || '',
+                pims_pr_id: '',
                 implementing_unit: ppmp.implementing_unit || ppmp.office?.name || '',
                 end_user_name: ppmp.creator?.name || '',
                 remarks: `Published to PIMS from PPMP Tracker No. ${ppmp.tracking_number || ppmp.ppmp_number || ''}`,
@@ -96,11 +96,15 @@ export const PimsPublishModal = ({
             return;
         }
 
+        if (!formData.pims_pr_id.trim()) {
+            setError('PIMS PR ID is required. Please enter the PR ID before publishing.');
+            return;
+        }
+
         setLoading(true);
         try {
             const res = await monitoringService.publishPims(formData);
 
-            // Also mark local storage so the reminder card updates
             if (formData.ppmp_uuid) {
                 try {
                     const stored = localStorage.getItem('pims_published_ppmps');
@@ -134,7 +138,7 @@ export const PimsPublishModal = ({
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-                {/* Modal Header */}
+
                 <div className="px-6 py-4.5 bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-300">
@@ -158,7 +162,6 @@ export const PimsPublishModal = ({
                     </button>
                 </div>
 
-                {/* Form Content */}
                 <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4 pims-modal-content">
                     {error && (
                         <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
@@ -175,7 +178,6 @@ export const PimsPublishModal = ({
                         </div>
                     </div>
 
-                    {/* What the enduser procure is */}
                     <div>
                         <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                             What is the End-User Procuring? (Project Title / Description) <span className="text-rose-500">*</span>
@@ -193,7 +195,6 @@ export const PimsPublishModal = ({
                         </div>
                     </div>
 
-                    {/* Category: GOODS/CONSULTING vs INFRA */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
@@ -227,7 +228,6 @@ export const PimsPublishModal = ({
                             </div>
                         </div>
 
-                        {/* Mode of Procurement */}
                         <div>
                             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                                 Mode of Procurement <span className="text-rose-500">*</span>
@@ -253,7 +253,6 @@ export const PimsPublishModal = ({
                         </div>
                     </div>
 
-                    {/* PPMP / Tracker No, PIMS PR ID & ABC Amount */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
                             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
@@ -274,16 +273,19 @@ export const PimsPublishModal = ({
 
                         <div>
                             <label className="block text-xs font-bold text-indigo-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                                <span>PIMS PR ID</span>
-                                <span className="text-[10px] text-indigo-600 font-semibold">(From PIMS)</span>
+                                <span>
+                                    PIMS PR ID <span className="text-rose-500">*</span>
+                                </span>
+                                <span className="text-[10px] text-rose-600 font-bold">Required</span>
                             </label>
                             <div className="relative">
                                 <FileText className="w-4 h-4 text-indigo-500 absolute left-3 top-3" />
                                 <input
                                     type="text"
+                                    required
                                     value={formData.pims_pr_id}
                                     onChange={(e) => setFormData({ ...formData, pims_pr_id: e.target.value })}
-                                    placeholder="e.g., PPMOGOODS-2026-001"
+                                    placeholder="Enter PIMS PR ID (Required)"
                                     style={{ color: '#000000' }}
                                     className="w-full text-xs pl-9 pr-3 py-2.5 bg-indigo-50/60 border border-indigo-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 focus:outline-none transition font-bold text-black placeholder:text-slate-400"
                                 />
@@ -309,7 +311,6 @@ export const PimsPublishModal = ({
                         </div>
                     </div>
 
-                    {/* Implementing Unit & End User */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
@@ -346,7 +347,6 @@ export const PimsPublishModal = ({
                         </div>
                     </div>
 
-                    {/* Remarks */}
                     <div>
                         <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                             Initial Notes / Remarks
@@ -361,7 +361,6 @@ export const PimsPublishModal = ({
                         />
                     </div>
 
-                    {/* Modal Footer */}
                     <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
                         <button
                             type="button"

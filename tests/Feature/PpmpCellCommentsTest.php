@@ -113,7 +113,7 @@ class PpmpCellCommentsTest extends TestCase
 
     public function test_cannot_resubmit_while_pending_cell_comments_exist(): void
     {
-        // 1. Budget Officer creates comment and returns/suspends PPMP
+
         PpmpCellComment::create([
             'ppmp_id' => $this->ppmp->id,
             'item_id' => $this->item->id,
@@ -133,10 +133,8 @@ class PpmpCellCommentsTest extends TestCase
             'enduser_received_at' => now(),
         ]);
 
-        // 2. End User attempts to resubmit before complying
         $resubmitResponse = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmp->uuid}/submit-for-review");
 
-        // Must be blocked with 422 Unprocessable Entity
         $resubmitResponse->assertStatus(422)
             ->assertJson([
                 'pending_comments_count' => 1,
@@ -147,7 +145,7 @@ class PpmpCellCommentsTest extends TestCase
 
     public function test_end_user_can_comply_and_then_resubmit_to_head(): void
     {
-        // 1. Create pending comment from Head on item
+
         $comment = PpmpCellComment::create([
             'ppmp_id' => $this->ppmp->id,
             'item_id' => $this->item->id,
@@ -167,11 +165,9 @@ class PpmpCellCommentsTest extends TestCase
             'enduser_received_at' => now(),
         ]);
 
-        // Verify resubmitToHead is blocked while pending
         $blockedRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmp->uuid}/submit-to-head");
         $blockedRes->assertStatus(422);
 
-        // 2. End User marks comment as complied
         $complyRes = $this->actingAs($this->endUser)->patchJson("/api/ppmps/{$this->ppmp->uuid}/cell-comments/{$comment->id}/comply", [
             'compliance_note' => 'Updated item description to specify 32GB RAM and 1TB NVMe SSD.',
         ]);
@@ -192,7 +188,6 @@ class PpmpCellCommentsTest extends TestCase
             'status' => 'complied',
         ]);
 
-        // 3. Now resubmission to head should proceed without 422 compliance block
         $resubmitResponse = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmp->uuid}/submit-to-head");
         $resubmitResponse->assertStatus(200);
 
@@ -224,7 +219,7 @@ class PpmpCellCommentsTest extends TestCase
 
     public function test_end_user_cannot_view_reviewer_comments_until_suspended(): void
     {
-        // 1. Reviewer posts a comment while PPMP is under BUDGET_OFFICER_REVIEW
+
         $comment = PpmpCellComment::create([
             'ppmp_id' => $this->ppmp->id,
             'item_id' => $this->item->id,
@@ -239,28 +234,23 @@ class PpmpCellCommentsTest extends TestCase
             'status' => 'pending',
         ]);
 
-        // Reviewer can see the comments
         $reviewerRes = $this->actingAs($this->budgetUser)->getJson("/api/ppmps/{$this->ppmp->uuid}/cell-comments");
         $reviewerRes->assertStatus(200);
         $this->assertCount(1, $reviewerRes->json('data'));
 
-        // End User MUST NOT see comments while still in BUDGET_OFFICER_REVIEW (not yet suspended)
         $endUserResBeforeSuspend = $this->actingAs($this->endUser)->getJson("/api/ppmps/{$this->ppmp->uuid}/cell-comments");
         $endUserResBeforeSuspend->assertStatus(200);
         $this->assertCount(0, $endUserResBeforeSuspend->json('data'));
 
-        // End user show() endpoint must also return empty cellComments relation
         $endUserShowRes = $this->actingAs($this->endUser)->getJson("/api/ppmps/{$this->ppmp->uuid}");
         $endUserShowRes->assertStatus(200);
         $this->assertEmpty($endUserShowRes->json('ppmp.cell_comments'));
 
-        // 2. Now the reviewer suspends / returns the PPMP
         $this->ppmp->update([
             'status' => 'BUDGET_OFFICER_RETURNED',
             'enduser_received_at' => now(),
         ]);
 
-        // End User can NOW see the comments to comply with them!
         $endUserResAfterSuspend = $this->actingAs($this->endUser)->getJson("/api/ppmps/{$this->ppmp->uuid}/cell-comments");
         $endUserResAfterSuspend->assertStatus(200);
         $this->assertCount(1, $endUserResAfterSuspend->json('data'));
@@ -269,7 +259,7 @@ class PpmpCellCommentsTest extends TestCase
 
     public function test_cell_comments_persist_and_relink_when_end_user_updates_items(): void
     {
-        // 1. Create a comment on item #1 and category
+
         $itemComment = PpmpCellComment::create([
             'ppmp_id' => $this->ppmp->id,
             'item_id' => $this->item->id,
@@ -303,7 +293,6 @@ class PpmpCellCommentsTest extends TestCase
             'enduser_received_at' => now(),
         ]);
 
-        // 2. End User updates the PPMP items via PUT /api/ppmps/{uuid}
         $updateRes = $this->actingAs($this->endUser)->putJson("/api/ppmps/{$this->ppmp->uuid}", [
             'title' => $this->ppmp->title,
             'fiscal_year' => $this->ppmp->fiscal_year,
@@ -323,7 +312,6 @@ class PpmpCellCommentsTest extends TestCase
 
         $updateRes->assertStatus(200);
 
-        // 3. Verify BOTH comments still exist in database and itemComment was re-linked to the new item ID!
         $this->assertDatabaseHas('ppmp_cell_comments', ['id' => $itemComment->id]);
         $this->assertDatabaseHas('ppmp_cell_comments', ['id' => $categoryComment->id]);
 
@@ -337,7 +325,7 @@ class PpmpCellCommentsTest extends TestCase
 
     public function test_end_user_can_view_complied_comments_after_submitting_to_reviewer(): void
     {
-        // 1. Create a comment on the PPMP
+
         $comment = PpmpCellComment::create([
             'ppmp_id' => $this->ppmp->id,
             'item_id' => $this->item->id,
@@ -352,23 +340,19 @@ class PpmpCellCommentsTest extends TestCase
             'status' => 'pending',
         ]);
 
-        // 2. Suspend PPMP
         $this->ppmp->update([
             'status' => 'BUDGET_OFFICER_RETURNED',
             'enduser_received_at' => now(),
         ]);
 
-        // 3. End User complies with comment
         $this->actingAs($this->endUser)->patchJson("/api/ppmps/{$this->ppmp->uuid}/cell-comments/{$comment->id}/comply", [
             'compliance_note' => 'Attached updated cost-benefit matrix.',
         ])->assertStatus(200);
 
-        // 4. End User submits back to reviewer (status becomes BUDGET_OFFICER_REVIEW)
         $this->ppmp->update([
             'status' => 'BUDGET_OFFICER_REVIEW',
         ]);
 
-        // 5. Verify End User CAN view the complied comment via GET cell-comments
         $cellCommentsRes = $this->actingAs($this->endUser)->getJson("/api/ppmps/{$this->ppmp->uuid}/cell-comments");
         $cellCommentsRes->assertStatus(200);
         $this->assertCount(1, $cellCommentsRes->json('data'));
@@ -377,13 +361,11 @@ class PpmpCellCommentsTest extends TestCase
         $this->assertEquals(0, $cellCommentsRes->json('pending_count'));
         $this->assertEquals(1, $cellCommentsRes->json('complied_count'));
 
-        // 6. Verify End User CAN view the complied comment via GET show()
         $showRes = $this->actingAs($this->endUser)->getJson("/api/ppmps/{$this->ppmp->uuid}");
         $showRes->assertStatus(200);
         $this->assertCount(1, $showRes->json('ppmp.cell_comments'));
         $this->assertEquals('complied', $showRes->json('ppmp.cell_comments.0.status'));
 
-        // 7. If reviewer posts a NEW draft pending comment while in review, end user still only sees the complied one
         $draftComment = PpmpCellComment::create([
             'ppmp_id' => $this->ppmp->id,
             'item_id' => null,
@@ -400,20 +382,15 @@ class PpmpCellCommentsTest extends TestCase
 
         $cellCommentsRes2 = $this->actingAs($this->endUser)->getJson("/api/ppmps/{$this->ppmp->uuid}/cell-comments");
         $cellCommentsRes2->assertStatus(200);
-        // Only the 1 complied comment is returned to end user
+
         $this->assertCount(1, $cellCommentsRes2->json('data'));
         $this->assertEquals('complied', $cellCommentsRes2->json('data.0.status'));
 
-        // Reviewer however sees BOTH (1 complied, 1 pending)
         $reviewerRes = $this->actingAs($this->budgetUser)->getJson("/api/ppmps/{$this->ppmp->uuid}/cell-comments");
         $reviewerRes->assertStatus(200);
         $this->assertCount(2, $reviewerRes->json('data'));
     }
 
-    /**
-     * Test reviewer can comment on the 5 PPMP header fields:
-     * ppmp_number, fiscal_year, plan_type, title, implementing_unit
-     */
     public function test_reviewer_can_comment_on_ppmp_header_fields(): void
     {
         $headerFields = [
@@ -439,12 +416,10 @@ class PpmpCellCommentsTest extends TestCase
             $this->assertEquals('pending', $res->json('data.status'));
         }
 
-        // Return the PPMP
         $this->actingAs($this->budgetUser)->postJson("/api/ppmps/{$this->ppmp->uuid}/budget/return", [
             'remarks' => 'Review header fields and comply with remarks.',
         ])->assertOk();
 
-        // End user complies with each header comment
         $comments = PpmpCellComment::where('ppmp_id', $this->ppmp->id)->whereNull('item_id')->get();
         $this->assertCount(5, $comments);
 
@@ -456,14 +431,13 @@ class PpmpCellCommentsTest extends TestCase
                 ->assertOk();
         }
 
-        // All 5 header comments are now marked complied
         $this->assertEquals(5, PpmpCellComment::where('ppmp_id', $this->ppmp->id)->where('status', 'complied')->count());
         $this->assertEquals(0, PpmpCellComment::where('ppmp_id', $this->ppmp->id)->where('status', 'pending')->count());
     }
 
     public function test_reviewer_can_comment_on_ppmp_attachment_list_fields_and_header(): void
     {
-        // Reviewer comments on Attachment List Header and breakdown items
+
         $attachmentFields = [
             ['field_key' => 'att_fiscal_year', 'field_label' => 'Attachment List #1 • Fiscal Year', 'cell_value' => 'CY 2026', 'comment' => 'Please confirm calendar year matching.'],
             ['field_key' => 'att_office_name', 'field_label' => 'Attachment List #1 • End-User / Implementing Unit', 'cell_value' => 'Cell Comments Office', 'comment' => 'Specify exact division office.'],
@@ -492,12 +466,10 @@ class PpmpCellCommentsTest extends TestCase
             $this->assertEquals('pending', $res->json('data.status'));
         }
 
-        // Return the PPMP
         $this->actingAs($this->budgetUser)->postJson("/api/ppmps/{$this->ppmp->uuid}/budget/return", [
             'remarks' => 'Review attachment list findings and comply before resubmission.',
         ])->assertOk();
 
-        // End user complies with each attachment list comment
         $comments = PpmpCellComment::where('ppmp_id', $this->ppmp->id)->where('field_key', 'like', 'att_%')->get();
         $this->assertCount(10, $comments);
 
@@ -509,17 +481,15 @@ class PpmpCellCommentsTest extends TestCase
                 ->assertOk();
         }
 
-        // All 10 attachment comments are now marked complied
         $this->assertEquals(10, PpmpCellComment::where('ppmp_id', $this->ppmp->id)->where('field_key', 'like', 'att_%')->where('status', 'complied')->count());
         $this->assertEquals(0, PpmpCellComment::where('ppmp_id', $this->ppmp->id)->where('status', 'pending')->count());
     }
 
     public function test_comply_updates_cell_value_and_writes_to_ppmp_change_logs(): void
     {
-        // Set initial procurement mode
+
         $this->item->update(['procurement_mode' => 'Small Value Procurement (RA 12009)']);
 
-        // Reviewer comments on procurement_mode
         $commentRes = $this->actingAs($this->budgetUser)->postJson("/api/ppmps/{$this->ppmp->uuid}/cell-comments", [
             'item_id' => $this->item->id,
             'item_no' => 1,
@@ -531,12 +501,10 @@ class PpmpCellCommentsTest extends TestCase
         $commentRes->assertStatus(201);
         $commentId = $commentRes->json('data.id');
 
-        // Budget reviewer returns/suspends PPMP
         $this->actingAs($this->budgetUser)->postJson("/api/ppmps/{$this->ppmp->uuid}/budget/return", [
             'remarks' => 'Review and comply with procurement mode finding.',
         ])->assertOk();
 
-        // End user complies and passes updated_cell_value
         $complyRes = $this->actingAs($this->endUser)
             ->patchJson("/api/ppmps/{$this->ppmp->uuid}/cell-comments/{$commentId}/comply", [
                 'compliance_note' => 'Complied and updated cell value to: "Competitive Bidding (RA 12009)"',
@@ -546,10 +514,8 @@ class PpmpCellCommentsTest extends TestCase
         $complyRes->assertOk();
         $this->assertEquals('complied', $complyRes->json('data.status'));
 
-        // Verify the database record for PpmpItem has been updated!
         $this->assertEquals('Competitive Bidding (RA 12009)', $this->item->fresh()->procurement_mode);
 
-        // Verify that ppmp_change_logs contains the audit trail entry
         $this->assertDatabaseHas('ppmp_change_logs', [
             'ppmp_id' => $this->ppmp->id,
             'user_id' => $this->endUser->id,
@@ -559,7 +525,6 @@ class PpmpCellCommentsTest extends TestCase
             'action' => 'end_user_edit',
         ]);
 
-        // Direct cell update endpoint also works for category/program name
         $updateCellRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmp->uuid}/update-cell", [
             'field_key' => 'category',
             'field_label' => 'Category / Program Name & Account Code',
@@ -578,7 +543,6 @@ class PpmpCellCommentsTest extends TestCase
             'action' => 'end_user_edit',
         ]);
 
-        // Direct cell update endpoint also works when field_key is 'program_name' with combined label
         $updateCellProgRes = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$this->ppmp->uuid}/update-cell", [
             'field_key' => 'program_name',
             'field_label' => 'Category / Program Name & Account Code',
@@ -638,4 +602,3 @@ class PpmpCellCommentsTest extends TestCase
         ]);
     }
 }
-

@@ -10,14 +10,6 @@ export const cleanFieldName = (field) => {
         .trim();
 };
 
-/**
- * Returns accurate recipient / next office information strictly following the official PPMP route flow:
- * 1. End User creates Draft (DRAFT_CREATED) & submits for review
- * 2. First reviewer: BAC-TWG conducts technical review
- * 3. Second reviewer: Provincial Budget Officer (General Fund) OR PACCO (Trust Fund) certifies budget
- * 4. Third reviewer: OPPMO Reviewer generates/regenerates official APP
- * 5. Final stage: Ready to Print (PPMP / APP ready for procurement execution)
- */
 export const getAccurateRouteRecipient = (route, ppmp) => {
     if (!route) return { name: '—', role: '', designation: '' };
 
@@ -29,7 +21,6 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
     const isAttachOnly = ppmp?.amendment_scope === 'ATTACHMENT_LIST';
     const isPpmpAppOnly = ppmp?.amendment_scope === 'PPMP_APP';
 
-    // 1. Initial Draft Created or Submitted -> First reviewing office is BAC-TWG
     if (action === 'DRAFT_CREATED' || action === 'SUBMITTED_FOR_REVIEW') {
         if (isPpmpAppOnly) {
             if (isTrust) {
@@ -52,7 +43,6 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
         };
     }
 
-    // 2. BAC-TWG Review -> next reviewing office is Budget Officer or PACCO
     if (action === 'TWG_RECEIVED' || action === 'TWG_APPROVED') {
         if (isAttachOnly) {
             return {
@@ -75,7 +65,6 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
         };
     }
 
-    // 3. Desk receipt by Budget Officer or PACCO -> next office is OPPMO (Generate APP)
     if (action === 'PACCO_RECEIVED' || action === 'BUDGET_RECEIVED' || action === 'BUDGET_APPROVED' || action === 'PACCO_APPROVED') {
         return {
             name: route.to_user?.name || 'OPPMO REVIEW',
@@ -84,7 +73,6 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
         };
     }
 
-    // 4. Desk receipt by OPPMO -> next recipient is End User (Ready to Print)
     if (action === 'OPPMO_RECEIVED' || action === 'OPPMO_APPROVED' || action === 'OPPMO_APP_GENERATED') {
         return {
             name: ppmp?.creator?.name || 'Implementing Unit / End User',
@@ -93,7 +81,6 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
         };
     }
 
-    // 5. Desk receipt by Office Head -> next recipient is End User (Ready to Print)
     if (action === 'HEAD_RECEIVED' || action === 'HEAD_APPROVED') {
         return {
             name: ppmp?.creator?.name || 'Implementing Unit / End User',
@@ -102,7 +89,6 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
         };
     }
 
-    // 8. Office Head Approved or Ready to Print -> released to Implementing Unit / End User
     if (action === 'HEAD_APPROVED' || action === 'READY_TO_PRINT' || action === 'TWG_APPROVED_ATTACHMENT_LIST') {
         return {
             name: ppmp?.creator?.name || 'Implementing Unit / End User',
@@ -111,7 +97,6 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
         };
     }
 
-    // 8. End User Acknowledged
     if (action === 'END_USER_RECEIVED') {
         return {
             name: ppmp?.creator?.name || 'Implementing Unit / End User',
@@ -128,7 +113,6 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
         };
     }
 
-    // Role-based fallbacks for to_role:
     if (route.to_role === 'pacco') {
         return {
             name: (route.to_user?.name && route.to_user.name !== 'PACCO Reviewer') ? route.to_user.name : (ppmp?.default_signatories?.pacco_requirement?.name || 'MAY FERNANDO-UY, CPA'),
@@ -177,7 +161,6 @@ export const getAccurateRouteRecipient = (route, ppmp) => {
         };
     }
 
-    // Default: use to_user or to_role
     return {
         name: route.to_user?.name || (route.to_role ? route.to_role.replace(/_/g, ' ').toUpperCase() : '—'),
         role: route.to_role,
@@ -264,7 +247,6 @@ export const RoutingTimeline = ({
         }
     };
 
-    // Available PPMPs to select from: active ppmp + all historical baseline revisions
     const allPpmps = React.useMemo(() => {
         const list = [];
         if (ppmp) list.push(ppmp);
@@ -280,7 +262,6 @@ export const RoutingTimeline = ({
 
     const [selectedPpmpId, setSelectedPpmpId] = useState(initialPpmp?.id || ppmp?.id);
 
-    // Sync selected PPMP if initialPpmp changes
     React.useEffect(() => {
         if (initialPpmp?.id) {
             setSelectedPpmpId(initialPpmp.id);
@@ -292,7 +273,6 @@ export const RoutingTimeline = ({
     const activeSelectedPpmp = allPpmps.find(p => p.id === selectedPpmpId) || ppmp;
     const isViewingHistorical = activeSelectedPpmp && ppmp && (activeSelectedPpmp.id !== ppmp.id);
 
-    // Get routes, reviews, and logs for currently selected PPMP
     const activeRoutes = isViewingHistorical
         ? (activeSelectedPpmp.routes || [])
         : (routes.length > 0 ? routes : (ppmp?.routes || []));
@@ -301,7 +281,6 @@ export const RoutingTimeline = ({
         ? (activeSelectedPpmp.change_logs || [])
         : (changeLogs.length > 0 ? changeLogs : (ppmp?.change_logs || []));
 
-    // Reverse routes so that the latest event is on the first (top), descending down to the oldest
     const sortedRoutes = React.useMemo(() => {
         return [...activeRoutes].reverse();
     }, [activeRoutes]);
@@ -310,7 +289,7 @@ export const RoutingTimeline = ({
 
     return (
         <>
-            {/* Clickable Card / Summary trigger */}
+
             <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 hover:border-indigo-300 transition">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                     <div className="flex items-center gap-2">
@@ -373,11 +352,10 @@ export const RoutingTimeline = ({
                 </div>
             </div>
 
-            {/* Modal Dialog */}
             {isOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
                     <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col border border-slate-200 animate-in fade-in zoom-in-95 duration-150 overflow-hidden">
-                        {/* Modal Header */}
+
                         <div className="p-4 sm:px-6 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
                             <div className="flex items-center gap-2.5">
                                 <Clock className="w-5 h-5 text-indigo-400" />
@@ -415,9 +393,8 @@ export const RoutingTimeline = ({
                             </div>
                         </div>
 
-                        {/* Modal Body: Two-column layout with scrollable Sidebar for versions and scrollable Main Content for timeline */}
                         <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
-                            {/* Left Sidebar: Select Version (Scrollable if many versions) */}
+
                             {allPpmps.length > 1 && (
                                 <div className="w-full md:w-64 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 p-3.5 flex flex-col shrink-0">
                                     <div className="flex items-center justify-between mb-2.5 px-1">
@@ -477,7 +454,6 @@ export const RoutingTimeline = ({
                                 </div>
                             )}
 
-                            {/* Right / Main Timeline Content Area */}
                             <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6 bg-white">
                             {sortedRoutes.length === 0 ? (
                                 <div className="text-center py-8 text-xs text-slate-400 italic">
@@ -490,13 +466,11 @@ export const RoutingTimeline = ({
                                         const statusStr = route.status || '';
                                         const isLatest = idx === 0;
 
-                                        // Classify the nature of the step
                                         const isReceiptCard = actionStr.endsWith('_RECEIVED') || actionStr === 'ADMIN_RECEIVED_REQUEST';
                                         const isSuspendedCard = actionStr.includes('RETURNED') || statusStr.includes('RETURNED') || actionStr.includes('REJECTED');
                                         const isApprovedCard = !isReceiptCard && !isSuspendedCard && (actionStr.includes('APPROVED') || statusStr.includes('APPROVED') || actionStr === 'OPPMO_APP_GENERATED' || actionStr === 'READY_TO_PRINT' || statusStr === 'READY_TO_PRINT');
                                         const isSubmissionCard = !isReceiptCard && !isSuspendedCard && !isApprovedCard;
 
-                                        // Dot styling
                                         let dotClass = 'bg-blue-500 ring-2 ring-blue-200';
                                         let cardBorder = 'border-slate-200 bg-white';
                                         let badgeColor = 'bg-blue-50 text-blue-700 border-blue-200';
@@ -530,7 +504,6 @@ export const RoutingTimeline = ({
                                             cardBorder += ' ring-2 ring-indigo-500/20 shadow-sm';
                                         }
 
-                                        // Clean readable title
                                         const getStepTitle = () => {
                                             switch (actionStr) {
                                                 case 'DRAFT_CREATED':
@@ -597,13 +570,13 @@ export const RoutingTimeline = ({
 
                                         return (
                                             <div key={route.id || idx} className="relative group">
-                                                {/* Dot on timeline */}
+
                                                 <div
                                                     className={`absolute -left-[27px] top-1.5 w-4 h-4 rounded-full border-2 border-white shadow-xs flex items-center justify-center ${dotClass} ${isLatest ? 'animate-pulse' : ''}`}
                                                 />
 
                                                 <div className={`border rounded-xl p-4 transition ${cardBorder}`}>
-                                                    {/* Header with Title and Category Badge */}
+
                                                     <div className="flex items-start justify-between gap-2 flex-wrap">
                                                         <div>
                                                             <div className="flex items-center gap-2 flex-wrap">
@@ -625,7 +598,6 @@ export const RoutingTimeline = ({
                                                         </span>
                                                     </div>
 
-                                                    {/* Routing Flow / Custody movement */}
                                                     {(() => {
                                                         const originInfo = getAccurateRouteOrigin(route, activeSelectedPpmp);
                                                         const recipientInfo = getAccurateRouteRecipient(route, activeSelectedPpmp);
@@ -654,10 +626,9 @@ export const RoutingTimeline = ({
                                                                     </div>
                                                                 </div>
 
-                                                                {/* Contextual Timestamps Breakdown */}
                                                                 <div className="mt-3 pt-2.5 border-t border-slate-200/80">
                                                                     {isReceiptCard ? (
-                                                                        // Receipt Card breakdown
+
                                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
                                                                             <div className="p-2 bg-amber-50/60 rounded border border-amber-200/70">
                                                                                 <span className="font-bold text-amber-900 block">Date & Time Received in Office:</span>
@@ -671,7 +642,7 @@ export const RoutingTimeline = ({
                                                                             </div>
                                                                         </div>
                                                                     ) : isApprovedCard ? (
-                                                                        // Approved & Released Card breakdown
+
                                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
                                                                             <div className="p-2 bg-emerald-50/60 rounded border border-emerald-200/70">
                                                                                 <span className="font-bold text-emerald-900 block">Date & Time Approved:</span>
@@ -690,7 +661,7 @@ export const RoutingTimeline = ({
                                                                             </div>
                                                                         </div>
                                                                     ) : isSuspendedCard ? (
-                                                            // Suspended / Returned Card breakdown
+
                                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
                                                                 <div className="p-2 bg-rose-50/60 rounded border border-rose-200/70">
                                                                     <span className="font-bold text-rose-900 block">Date & Time Suspended / Returned:</span>
@@ -704,7 +675,7 @@ export const RoutingTimeline = ({
                                                                 </div>
                                                             </div>
                                                         ) : actionStr === 'DRAFT_CREATED' ? (
-                                                            // Draft Created Card breakdown
+
                                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
                                                                 <div className="p-2 bg-blue-50/60 rounded border border-blue-200/70">
                                                                     <span className="font-bold text-blue-900 block">Date & Time Draft Initialized:</span>
@@ -720,7 +691,7 @@ export const RoutingTimeline = ({
                                                                 </div>
                                                             </div>
                                                         ) : (
-                                                            // Submission / Transfer Card breakdown
+
                                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
                                                                 <div className="p-2 bg-blue-50/60 rounded border border-blue-200/70">
                                                                     <span className="font-bold text-blue-900 block">Date & Time Dispatched / Submitted:</span>
@@ -747,7 +718,6 @@ export const RoutingTimeline = ({
                                             );
                                         })()}
 
-                                                    {/* Action Remarks / Justification */}
                                                     {route.remarks && (
                                                         <div className="mt-3 p-2.5 bg-white rounded-lg border border-slate-200 text-xs text-slate-700 italic">
                                                             <span className="not-italic font-bold text-slate-500 text-[10px] uppercase tracking-wider block mb-0.5">
@@ -763,7 +733,6 @@ export const RoutingTimeline = ({
                                 </div>
                             )}
 
-                            {/* Field Level Change Logs */}
                             {activeChangeLogs.length > 0 && (
                                 <div className="mt-6 pt-5 border-t border-slate-200">
                                     <div className="flex items-center justify-between mb-3">
@@ -815,7 +784,6 @@ export const RoutingTimeline = ({
                         </div>
                     </div>
 
-                    {/* Modal Footer */}
                     <div className="p-3 bg-slate-100 border-t border-slate-200 flex items-center justify-between">
                             <div>
                             </div>

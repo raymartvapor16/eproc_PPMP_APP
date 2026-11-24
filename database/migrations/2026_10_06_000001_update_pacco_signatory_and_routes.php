@@ -5,12 +5,10 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
-        // 1. Update PACCO user details
+
         DB::table('users')
             ->where('role', 'pacco')
             ->orWhere('email', 'pacco@system16.com')
@@ -19,7 +17,6 @@ return new class extends Migration
                 'designation' => 'Provincial Accountant',
             ]);
 
-        // 2. Create or update PACCO signatory in ppmp_signatories
         $existingPaccoSig = DB::table('ppmp_signatories')->where('signatory_type', 'pacco_requirement')->first();
         if ($existingPaccoSig) {
             DB::table('ppmp_signatories')->where('id', $existingPaccoSig->id)->update([
@@ -39,7 +36,6 @@ return new class extends Migration
             ]);
         }
 
-        // 3. Update existing PPMP signatures where role is pacco
         DB::table('ppmp_signatures')
             ->where('role', 'pacco')
             ->update([
@@ -47,13 +43,11 @@ return new class extends Migration
                 'signer_designation' => 'Provincial Accountant',
             ]);
 
-        // 4. Update existing desk receipt routes to accurately reflect the next recipient office
         $oppmoUser = DB::table('users')->where('role', 'oppmo')->where('is_active', true)->first();
         $twgUser = DB::table('users')->where('role', 'twg')->where('is_active', true)->first();
         $budgetUser = DB::table('users')->where('role', 'budget_officer')->where('is_active', true)->first();
         $paccoUser = DB::table('users')->where('role', 'pacco')->where('is_active', true)->first();
 
-        // PACCO_RECEIVED -> Next recipient is OPPMO
         if ($oppmoUser) {
             DB::table('ppmp_routes')
                 ->where('action', 'PACCO_RECEIVED')
@@ -70,7 +64,6 @@ return new class extends Migration
                 ]);
         }
 
-        // OPPMO_RECEIVED -> Next recipient is TWG
         if ($twgUser) {
             DB::table('ppmp_routes')
                 ->where('action', 'OPPMO_RECEIVED')
@@ -80,7 +73,6 @@ return new class extends Migration
                 ]);
         }
 
-        // TWG_RECEIVED -> Next recipient is End User (ppmp.created_by)
         $twgRoutes = DB::table('ppmp_routes')
             ->join('ppmps', 'ppmp_routes.ppmp_id', '=', 'ppmps.id')
             ->where('ppmp_routes.action', 'TWG_RECEIVED')
@@ -97,11 +89,8 @@ return new class extends Migration
         }
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        // No-op for data updates
+
     }
 };

@@ -36,13 +36,12 @@ const STANDARD_SECTORS = [
 ];
 
 export const ProgramNamesManagement = () => {
-    // List & Pagination State
+
     const [programs, setPrograms] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [stats, setStats] = useState(null);
 
-    // Filters & Pagination parameters
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [sectorFilter, setSectorFilter] = useState('ALL');
@@ -56,7 +55,6 @@ export const ProgramNamesManagement = () => {
         last_page: 1,
     });
 
-    // Modal State
     const [isFormModalOpen, setIsFormModalOpen] = useState(false);
     const [editingProgram, setEditingProgram] = useState(null);
     const [formData, setFormData] = useState({
@@ -69,15 +67,12 @@ export const ProgramNamesManagement = () => {
     const [saving, setSaving] = useState(false);
     const [modalError, setModalError] = useState('');
 
-    // Delete Modal State
     const [deleteModalProgram, setDeleteModalProgram] = useState(null);
     const [deleting, setDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState('');
 
-    // Toggle status state
     const [togglingId, setTogglingId] = useState(null);
 
-    // Feedback banner
     const [feedback, setFeedback] = useState({ type: '', text: '' });
 
     const showFeedback = (type, text) => {
@@ -85,7 +80,6 @@ export const ProgramNamesManagement = () => {
         setTimeout(() => setFeedback({ type: '', text: '' }), 5000);
     };
 
-    // Debounce search query to prevent lag
     useEffect(() => {
         const handler = setTimeout(() => {
             setDebouncedSearch(searchQuery.trim());
@@ -94,7 +88,6 @@ export const ProgramNamesManagement = () => {
         return () => clearTimeout(handler);
     }, [searchQuery]);
 
-    // Fetch Stats
     const fetchStats = async () => {
         try {
             const res = await programNameService.getStats();
@@ -104,7 +97,6 @@ export const ProgramNamesManagement = () => {
         }
     };
 
-    // Fetch Paginated Programs
     const fetchPrograms = useCallback(async (isRefresh = false) => {
         if (isRefresh) setRefreshing(true);
         else setLoading(true);
@@ -155,7 +147,6 @@ export const ProgramNamesManagement = () => {
         fetchPrograms();
     }, [fetchPrograms]);
 
-    // Open Modal for Create
     const handleOpenCreateModal = () => {
         setEditingProgram(null);
         setFormData({
@@ -169,7 +160,6 @@ export const ProgramNamesManagement = () => {
         setIsFormModalOpen(true);
     };
 
-    // Open Modal for Edit
     const handleOpenEditModal = (prog) => {
         setEditingProgram(prog);
         setFormData({
@@ -183,7 +173,6 @@ export const ProgramNamesManagement = () => {
         setIsFormModalOpen(true);
     };
 
-    // Submit Create or Edit Form
     const handleSaveForm = async (e) => {
         e.preventDefault();
         setSaving(true);
@@ -220,7 +209,6 @@ export const ProgramNamesManagement = () => {
         }
     };
 
-    // Toggle Active Status
     const handleToggleStatus = async (prog) => {
         setTogglingId(prog.id);
         try {
@@ -241,13 +229,11 @@ export const ProgramNamesManagement = () => {
         }
     };
 
-    // Open Delete Modal
     const handleOpenDeleteModal = (prog) => {
         setDeleteModalProgram(prog);
         setDeleteError('');
     };
 
-    // Execute Delete
     const handleConfirmDelete = async () => {
         if (!deleteModalProgram) return;
         setDeleting(true);
@@ -270,7 +256,7 @@ export const ProgramNamesManagement = () => {
 
     return (
         <div className="space-y-6">
-            {/* Header Title & Actions */}
+
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
                 <div>
                     <div className="flex items-center gap-2">
@@ -314,7 +300,6 @@ export const ProgramNamesManagement = () => {
                 </div>
             </div>
 
-            {/* Notification Feedback Banner */}
             {feedback.text && (
                 <div className={`p-3.5 rounded-xl text-xs font-semibold flex items-center justify-between border animate-in fade-in slide-in-from-top-1 duration-150 ${
                     feedback.type === 'error'
@@ -339,7 +324,6 @@ export const ProgramNamesManagement = () => {
                 </div>
             )}
 
-            {/* KPI Statistics Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
                     <div className="flex items-center justify-between text-slate-400">
@@ -394,10 +378,9 @@ export const ProgramNamesManagement = () => {
                 </div>
             </div>
 
-            {/* Filter & Search Bar */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                    {/* Search Input */}
+
                     <div className="relative flex-1">
                         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                         <input
@@ -418,7 +401,6 @@ export const ProgramNamesManagement = () => {
                         )}
                     </div>
 
-                    {/* Status & Rows Filter Controls */}
                     <div className="flex items-center gap-2 shrink-0">
                         <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl text-xs font-bold text-slate-600 border border-slate-200">
                             {['ALL', 'ACTIVE', 'INACTIVE'].map((st) => (
@@ -457,7 +439,6 @@ export const ProgramNamesManagement = () => {
                     </div>
                 </div>
 
-                {/* Sector Filter Tabs */}
                 <div
                     className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-bold"
                     style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
@@ -500,7 +481,6 @@ export const ProgramNamesManagement = () => {
                 </div>
             </div>
 
-            {/* Programs Data Table */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs border-collapse">
@@ -638,7 +618,6 @@ export const ProgramNamesManagement = () => {
                     </table>
                 </div>
 
-                {/* Pagination Footer */}
                 <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-600">
                     <div>
                         Showing <span className="font-bold text-slate-900">{paginationMeta.from || 0}</span> to{' '}
@@ -674,7 +653,6 @@ export const ProgramNamesManagement = () => {
                 </div>
             </div>
 
-            {/* Create / Edit Program Modal */}
             {isFormModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
                     <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
@@ -809,7 +787,6 @@ export const ProgramNamesManagement = () => {
                 </div>
             )}
 
-            {/* Delete Confirmation & Protection Modal */}
             {deleteModalProgram && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
                     <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden p-5 space-y-4">
@@ -897,4 +874,3 @@ export const ProgramNamesManagement = () => {
         </div>
     );
 };
-

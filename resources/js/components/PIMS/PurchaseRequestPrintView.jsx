@@ -17,14 +17,12 @@ export const PurchaseRequestPrintView = ({
         window.print();
     };
 
-    // Format currency helper
     const formatNumber = (val) => {
         const num = parseFloat(val);
         if (isNaN(num)) return '0.00';
         return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
 
-    // Separate header/lot from line items
     const lotHeader = items.find((i) => i.is_lot_header);
     const lineItems = items.filter((i) => !i.is_lot_header);
 
@@ -38,7 +36,7 @@ export const PurchaseRequestPrintView = ({
 
     return (
         <div className="bg-slate-100 min-h-screen py-6 px-4 no-print-bg">
-            {/* Force portrait printing and authentic vertical presentation */}
+
             <style>{`
                 @media print {
                     @page {
@@ -81,7 +79,6 @@ export const PurchaseRequestPrintView = ({
                 }
             `}</style>
 
-            {/* Top Toolbar (Hidden on print) */}
             <div className="max-w-[210mm] mx-auto mb-4 bg-white rounded-xl shadow-xs border border-slate-200 p-3 flex items-center justify-between no-print">
                 <div className="flex items-center gap-2">
                     <button
@@ -119,13 +116,10 @@ export const PurchaseRequestPrintView = ({
                 </div>
             </div>
 
-            {/* Print Document Container (Portrait / Vertical Presentation) */}
             <div className="max-w-[210mm] mx-auto space-y-8">
-                {/* ========================================================= */}
-                {/* PAGE 1 */}
-                {/* ========================================================= */}
+
                 <div className="bg-white p-8 sm:p-10 shadow-lg border border-slate-300 print-sheet font-serif text-black leading-tight text-[11px] relative w-full max-w-[210mm] min-h-[297mm] mx-auto flex flex-col justify-between">
-                    {/* Header */}
+
                     <div className="flex items-start justify-center gap-4 mb-2 relative">
                         <div className="w-16 h-16 shrink-0 absolute left-6 top-0">
                             <img
@@ -143,7 +137,6 @@ export const PurchaseRequestPrintView = ({
                         </div>
                     </div>
 
-                    {/* Meta Top Line */}
                     <div className="flex items-center justify-between text-[10px] mb-1 font-sans">
                         <div>
                             <span>Date Submitted/Published: </span>
@@ -155,7 +148,6 @@ export const PurchaseRequestPrintView = ({
                         </div>
                     </div>
 
-                    {/* Department / P.R No. Box */}
                     <table className="w-full border-collapse border border-black text-[10px] mb-[-1px] font-sans">
                         <tbody>
                             <tr>
@@ -181,7 +173,6 @@ export const PurchaseRequestPrintView = ({
                         </tbody>
                     </table>
 
-                    {/* Main Table: Page 1 */}
                     <table className="w-full border-collapse border border-black text-[10px] font-sans">
                         <thead>
                             <tr className="text-center font-bold bg-slate-50 print:bg-transparent">
@@ -194,7 +185,7 @@ export const PurchaseRequestPrintView = ({
                             </tr>
                         </thead>
                         <tbody>
-                            {/* Lot Header Row */}
+
                             {lotHeader ? (
                                 <tr className="align-top">
                                     <td className="border-x border-black px-1.5 py-1 text-center font-bold">{lotHeader.item_no}</td>
@@ -206,7 +197,6 @@ export const PurchaseRequestPrintView = ({
                                 </tr>
                             ) : null}
 
-                            {/* Line Items */}
                             {lineItems.map((item, idx) => (
                                 <tr key={idx} className="align-top">
                                     <td className="border-x border-black px-1.5 py-0.5 text-center">{item.item_no || ''}</td>
@@ -220,7 +210,6 @@ export const PurchaseRequestPrintView = ({
                                 </tr>
                             ))}
 
-                            {/* Green Procurement Technical Specifications */}
                             {greenSpecsLines.length > 0 && (
                                 <tr className="align-top">
                                     <td className="border-x border-black px-1.5 py-1"></td>
@@ -239,7 +228,6 @@ export const PurchaseRequestPrintView = ({
                                 </tr>
                             )}
 
-                            {/* Spacer to align bottom in vertical portrait layout */}
                             <tr className="h-44 sm:h-60">
                                 <td className="border-x border-black"></td>
                                 <td className="border-x border-black"></td>
@@ -249,7 +237,6 @@ export const PurchaseRequestPrintView = ({
                                 <td className="border-x border-black"></td>
                             </tr>
 
-                            {/* Total Line */}
                             <tr className="border-t border-black font-bold">
                                 <td colSpan={5} className="border border-black p-1 text-right">
                                     Total :
@@ -259,7 +246,6 @@ export const PurchaseRequestPrintView = ({
                                 </td>
                             </tr>
 
-                            {/* Purpose */}
                             <tr>
                                 <td className="border border-black p-1 font-bold">Purpose:</td>
                                 <td colSpan={5} className="border border-black p-1 font-semibold leading-normal">
@@ -269,7 +255,6 @@ export const PurchaseRequestPrintView = ({
                         </tbody>
                     </table>
 
-                    {/* Bottom Signatories Table (Page 1) */}
                     <table className="w-full border-collapse border border-black text-[10px] font-sans mt-[-1px]">
                         <thead>
                             <tr className="text-center font-bold bg-slate-50 print:bg-transparent">
@@ -314,18 +299,14 @@ export const PurchaseRequestPrintView = ({
                         </tbody>
                     </table>
 
-                    {/* Footer Meta */}
                     <div className="flex items-center justify-between text-[9px] mt-2 font-sans font-bold">
                         <span>PAGE 1 OF 2 PAGE/S</span>
                         <span>PR Id.: {pr.tracker_id}</span>
                     </div>
                 </div>
 
-                {/* ========================================================= */}
-                {/* PAGE 2 */}
-                {/* ========================================================= */}
                 <div className="bg-white p-8 sm:p-10 shadow-lg border border-slate-300 print-sheet font-serif text-black leading-tight text-[11px] relative w-full max-w-[210mm] min-h-[297mm] mx-auto flex flex-col justify-between break-before-page">
-                    {/* Header */}
+
                     <div className="flex items-start justify-center gap-4 mb-2 relative">
                         <div className="w-16 h-16 shrink-0 absolute left-6 top-0">
                             <img
@@ -343,7 +324,6 @@ export const PurchaseRequestPrintView = ({
                         </div>
                     </div>
 
-                    {/* Meta Top Line */}
                     <div className="flex items-center justify-between text-[10px] mb-1 font-sans">
                         <div>
                             <span>Date Submitted/Published: </span>
@@ -355,7 +335,6 @@ export const PurchaseRequestPrintView = ({
                         </div>
                     </div>
 
-                    {/* Department / P.R No. Box */}
                     <table className="w-full border-collapse border border-black text-[10px] mb-[-1px] font-sans">
                         <tbody>
                             <tr>
@@ -381,7 +360,6 @@ export const PurchaseRequestPrintView = ({
                         </tbody>
                     </table>
 
-                    {/* Main Table: Page 2 (Terms, Charges, PR Certification, End-User Cert) */}
                     <table className="w-full border-collapse border border-black text-[10px] font-sans">
                         <thead>
                             <tr className="text-center font-bold bg-slate-50 print:bg-transparent">
@@ -398,14 +376,13 @@ export const PurchaseRequestPrintView = ({
                                 <td className="border-x border-black px-1.5 py-1"></td>
                                 <td className="border-x border-black px-1.5 py-1"></td>
                                 <td className="border-x border-black px-2 py-3 space-y-3">
-                                    {/* Place / Period / Payment Terms */}
+
                                     <div className="space-y-1">
                                         <div><span className="font-bold">Place of Delivery: </span>{pr.place_of_delivery || 'PGSO Warehouse/On Site'}</div>
                                         <div><span className="font-bold">Period of Delivery: </span>{pr.delivery_period || 'Date of activity'}</div>
                                         <div><span className="font-bold">Period of Payment: </span>{pr.payment_method || 'One-Time Payment/ Credit Basis'}</div>
                                     </div>
 
-                                    {/* Charges */}
                                     <div className="pt-2">
                                         <div className="font-bold text-center underline mb-0.5">Charges:</div>
                                         <div className="text-center font-semibold uppercase leading-relaxed">
@@ -413,7 +390,6 @@ export const PurchaseRequestPrintView = ({
                                         </div>
                                     </div>
 
-                                    {/* PR Certification */}
                                     <div className="pt-3 border-t border-slate-300">
                                         <div className="font-bold mb-1">PR Certification:</div>
                                         <p className="leading-snug">
@@ -433,7 +409,6 @@ export const PurchaseRequestPrintView = ({
                                         </div>
                                     </div>
 
-                                    {/* Certification of Direct End-user */}
                                     <div className="pt-3 border-t border-slate-300">
                                         <div className="font-bold">Certification of Direct End-user:</div>
                                         <div className="text-[9px] italic text-slate-600 mb-1">(Focal Person / Program Manager / Division Head or Equivalent)</div>
@@ -458,7 +433,6 @@ export const PurchaseRequestPrintView = ({
                                 <td className="border-x border-black px-1.5 py-1"></td>
                             </tr>
 
-                            {/* Total Line */}
                             <tr className="border-t border-black font-bold">
                                 <td colSpan={5} className="border border-black p-1 text-right">
                                     Total :
@@ -468,7 +442,6 @@ export const PurchaseRequestPrintView = ({
                                 </td>
                             </tr>
 
-                            {/* Purpose */}
                             <tr>
                                 <td className="border border-black p-1 font-bold">Purpose:</td>
                                 <td colSpan={5} className="border border-black p-1 font-semibold leading-normal">
@@ -478,7 +451,6 @@ export const PurchaseRequestPrintView = ({
                         </tbody>
                     </table>
 
-                    {/* Bottom Signatories Table (Page 2) */}
                     <table className="w-full border-collapse border border-black text-[10px] font-sans mt-[-1px]">
                         <thead>
                             <tr className="text-center font-bold bg-slate-50 print:bg-transparent">
@@ -523,14 +495,12 @@ export const PurchaseRequestPrintView = ({
                         </tbody>
                     </table>
 
-                    {/* Footer Meta */}
                     <div className="flex items-center justify-between text-[9px] mt-2 font-sans font-bold">
                         <span>PAGE 2 OF 2 PAGE/S</span>
                         <span>PR Id.: {pr.tracker_id}</span>
                     </div>
                 </div>
 
-                {/* Attached Supporting Documents & Cloud Links (Interactive Toolbar Panel, no-print) */}
                 {((pr.attachments && pr.attachments.length > 0) || (pr.ppmp?.attachments && pr.ppmp.attachments.length > 0)) && (
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 no-print space-y-3 font-sans">
                         <div className="flex items-center justify-between">
@@ -546,7 +516,7 @@ export const PurchaseRequestPrintView = ({
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            {/* PR PDF & Link Attachments */}
+
                             {(pr.attachments || []).map((att) => (
                                 <div
                                     key={att.id || att.uuid}
@@ -598,7 +568,6 @@ export const PurchaseRequestPrintView = ({
                                 </div>
                             ))}
 
-                            {/* PPMP Inherited Attachments */}
                             {(pr.ppmp?.attachments || []).map((att) => (
                                 <div
                                     key={`ppmp-${att.id || att.uuid}`}
@@ -635,4 +604,3 @@ export const PurchaseRequestPrintView = ({
         </div>
     );
 };
-

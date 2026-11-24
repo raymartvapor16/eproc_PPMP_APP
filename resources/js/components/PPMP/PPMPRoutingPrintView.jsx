@@ -3,21 +3,15 @@ import { formatDate, formatCurrency } from '../UI/StatusBadge';
 import { Printer, ArrowLeft, Clock, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
 import { getAccurateRouteRecipient, getAccurateRouteOrigin } from '../RoutingTimeline/RoutingTimeline';
 
-/**
- * PPMPRoutingPrintView:
- * Official printable Document Routing Slip and Complete Workflow Audit Trail
- * for Project Procurement Management Plan (PPMP) in Province of Davao del Sur.
- */
 export const PPMPRoutingPrintView = ({ ppmp: rawPpmp, onBack }) => {
     const handlePrint = () => {
         window.print();
     };
 
-    // Protect against React synthetic event objects or invalid inputs
     const ppmp = (rawPpmp && typeof rawPpmp === 'object' && !('nativeEvent' in rawPpmp)) ? rawPpmp : {};
 
     const rawRoutes = ppmp?.routes || [];
-    // Chronological ordering: Step #1 is the initial creation, ascending to latest
+
     const routes = [...rawRoutes].sort((a, b) => {
         const timeA = new Date(a.submitted_at || a.created_at || 0).getTime();
         const timeB = new Date(b.submitted_at || b.created_at || 0).getTime();
@@ -43,7 +37,7 @@ export const PPMPRoutingPrintView = ({ ppmp: rawPpmp, onBack }) => {
 
     return (
         <div className="bg-slate-100 min-h-screen text-slate-900 font-sans print:bg-white print:min-h-0">
-            {/* Top Action Bar (Hidden in Print) */}
+
             <div className="no-print sticky top-0 z-40 bg-slate-900 text-white px-6 py-3.5 flex items-center justify-between shadow-lg">
                 <div className="flex items-center gap-3">
                     <button
@@ -74,9 +68,8 @@ export const PPMPRoutingPrintView = ({ ppmp: rawPpmp, onBack }) => {
                 </div>
             </div>
 
-            {/* Printable Document Sheet */}
             <div className="max-w-[1050px] mx-auto my-6 p-8 bg-white border border-slate-300 shadow-md rounded-xl print:m-0 print:p-0 print:border-none print:shadow-none print:max-w-none print:w-full">
-                {/* Official Header */}
+
                 <div className="flex items-center justify-between border-b-2 border-slate-900 pb-4 mb-5">
                     <div className="w-20 shrink-0">
                         <img
@@ -102,7 +95,6 @@ export const PPMPRoutingPrintView = ({ ppmp: rawPpmp, onBack }) => {
                     </div>
                 </div>
 
-                {/* Document Information Summary */}
                 <div className="bg-slate-50 border border-slate-300 rounded-lg p-3.5 mb-5 text-xs grid grid-cols-2 sm:grid-cols-4 gap-3 print:bg-transparent print:border-slate-400">
                     <div>
                         <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">PPMP Tracking No.</span>
@@ -134,7 +126,6 @@ export const PPMPRoutingPrintView = ({ ppmp: rawPpmp, onBack }) => {
                     </div>
                 </div>
 
-                {/* Complete Routing Slip Table */}
                 <div className="mb-6">
                     <div className="flex items-center justify-between mb-2">
                         <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
@@ -276,7 +267,6 @@ export const PPMPRoutingPrintView = ({ ppmp: rawPpmp, onBack }) => {
                     </table>
                 </div>
 
-                {/* Field Level Change Logs (if any reviewer modified items/fields) */}
                 {changeLogs.length > 0 && (
                     <div className="mb-6 pt-2 page-break-inside-avoid">
                         <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 mb-2">
@@ -318,7 +308,6 @@ export const PPMPRoutingPrintView = ({ ppmp: rawPpmp, onBack }) => {
                     </div>
                 )}
 
-                {/* Sign-off / Verification section */}
                 <div className="mt-8 pt-4 border-t border-slate-300 grid grid-cols-2 gap-8 page-break-inside-avoid text-xs">
                     <div>
                         <div className="text-[10px] uppercase font-bold text-slate-500 mb-6">Generated &amp; Certified by:</div>

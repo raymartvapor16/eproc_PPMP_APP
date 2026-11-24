@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
     ChevronDown,
     ToggleLeft,
@@ -11,6 +12,7 @@ import {
     UserX,
     Trash2,
     Shield,
+    PenTool,
 } from 'lucide-react';
 
 export const UserActionDropdown = ({
@@ -23,6 +25,7 @@ export const UserActionDropdown = ({
     onResetPassword = null,
     onManageCodes = null,
     onManageSystems = null,
+    onManageSignature = null,
     onApprove = null,
     onReject = null,
     onDelete = null,
@@ -30,12 +33,48 @@ export const UserActionDropdown = ({
     openUpward = false,
 }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const [menuPosition, setMenuPosition] = useState({ top: null, bottom: null, right: 16, flipUp: false });
     const dropdownRef = useRef(null);
+    const buttonRef = useRef(null);
+    const menuRef = useRef(null);
 
-    // Close on click outside or Escape key
+    const updateMenuPosition = useCallback(() => {
+        if (!buttonRef.current) return;
+        const rect = buttonRef.current.getBoundingClientRect();
+        const viewportHeight = window.innerHeight;
+        const viewportWidth = window.innerWidth;
+        const estimatedMenuHeight = isPending ? 210 : isRejected ? 120 : 310;
+        const spaceBelow = viewportHeight - rect.bottom;
+        const spaceAbove = rect.top;
+
+        const shouldOpenUpward =
+            (spaceBelow < estimatedMenuHeight && spaceAbove > spaceBelow) ||
+            (openUpward && spaceAbove >= estimatedMenuHeight);
+
+        const rightOffset = Math.max(8, viewportWidth - rect.right);
+
+        if (shouldOpenUpward) {
+            setMenuPosition({
+                top: null,
+                bottom: viewportHeight - rect.top + 6,
+                right: rightOffset,
+                flipUp: true,
+            });
+        } else {
+            setMenuPosition({
+                top: rect.bottom + 6,
+                bottom: null,
+                right: rightOffset,
+                flipUp: false,
+            });
+        }
+    }, [isPending, isRejected, openUpward]);
+
     useEffect(() => {
         const handleClickOutside = (event) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+            const clickedInsideTrigger = dropdownRef.current && dropdownRef.current.contains(event.target);
+            const clickedInsideMenu = menuRef.current && menuRef.current.contains(event.target);
+            if (!clickedInsideTrigger && !clickedInsideMenu) {
                 setIsOpen(false);
             }
         };
@@ -44,58 +83,60 @@ export const UserActionDropdown = ({
             if (e.key === 'Escape') setIsOpen(false);
         };
 
+        const handleScrollOrResize = () => {
+            updateMenuPosition();
+        };
+
         if (isOpen) {
+            updateMenuPosition();
             document.addEventListener('mousedown', handleClickOutside);
             document.addEventListener('keydown', handleEscape);
+            window.addEventListener('scroll', handleScrollOrResize, true);
+            window.addEventListener('resize', handleScrollOrResize);
         }
 
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
             document.removeEventListener('keydown', handleEscape);
+            window.removeEventListener('scroll', handleScrollOrResize, true);
+            window.removeEventListener('resize', handleScrollOrResize);
         };
-    }, [isOpen]);
+    }, [isOpen, updateMenuPosition]);
 
     const isSelf = user?.id === currentUser?.id;
     const isTargetSuperAdmin = user?.role === 'super_admin';
     const canManageStatus = !isSelf && (!isTargetSuperAdmin || currentUser?.role === 'super_admin');
+    const userRolesList = Array.isArray(user?.available_roles) && user.available_roles.length > 0
+        ? user.available_roles
+        : (Array.isArray(user?.roles) && user.roles.length > 0 ? user.roles : [user?.role]);
     const canChangeRole = onChangeRole && !isTargetSuperAdmin;
     const canResetPassword = onResetPassword && (currentUser?.role === 'super_admin' || !isTargetSuperAdmin);
-    const canManageCodes = onManageCodes && user?.role === 'twg';
+    const canManageCodes = onManageCodes && userRolesList.includes('twg');
     const canDelete = onDelete && !isSelf && !isTargetSuperAdmin;
 
-    return (
-        <div className="relative inline-block text-left" ref={dropdownRef} data-action-dropdown>
-            <button
-                type="button"
-                onClick={(e) => {
-                    e.stopPropagation();
-                    setIsOpen(!isOpen);
-                }}
-                disabled={isProcessing}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all duration-150 cursor-pointer shadow-xs disabled:opacity-50 ${
-                    isOpen
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-500/20'
-                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 hover:border-slate-400'
-                }`}
-                title="Open user actions menu"
-            >
-                <span>Action</span>
-                <ChevronDown
-                    className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                        isOpen ? 'rotate-180' : ''
-                    }`}
-                />
-            </button>
+    const handleToggleOpen = (e) => {
+        e.stopPropagation();
+        if (!isOpen) {
+            updateMenuPosition();
+        }
+        setIsOpen((prev) => !prev);
+    };
 
-            {isOpen && (
-                <div
-                    onClick={(e) => e.stopPropagation()}
-                    className={`absolute right-0 w-56 rounded-xl bg-white border border-slate-200 shadow-2xl py-1 z-50 text-left animate-in fade-in zoom-in-95 divide-y divide-slate-100 ${
-                        openUpward ? 'bottom-full mb-1.5 origin-bottom-right' : 'top-full mt-1.5 origin-top-right'
-                    }`}
-                    style={{ zIndex: 9999 }}
-                >
-                    {/* Header */}
+    const dropdownMenu = isOpen ? (
+        <div
+            ref={menuRef}
+            onClick={(e) => e.stopPropagation()}
+            className={`fixed w-56 rounded-xl bg-white border border-slate-200 shadow-2xl py-1 text-left animate-in fade-in zoom-in-95 divide-y divide-slate-100 ${
+                menuPosition.flipUp ? 'origin-bottom-right' : 'origin-top-right'
+            }`}
+            style={{
+                zIndex: 99999,
+                top: menuPosition.top !== null ? `${menuPosition.top}px` : 'auto',
+                bottom: menuPosition.bottom !== null ? `${menuPosition.bottom}px` : 'auto',
+                right: `${menuPosition.right}px`,
+            }}
+        >
+
                     <div className="px-3.5 py-2 bg-slate-50/80">
                         <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">
                             User Actions
@@ -105,7 +146,6 @@ export const UserActionDropdown = ({
                         </div>
                     </div>
 
-                    {/* Pending Actions */}
                     {isPending ? (
                         <div className="p-1 space-y-0.5">
                             {onApprove && (
@@ -158,6 +198,24 @@ export const UserActionDropdown = ({
                                     </div>
                                 </button>
                             )}
+                            {onManageSignature && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsOpen(false);
+                                        onManageSignature();
+                                    }}
+                                    className="w-full px-3 py-2 rounded-lg text-xs font-semibold text-indigo-700 hover:bg-indigo-50 flex items-center gap-2.5 transition cursor-pointer text-left"
+                                >
+                                    <PenTool className="w-4 h-4 text-indigo-600 shrink-0" />
+                                    <div>
+                                        <div className="leading-tight font-bold">Manage Signature</div>
+                                        <div className="text-[10px] text-slate-400 font-normal">
+                                            {user?.pnpki_signature?.signature_type === 'pnpki' ? 'PNPKI E-Signature' : 'Optional / Specimen'}
+                                        </div>
+                                    </div>
+                                </button>
+                            )}
                         </div>
                     ) : isRejected ? (
                         <div className="p-1 space-y-0.5">
@@ -181,7 +239,7 @@ export const UserActionDropdown = ({
                         </div>
                     ) : (
                         <div className="p-1 space-y-0.5">
-                            {/* Toggle Active / Deactivate */}
+
                             {canManageStatus && onToggleStatus && (
                                 <button
                                     type="button"
@@ -216,7 +274,6 @@ export const UserActionDropdown = ({
                                 </button>
                             )}
 
-                            {/* Change Role */}
                             {canChangeRole && (
                                 <button
                                     type="button"
@@ -228,13 +285,12 @@ export const UserActionDropdown = ({
                                 >
                                     <SlidersHorizontal className="w-4 h-4 text-slate-500 shrink-0" />
                                     <div>
-                                        <div className="leading-tight font-bold text-slate-900">Change Role</div>
-                                        <div className="text-[10px] text-slate-400 font-normal">Modify user role &amp; rank</div>
+                                        <div className="leading-tight font-bold text-slate-900">Manage Roles</div>
+                                        <div className="text-[10px] text-slate-400 font-normal">Assign one or multiple roles</div>
                                     </div>
                                 </button>
                             )}
 
-                            {/* Reset Password */}
                             {canResetPassword && (
                                 <button
                                     type="button"
@@ -252,7 +308,6 @@ export const UserActionDropdown = ({
                                 </button>
                             )}
 
-                            {/* TWG Assigned Account Codes */}
                             {canManageCodes && (
                                 <button
                                     type="button"
@@ -270,7 +325,6 @@ export const UserActionDropdown = ({
                                 </button>
                             )}
 
-                            {/* Systems Access Permissions */}
                             {onManageSystems && (
                                 <button
                                     type="button"
@@ -287,10 +341,28 @@ export const UserActionDropdown = ({
                                     </div>
                                 </button>
                             )}
+
+                            {onManageSignature && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsOpen(false);
+                                        onManageSignature();
+                                    }}
+                                    className="w-full px-3 py-2 rounded-lg text-xs font-semibold text-indigo-700 hover:bg-indigo-50 flex items-center gap-2.5 transition cursor-pointer text-left"
+                                >
+                                    <PenTool className="w-4 h-4 text-indigo-600 shrink-0" />
+                                    <div>
+                                        <div className="leading-tight font-bold">Manage Signature</div>
+                                        <div className="text-[10px] text-slate-400 font-normal">
+                                            {user?.pnpki_signature?.signature_type === 'pnpki' ? 'PNPKI E-Signature' : 'Optional / Specimen'}
+                                        </div>
+                                    </div>
+                                </button>
+                            )}
                         </div>
                     )}
 
-                    {/* Delete Action Section */}
                     {canDelete && (
                         <div className="p-1">
                             <button
@@ -310,9 +382,34 @@ export const UserActionDropdown = ({
                             </button>
                         </div>
                     )}
-                </div>
-            )}
+        </div>
+    ) : null;
+
+    return (
+        <div className="relative inline-block text-left" ref={dropdownRef} data-action-dropdown>
+            <button
+                ref={buttonRef}
+                type="button"
+                onClick={handleToggleOpen}
+                disabled={isProcessing}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all duration-150 cursor-pointer shadow-xs disabled:opacity-50 ${
+                    isOpen
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-500/20'
+                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300 hover:border-slate-400'
+                }`}
+                title="Open user actions menu"
+            >
+                <span>Action</span>
+                <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                        isOpen ? 'rotate-180' : ''
+                    }`}
+                />
+            </button>
+
+            {typeof document !== 'undefined' && dropdownMenu
+                ? createPortal(dropdownMenu, document.body)
+                : null}
         </div>
     );
 };
-

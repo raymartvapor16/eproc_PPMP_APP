@@ -10,7 +10,6 @@ const api = axios.create({
     withCredentials: true,
 });
 
-// Helper to update CSRF token everywhere in memory and DOM
 export const setCsrfToken = (newToken) => {
     if (!newToken) return;
     let meta = document.head.querySelector('meta[name="csrf-token"]');
@@ -23,13 +22,11 @@ export const setCsrfToken = (newToken) => {
     api.defaults.headers.common['X-CSRF-TOKEN'] = newToken;
 };
 
-// Auto-inject initial CSRF token if present
 const initialToken = document.head.querySelector('meta[name="csrf-token"]');
 if (initialToken && initialToken.content) {
     setCsrfToken(initialToken.content);
 }
 
-// Request interceptor: always inject latest CSRF token
 api.interceptors.request.use((config) => {
     const meta = document.head.querySelector('meta[name="csrf-token"]');
     if (meta && meta.content) {
@@ -38,13 +35,11 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
-// Flag to prevent infinite retry loops on 419
 let isRefreshingCsrf = false;
 
-// Global response interceptor for 401 (unauthorized) and 419 (CSRF token expired)
 api.interceptors.response.use(
     (response) => {
-        // If server sent an updated CSRF token, adopt it immediately
+
         if (response.data && response.data.csrf_token) {
             setCsrfToken(response.data.csrf_token);
         }
@@ -53,7 +48,6 @@ api.interceptors.response.use(
     async (error) => {
         const originalRequest = error.config;
 
-        // HTTP 419: CSRF Token Expired / Mismatched -> Fetch fresh token and retry once
         if (error.response && error.response.status === 419 && !originalRequest._retry && !isRefreshingCsrf) {
             originalRequest._retry = true;
             isRefreshingCsrf = true;
@@ -74,7 +68,6 @@ api.interceptors.response.use(
             isRefreshingCsrf = false;
         }
 
-        // HTTP 401: Unauthenticated or session invalidated (e.g. anti-hijacking triggered)
         if (error.response && error.response.status === 401) {
             if (window.location.pathname !== '/login') {
                 window.dispatchEvent(new CustomEvent('auth:unauthorized'));
@@ -109,17 +102,29 @@ export const authService = {
             }
             return res;
         } catch (e) {
-            // Even if logout fails, purge token and dispatch
+
             return e;
         }
     },
     getCsrfToken: () => api.get('/csrf-token'),
     getProfile: () => api.get('/me'),
-    updateProfile: (data) => api.put('/profile', data),
+    updateProfile: (data) => {
+        if (data instanceof FormData) {
+            return api.post('/profile', data, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+        }
+        return api.put('/profile', data);
+    },
+    renewPnpkiSignature: (formData) => api.post('/profile/renew-pnpki', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+    useOptionalSignature: () => api.post('/profile/use-optional-signature'),
     uploadProfilePhoto: (formData) => api.post('/profile/photo', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
     }),
     removeProfilePhoto: () => api.delete('/profile/photo'),
+    switchRole: (role) => api.post('/switch-role', { role }),
     getProfilePhotoUrl: () => '/api/profile/photo',
     getSignatureUrl: () => '/api/profile/signature',
 };
@@ -129,8 +134,10 @@ export const ppmpService = {
     getOne: (uuid) => api.get(`/ppmps/${uuid}`),
     create: (data) => api.post('/ppmps', data),
     update: (uuid, data) => api.put(`/ppmps/${uuid}`, data),
+    getNextTrackerNumber: (params) => api.get('/ppmps/next-tracker', { params }),
+    checkTrackerAvailability: (params) => api.get('/ppmps/check-tracker', { params }),
+    updateTrackingNumber: (uuid, data) => api.patch(`/ppmps/${uuid}/tracking-number`, data),
 
-    // Workflow actions
     submitToHead: (uuid) => api.post(`/ppmps/${uuid}/submit-to-head`),
     headApprove: (uuid) => api.post(`/ppmps/${uuid}/head/approve`),
     headReturn: (uuid, data) => api.post(`/ppmps/${uuid}/head/return`, data),
@@ -141,12 +148,17 @@ export const ppmpService = {
 
     budgetApprove: (uuid) => api.post(`/ppmps/${uuid}/budget/approve`),
     budgetReturn: (uuid, data) => api.post(`/ppmps/${uuid}/budget/return`, data),
+    budgetHeadApprove: (uuid) => api.post(`/ppmps/${uuid}/budget-head/approve`),
 
     paccoApprove: (uuid) => api.post(`/ppmps/${uuid}/pacco/approve`),
     paccoReturn: (uuid, data) => api.post(`/ppmps/${uuid}/pacco/return`, data),
+    paccoHeadApprove: (uuid) => api.post(`/ppmps/${uuid}/pacco-head/approve`),
 
     oppmoApprove: (uuid) => api.post(`/ppmps/${uuid}/oppmo/approve`),
     oppmoReturn: (uuid, data) => api.post(`/ppmps/${uuid}/oppmo/return`, data),
+    oppmoHeadApprove: (uuid) => api.post(`/ppmps/${uuid}/oppmo-head/approve`),
+    appPreparerApprove: (uuid) => api.post(`/ppmps/${uuid}/app-preparer/approve`),
+    governorApprove: (uuid) => api.post(`/ppmps/${uuid}/governor/approve`),
 
     twgApprove: (uuid) => api.post(`/ppmps/${uuid}/twg/approve`),
     twgReturn: (uuid, data) => api.post(`/ppmps/${uuid}/twg/return`, data),
@@ -154,8 +166,10 @@ export const ppmpService = {
     returnReview: (uuid, data) => api.post(`/ppmps/${uuid}/return`, data),
 
     receive: (uuid) => api.post(`/ppmps/${uuid}/receive`),
+    updateStatus: (uuid, data) => api.put(`/ppmps/${uuid}/status`, data),
+    getAdminReadyToPrint: () => api.get('/admin/ready-to-print'),
+    getAdminReadyToPrintBatch: (uuids) => api.post('/admin/ready-to-print/batch-details', { uuids }),
 
-    // Cell Comments & Review Suspension Compliance Tracking
     getCellComments: (uuid) => api.get(`/ppmps/${uuid}/cell-comments`),
     addCellComment: (uuid, data) => api.post(`/ppmps/${uuid}/cell-comments`, data),
     deleteCellComment: (uuid, commentId) => api.delete(`/ppmps/${uuid}/cell-comments/${commentId}`),
@@ -163,7 +177,6 @@ export const ppmpService = {
     uncomplyCellComment: (uuid, commentId) => api.patch(`/ppmps/${uuid}/cell-comments/${commentId}/uncomply`),
     updateCell: (uuid, data) => api.post(`/ppmps/${uuid}/update-cell`, data),
 
-    // Attachments
     uploadAttachment: (uuid, formData) => api.post(`/ppmps/${uuid}/attachments`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
     }),
@@ -193,6 +206,7 @@ export const ppmpService = {
         return `/api/ppmps/${uuid}/attachments/${attKey}/download`;
     },
     saveAttachmentList: (uuid, data) => api.post(`/ppmps/${uuid}/attachment-list`, data),
+    saveMarketScoping: (uuid, data) => api.post(`/ppmps/${uuid}/market-scoping`, data),
     saveAppData: (uuid, data) => api.post(`/ppmps/${uuid}/app-data`, data),
     requestAmendmentOrSupplemental: (uuid, formData) => api.post(`/ppmps/${uuid}/request-amendment-or-supplemental`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -223,20 +237,40 @@ export const signatoryService = {
 
 export const userService = {
     getAll: () => api.get('/users'),
-    create: (data) => api.post('/users', data),
-    updateSignature: (id, data) => api.post(`/users/${id}/signature`, data),
+    create: (data) => {
+        if (data instanceof FormData) {
+            return api.post('/users', data, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+        }
+        return api.post('/users', data);
+    },
+    updateSignature: (id, data) => {
+        if (data instanceof FormData) {
+            return api.post(`/users/${id}/signature`, data, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+        }
+        return api.post(`/users/${id}/signature`, data);
+    },
     changePassword: (id, password) => api.post(`/users/${id}/change-password`, { password }),
-    updateRole: (id, role) => api.put(`/users/${id}/role`, { role }),
+    updateRole: (id, role, roles = null) => api.put(`/users/${id}/role`, roles ? { role, roles } : { role }),
     getAccountCodes: (id) => api.get(`/users/${id}/account-codes`),
     updateAccountCodes: (id, accountCodeIds) => api.put(`/users/${id}/account-codes`, { account_code_ids: accountCodeIds }),
     updateSystemAccess: (id, systems) => api.put(`/users/${id}/system-access`, { accessible_systems: systems }),
     approve: (id) => api.post(`/users/${id}/approve`),
     reject: (id, reason = '') => api.post(`/users/${id}/reject`, { reason }),
+    approvePnpkiRenewal: (id) => api.post(`/users/${id}/pnpki-renewal/approve`),
+    rejectPnpkiRenewal: (id, reason = '') => api.post(`/users/${id}/pnpki-renewal/reject`, { reason }),
     toggleStatus: (id) => api.post(`/users/${id}/toggle-status`),
     delete: (id) => api.delete(`/users/${id}`),
     getUserSignatureUrl: (id) => `/api/users/${id}/signature`,
     getUserAvatarUrl: (id) => `/api/users/${id}/avatar`,
     getUserAuthorizationLetterUrl: (id) => `/api/users/${id}/authorization-letter`,
+};
+
+export const pnpkiService = {
+    getAll: () => api.get('/pnpki-signatures'),
 };
 
 export const officeService = {
@@ -328,7 +362,7 @@ let cachedAccountCodesPromise = null;
 
 export const accountCodeService = {
     getAll: async (params = {}) => {
-        // If it's a paginated or filtered query from admin management, bypass dropdown cache
+
         if (params?.page || params?.search || params?.class || params?.status) {
             return api.get('/account-codes', { params });
         }
@@ -515,6 +549,8 @@ export const databaseBackupService = {
 export const monitoringService = {
     getStats: () => api.get('/monitoring/stats'),
     getPendingPims: () => api.get('/monitoring/pending-pims'),
+    getAuthorizedUsers: () => api.get('/monitoring/authorized-users'),
+    updateAuthorizedUsers: (userIds) => api.post('/monitoring/authorized-users', { user_ids: userIds }),
     getProjects: (params) => api.get('/monitoring/projects', { params }),
     getProject: (idOrUuid) => api.get(`/monitoring/projects/${idOrUuid}`),
     createProject: (data) => api.post('/monitoring/projects', data),
@@ -522,6 +558,7 @@ export const monitoringService = {
     deleteProject: (idOrUuid) => api.delete(`/monitoring/projects/${idOrUuid}`),
     updatePrId: (idOrUuid, prId) => api.patch(`/monitoring/projects/${idOrUuid}/pr-id`, { pims_pr_id: prId }),
     addStep: (idOrUuid, data) => api.post(`/monitoring/projects/${idOrUuid}/steps`, data),
+    reorderSteps: (idOrUuid, division, stepIds) => api.post(`/monitoring/projects/${idOrUuid}/reorder-steps`, { division, step_ids: stepIds }),
     updateStep: (stepId, data) => api.put(`/monitoring/steps/${stepId}`, data),
     deleteStep: (stepId) => api.delete(`/monitoring/steps/${stepId}`),
     publishPims: (data) => api.post('/monitoring/pims-publish', data),
@@ -578,15 +615,12 @@ export const supplierEvaluationService = {
     restoreEvaluation: (id) => api.post(`/supplier-evaluation/evaluations/${id}/restore`),
     forceDeleteEvaluation: (id) => api.delete(`/supplier-evaluation/evaluations/${id}/force`),
 
-    // Bulk Evaluation
     getBulkSuppliers: () => api.get('/supplier-evaluation/bulk/suppliers'),
     fetchBulkEvaluations: (params) => api.get('/supplier-evaluation/bulk/evaluations', { params }),
     submitBulkEvaluations: (data) => api.post('/supplier-evaluation/bulk/submit', data),
 
-    // Recycle Bin
     getRecycleBin: () => api.get('/supplier-evaluation/recycle-bin'),
 
-    // Purchase Orders
     getPurchaseOrders: (params) => api.get('/supplier-evaluation/purchase-orders', { params }),
     createPurchaseOrder: (formData) => api.post('/supplier-evaluation/purchase-orders', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -604,21 +638,18 @@ export const supplierEvaluationService = {
     getBulkPoList: (params) => api.get('/supplier-evaluation/purchase-orders/bulk-list', { params }),
     storeBulkPoEvaluations: (data) => api.post('/supplier-evaluation/purchase-orders/bulk-evaluate', data),
 
-    // Requests
     getRequests: () => api.get('/supplier-evaluation/requests'),
     createRequest: (data) => api.post('/supplier-evaluation/requests', data),
     approveRequest: (id) => api.post(`/supplier-evaluation/requests/${id}/approve`),
     rejectRequest: (id) => api.post(`/supplier-evaluation/requests/${id}/reject`),
     cancelRequest: (id) => api.delete(`/supplier-evaluation/requests/${id}`),
 
-    // Authorize PDFs
     getAuthorizePdfs: () => api.get('/supplier-evaluation/pdfs'),
     uploadAuthorizePdf: (formData) => api.post('/supplier-evaluation/pdfs', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
     }),
     updateAuthorizePdfStatus: (id, status) => api.post(`/supplier-evaluation/pdfs/${id}/status`, { status }),
 
-    // Analytics & Activity Logs
     getAnalytics: (params) => api.get('/supplier-evaluation/analytics', { params }),
     getActivityLogs: (params) => api.get('/supplier-evaluation/activity-logs', { params }),
     getExportActivityLogsUrl: (params) => {
@@ -627,6 +658,14 @@ export const supplierEvaluationService = {
     },
 };
 
+export const securityThreatService = {
+    getThreats: (params) => api.get('/super-admin/security-threats', { params }),
+    resolveThreat: (id) => api.patch(`/super-admin/security-threats/${id}/resolve`),
+    getDeletedBackups: (params) => api.get('/super-admin/deleted-backups', { params }),
+    restoreDeletedBackup: (id) => api.post(`/super-admin/deleted-backups/${id}/restore`),
+    getScheduledBackups: () => api.get('/super-admin/scheduled-backups'),
+    runBackupNow: () => api.post('/super-admin/scheduled-backups/run-now'),
+    getBackupDownloadUrl: (id) => `/api/super-admin/scheduled-backups/${id}/download`,
+};
+
 export default api;
-
-

@@ -27,13 +27,11 @@ class SupplierRequest extends Model
         'status_date'  => 'datetime:Y-m-d',
     ];
 
-    // Creator
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    // Receiver (administrator / pgso / etc)
     public function receiver()
     {
         return $this->belongsTo(User::class, 'requested_to');
@@ -44,4 +42,3 @@ class SupplierRequest extends Model
         return $this->belongsTo(SupplierEvaluation::class, 'evaluation_id');
     }
 }
-

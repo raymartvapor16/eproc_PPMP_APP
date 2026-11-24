@@ -25,19 +25,14 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class SupplierEvaluationController extends Controller
 {
-    /**
-     * Exact criteria weighted score map from Supplier_Evaluation
-     */
+
     public const CRITERIA_WEIGHT_MAP = [
-        1 => [4 => 20.0, 3 => 15.0, 2 => 10.0, 1 => 5.0],       // A. PRICE (20%)
-        2 => [4 => 30.0, 3 => 22.5, 2 => 15.0, 1 => 7.5],       // B. QUALITY / SERVICE LEVEL (30%)
-        3 => [4 => 25.0, 3 => 18.75, 2 => 12.5, 1 => 6.25],     // C. CUSTOMER CARE / AFTER SALES SERVICE (25%)
-        4 => [4 => 25.0, 3 => 18.75, 2 => 12.5, 1 => 6.25],     // D. DELIVERY FULFILLMENT (25%)
+        1 => [4 => 20.0, 3 => 15.0, 2 => 10.0, 1 => 5.0],
+        2 => [4 => 30.0, 3 => 22.5, 2 => 15.0, 1 => 7.5],
+        3 => [4 => 25.0, 3 => 18.75, 2 => 12.5, 1 => 6.25],
+        4 => [4 => 25.0, 3 => 18.75, 2 => 12.5, 1 => 6.25],
     ];
 
-    /**
-     * Authorize access to the Supplier Evaluation System
-     */
     protected function authorizeSupplierEvaluation(Request $request): User
     {
         $user = $request->user();
@@ -59,9 +54,6 @@ class SupplierEvaluationController extends Controller
         ], 403));
     }
 
-    /**
-     * Map unified User role to Supplier Evaluation role
-     */
     protected function getEffectiveRole(User $user): string
     {
         if ($user->isAdmin()) {
@@ -79,9 +71,6 @@ class SupplierEvaluationController extends Controller
         return 'end_user';
     }
 
-    /**
-     * Compute weighted score (0 - 100%) from criteriaScores collection
-     */
     public static function computeEvaluationScore($criteriaScores): float
     {
         $total = 0.0;
@@ -95,9 +84,6 @@ class SupplierEvaluationController extends Controller
         return round($total, 2);
     }
 
-    /**
-     * Log activity to supplier_activity_logs
-     */
     protected function logActivity(
         Request $request,
         string $activity,
@@ -120,9 +106,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Resolve Office matching end_user string (abbreviation, code, or name)
-     */
     protected function resolveOfficeForEndUser(?string $endUser, ?int $fallbackOfficeId = null): ?Office
     {
         if ($endUser) {
@@ -140,9 +123,6 @@ class SupplierEvaluationController extends Controller
         return Office::first();
     }
 
-    /**
-     * Scope a SupplierPurchaseOrder query to the user's assigned office (including subunit abbreviations)
-     */
     protected function applyOfficeScopeToPoQuery($query, $user, bool $isGlobalScope)
     {
         if ($isGlobalScope || !$user->office) {
@@ -166,9 +146,6 @@ class SupplierEvaluationController extends Controller
         });
     }
 
-    /**
-     * Initial dashboard bootstrap data & role-based counts
-     */
     public function dashboardInit(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -184,7 +161,6 @@ class SupplierEvaluationController extends Controller
             $baseQuery->where('office_id', $user->office_id);
         }
 
-        // Single grouped query for status counts
         $statusCounts = (clone $baseQuery)
             ->select('status', DB::raw('COUNT(*) as aggregate_count'))
             ->groupBy('status')
@@ -204,7 +180,6 @@ class SupplierEvaluationController extends Controller
 
         $pdfsPendingCount = SupplierPdf::where('status', 'pending')->count();
 
-        // Approved update/delete requests for this user or office
         $approvedRequests = SupplierRequest::where('status', 'approved')
             ->when(!$isGlobalScope, function ($q) use ($user) {
                 $q->where('user_id', $user->id);
@@ -219,7 +194,6 @@ class SupplierEvaluationController extends Controller
                 return $arr;
             });
 
-        // Scope available end users to the user's office for enduser role
         $endUserQuery = SupplierPurchaseOrder::whereNotNull('end_user')
             ->where('end_user', '!=', '');
         $this->applyOfficeScopeToPoQuery($endUserQuery, $user, $isGlobalScope);
@@ -232,7 +206,6 @@ class SupplierEvaluationController extends Controller
             $endUsers = collect([$user->office->code, $user->office->name])->filter()->unique()->values();
         }
 
-        // Scope available suppliers strictly to those having purchase orders with the user's office
         $supplierQuery = SupplierPurchaseOrder::whereNotNull('supplier')
             ->where('supplier', '!=', '');
         $this->applyOfficeScopeToPoQuery($supplierQuery, $user, $isGlobalScope);
@@ -254,7 +227,6 @@ class SupplierEvaluationController extends Controller
             array_unshift($years, $currentYear);
         }
 
-        // Approved authorization PDFs for Representative Staff / End User
         $approvedPdfs = SupplierPdf::with('user.office')
             ->where('status', 'approved')
             ->when(!$isGlobalScope && $user->office_id, function ($q) use ($user) {
@@ -285,9 +257,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * List evaluations by status with role-based scoping & filters
-     */
     public function evaluations(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -344,7 +313,6 @@ class SupplierEvaluationController extends Controller
 
         $evaluations = $query->orderByDesc('updated_at')->orderByDesc('id')->get();
 
-        // Batch-load PO records to avoid N+1 queries
         $poNos = $evaluations->pluck('po_no')->filter()->unique()->values()->toArray();
         $poMap = [];
         if (!empty($poNos)) {
@@ -354,11 +322,10 @@ class SupplierEvaluationController extends Controller
             }
         }
 
-        // Batch-load Office Head users by office_id
         $officeIds = $evaluations->pluck('office_id')->filter()->unique()->values()->toArray();
         $headUserMap = [];
         if (!empty($officeIds)) {
-            $heads = User::where('role', 'head')->whereIn('office_id', $officeIds)->get();
+            $heads = User::withRole('head')->whereIn('office_id', $officeIds)->get();
             foreach ($heads as $h) {
                 $headUserMap[$h->office_id] = $h;
             }
@@ -421,9 +388,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Show single evaluation details (for View / Evaluate / Print Form)
-     */
     public function showEvaluation(Request $request, int $id): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -437,7 +401,7 @@ class SupplierEvaluationController extends Controller
         ])->findOrFail($id);
 
         $po = SupplierPurchaseOrder::where('po_no', $eval->po_no)->first();
-        $officeHead = User::where('role', 'head')->where('office_id', $eval->office_id)->first();
+        $officeHead = User::withRole('head')->where('office_id', $eval->office_id)->first();
 
         $totalScore = self::computeEvaluationScore($eval->criteriaScores);
 
@@ -470,9 +434,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Create new evaluation (+ Evaluation modal or from PO List)
-     */
     public function storeEvaluation(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -497,13 +458,11 @@ class SupplierEvaluationController extends Controller
             return response()->json(['message' => 'Could not determine Office for this evaluation.'], 422);
         }
 
-        // Extract 4-digit year from covered_period or date_evaluation
         $periodYear = (int) date('Y', strtotime($validated['date_evaluation']));
         if (preg_match('/(20\d{2})/', $validated['covered_period'], $matches)) {
             $periodYear = (int) $matches[1];
         }
 
-        // Prevent duplicate active evaluation for the same PO No
         $existing = SupplierEvaluation::where('po_no', trim($validated['po_no']))
             ->where(function ($q) {
                 $q->where('delete_status', 0)->orWhereNull('delete_status');
@@ -528,7 +487,6 @@ class SupplierEvaluationController extends Controller
                 'delete_status' => 0,
             ]);
 
-            // Update matching PO status to 'Added'
             $po = SupplierPurchaseOrder::where('po_no', trim($validated['po_no']))->first();
             if ($po) {
                 $po->status = 'Added';
@@ -553,9 +511,6 @@ class SupplierEvaluationController extends Controller
         ], 201);
     }
 
-    /**
-     * Evaluate or Update an Evaluation (End User, Head, Representative Staff, Admin, PGSO)
-     */
     public function evaluateOrUpdate(Request $request, int $id): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -563,7 +518,6 @@ class SupplierEvaluationController extends Controller
 
         $eval = SupplierEvaluation::with(['criteriaScores', 'digitalApprovals', 'requests'])->findOrFail($id);
 
-        // If End User is updating an already reviewed/submitted evaluation, check for approved update request
         if ($role === 'end_user' && in_array($eval->status, ['head review', 'submitted'], true)) {
             $approvedRequest = SupplierRequest::where('evaluation_id', $eval->id)
                 ->where('status', 'approved')
@@ -581,7 +535,7 @@ class SupplierEvaluationController extends Controller
         $remarks = $request->input('remarks', []);
 
         DB::transaction(function () use ($request, $user, $role, $eval, $ratings, $remarks) {
-            // Optional metadata updates (Admin / PGSO / End User)
+
             if ($request->filled('supplier_name')) {
                 $eval->supplier_name = trim($request->input('supplier_name'));
             }
@@ -601,7 +555,6 @@ class SupplierEvaluationController extends Controller
                 $eval->office_id = (int) $request->input('office_id');
             }
 
-            // Save criteria ratings & remarks if provided
             if (is_array($ratings) && !empty($ratings)) {
                 foreach ($ratings as $criteriaId => $numberRating) {
                     if ($numberRating === null || $numberRating === '') {
@@ -621,7 +574,6 @@ class SupplierEvaluationController extends Controller
                 }
             }
 
-            // Role-based status transitions & Digital Authorization records
             if ($role === 'head' && $eval->status === 'head review') {
                 SupplierDigitalApproval::updateOrCreate(
                     [
@@ -640,7 +592,7 @@ class SupplierEvaluationController extends Controller
 
                 SupplierPurchaseOrder::where('po_no', $eval->po_no)->update(['status' => 'Approved']);
             } elseif ($role === 'presentative_staff' && $eval->status === 'head review') {
-                // Link optional authorization PDF
+
                 $authorizeId = null;
                 if ($request->filled('pdf_id')) {
                     $authRecord = SupplierAuthorize::firstOrCreate([
@@ -670,7 +622,7 @@ class SupplierEvaluationController extends Controller
 
                 SupplierPurchaseOrder::where('po_no', $eval->po_no)->update(['status' => 'Approved']);
             } else {
-                // End User, PGSO, or Administrator evaluating/updating
+
                 if ($eval->status === 'pending') {
                     SupplierDigitalApproval::updateOrCreate(
                         [
@@ -703,7 +655,6 @@ class SupplierEvaluationController extends Controller
                     SupplierPurchaseOrder::where('po_no', $eval->po_no)->update(['status' => 'Approved']);
                 }
 
-                // Consume approved update request if End User edited a reviewed/submitted evaluation
                 if ($role === 'end_user') {
                     SupplierRequest::where('evaluation_id', $eval->id)
                         ->where('status', 'approved')
@@ -732,9 +683,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Get distinct suppliers available for Bulk Evaluation based on role
-     */
     public function getBulkSuppliers(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -764,9 +712,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Fetch evaluations for a selected supplier in Bulk Evaluation workspace
-     */
     public function fetchBulkEvaluations(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -792,7 +737,6 @@ class SupplierEvaluationController extends Controller
 
         $evaluations = $query->orderBy('po_no')->get();
 
-        // Batch-load PO records
         $poNos = $evaluations->pluck('po_no')->filter()->unique()->values()->toArray();
         $poMap = [];
         if (!empty($poNos)) {
@@ -833,9 +777,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Submit Bulk Evaluations (End User / Admin / Head / Representative Staff)
-     */
     public function submitBulkEvaluations(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -930,9 +871,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Soft-delete evaluation (Move to Recycle Bin)
-     */
     public function destroyEvaluation(Request $request, int $id): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -958,7 +896,6 @@ class SupplierEvaluationController extends Controller
         $eval->delete_status = 1;
         $eval->save();
 
-        // Reset PO status to Pending so it can be re-evaluated if needed
         SupplierPurchaseOrder::where('po_no', $eval->po_no)->update(['status' => 'Pending']);
 
         $this->logActivity(
@@ -972,9 +909,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * List Recycle Bin evaluations
-     */
     public function recycleBin(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1005,9 +939,6 @@ class SupplierEvaluationController extends Controller
         return response()->json(['data' => $deleted]);
     }
 
-    /**
-     * Restore soft-deleted evaluation from Recycle Bin
-     */
     public function restoreEvaluation(Request $request, int $id): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1036,9 +967,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Permanently delete evaluation from Recycle Bin
-     */
     public function forceDeleteEvaluation(Request $request, int $id): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1065,9 +993,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Paginated Purchase Orders list with search & PDF sorting
-     */
     public function purchaseOrders(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1076,7 +1001,6 @@ class SupplierEvaluationController extends Controller
 
         $query = SupplierPurchaseOrder::query();
 
-        // Scope to user's office if not administrator/pgso
         $this->applyOfficeScopeToPoQuery($query, $user, $isGlobalScope);
 
         if ($request->filled('search')) {
@@ -1130,9 +1054,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Store a new Purchase Order
-     */
     public function storePurchaseOrder(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1182,9 +1103,6 @@ class SupplierEvaluationController extends Controller
         ], 201);
     }
 
-    /**
-     * Update an existing Purchase Order (and sync linked Evaluation)
-     */
     public function updatePurchaseOrder(Request $request, int $id): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1230,7 +1148,6 @@ class SupplierEvaluationController extends Controller
         $po->status = $validated['status'];
         $po->save();
 
-        // Sync linked evaluation if PO number, supplier, or covered period changed
         $eval = SupplierEvaluation::where('po_no', $oldPoNo)->first();
         if ($eval) {
             $eval->po_no = $po->po_no;
@@ -1257,9 +1174,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Delete a Purchase Order
-     */
     public function destroyPurchaseOrder(Request $request, int $id): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1280,27 +1194,22 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Upload PDF for a Purchase Order directly from the PO List table
-     */
     public function uploadPurchaseOrderPdf(Request $request, int $id): JsonResponse
     {
         $this->authorizeSupplierEvaluation($request);
 
         $request->validate([
-            'pdf_po' => 'required|file|mimes:pdf|max:15360', // Strictly max 15MB for Supplier Evaluation PDF
+            'pdf_po' => 'required|file|mimes:pdf|max:15360',
         ]);
 
         $po = SupplierPurchaseOrder::findOrFail($id);
         $file = $request->file('pdf_po');
 
-        // Security: Block suspicious disguised multi-extensions
         $origName = $file->getClientOriginalName();
         if (preg_match('/\.(php|phtml|phar|exe|bat|cmd|sh|vbs|js|jar|py|pl|url|lnk)\.pdf$/i', $origName)) {
             return response()->json(['message' => 'Disguised executable file naming detected for Purchase Order PDF.'], 422);
         }
 
-        // Security: Binary Magic Bytes verification (%PDF-)
         $handle = fopen($file->getRealPath(), 'rb');
         $header = fread($handle, 5);
         fclose($handle);
@@ -1324,9 +1233,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Serve Purchase Order PDF with fallback to legacy Supplier_Evaluation storage
-     */
     public function viewPurchaseOrderPdf(Request $request, int $id): BinaryFileResponse|JsonResponse
     {
         $this->authorizeSupplierEvaluation($request);
@@ -1337,7 +1243,7 @@ class SupplierEvaluationController extends Controller
         }
 
         $relativePath = ltrim($po->pdf_po, '/');
-        // Strip leading "private/" when checking Laravel 'local' disk (root is storage/app/private)
+
         $localDiskRelative = preg_replace('#^private/#', '', $relativePath);
 
         $candidates = [
@@ -1366,9 +1272,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Import Purchase Orders from CSV or Excel (.xlsx / .csv)
-     */
     public function importPurchaseOrders(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1450,9 +1353,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Lightweight native XLSX reader using ZipArchive + SimpleXML
-     */
     protected function parseSimpleXlsx(string $filePath): array
     {
         if (!class_exists(\ZipArchive::class)) {
@@ -1519,9 +1419,6 @@ class SupplierEvaluationController extends Controller
         return $rows;
     }
 
-    /**
-     * Get available Pending POs for Bulk Add Evaluation modal (pobulk)
-     */
     public function bulkPoList(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1532,7 +1429,6 @@ class SupplierEvaluationController extends Controller
             $q->where('status', 'Pending')->orWhereNull('status');
         });
 
-        // Strictly enforce office scope for end_user and non-global roles
         $this->applyOfficeScopeToPoQuery($query, $user, $isGlobalScope);
 
         if ($request->filled('end_user')) {
@@ -1545,7 +1441,6 @@ class SupplierEvaluationController extends Controller
 
         $pos = $query->orderByDesc('id')->limit(300)->get();
 
-        // Also fetch available scoped suppliers & end-user units for the modal filter dropdowns
         $scopedSupplierQuery = SupplierPurchaseOrder::where(function ($q) {
             $q->where('status', 'Pending')->orWhereNull('status');
         })->whereNotNull('supplier')->where('supplier', '!=', '');
@@ -1577,9 +1472,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Store Bulk PO Evaluations (from Bulk Add Evaluate modal)
-     */
     public function storeBulkPoEvaluations(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1645,9 +1537,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * List Requests (Update / Delete requests from End Users)
-     */
     public function listRequests(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1677,7 +1566,6 @@ class SupplierEvaluationController extends Controller
             ];
         });
 
-        // Also provide evaluations dropdown for creating a new request
         $evalDropdownQuery = SupplierEvaluation::where(function ($q) {
             $q->where('delete_status', 0)->orWhereNull('delete_status');
         });
@@ -1693,9 +1581,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Store a new Update or Delete Request (End User)
-     */
     public function storeRequest(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1706,7 +1591,7 @@ class SupplierEvaluationController extends Controller
             'reason' => 'required|string|max:1000',
         ]);
 
-        $admin = User::whereIn('role', ['super_admin', 'admin'])->first();
+        $admin = User::withAnyRole(['super_admin', 'admin'])->first();
 
         $req = SupplierRequest::create([
             'evaluation_id' => $validated['evaluation_id'],
@@ -1730,9 +1615,6 @@ class SupplierEvaluationController extends Controller
         ], 201);
     }
 
-    /**
-     * Approve a Request (Admin / PGSO)
-     */
     public function approveRequest(Request $request, int $id): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1747,7 +1629,6 @@ class SupplierEvaluationController extends Controller
         $req->status_date = now();
         $req->save();
 
-        // If request_type is delete, soft-delete the evaluation immediately as well
         if (strtolower($req->request_type) === 'delete' && $req->evaluation) {
             $req->evaluation->update(['delete_status' => 1]);
             SupplierPurchaseOrder::where('po_no', $req->evaluation->po_no)->update(['status' => 'Pending']);
@@ -1765,9 +1646,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Reject a Request (Admin / PGSO)
-     */
     public function rejectRequest(Request $request, int $id): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1794,9 +1672,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Cancel a pending Request (End User)
-     */
     public function cancelRequest(Request $request, int $id): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1813,9 +1688,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * List Authorize Personnel PDFs (supplier_pdfs)
-     */
     public function listAuthorizePdfs(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1844,26 +1716,21 @@ class SupplierEvaluationController extends Controller
         return response()->json(['data' => $pdfs]);
     }
 
-    /**
-     * Upload Authorize Personnel PDF
-     */
     public function uploadAuthorizePdf(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
 
         $request->validate([
-            'pdf_file' => 'required|file|mimes:pdf|max:15360', // Strictly max 15MB for Supplier Evaluation PDF
+            'pdf_file' => 'required|file|mimes:pdf|max:15360',
         ]);
 
         $file = $request->file('pdf_file');
 
-        // Security: Block suspicious disguised multi-extensions
         $origName = $file->getClientOriginalName();
         if (preg_match('/\.(php|phtml|phar|exe|bat|cmd|sh|vbs|js|jar|py|pl|url|lnk)\.pdf$/i', $origName)) {
             return response()->json(['message' => 'Disguised executable file naming detected for Authorization PDF.'], 422);
         }
 
-        // Security: Binary Magic Bytes verification (%PDF-)
         $handle = fopen($file->getRealPath(), 'rb');
         $header = fread($handle, 5);
         fclose($handle);
@@ -1888,9 +1755,6 @@ class SupplierEvaluationController extends Controller
         ], 201);
     }
 
-    /**
-     * Update Authorize PDF status (Approve / Reject)
-     */
     public function updateAuthorizePdfStatus(Request $request, int $id): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1920,9 +1784,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * View Authorize Personnel PDF file
-     */
     public function viewAuthorizePdfFile(Request $request, int $id): BinaryFileResponse|JsonResponse
     {
         $this->authorizeSupplierEvaluation($request);
@@ -1948,9 +1809,6 @@ class SupplierEvaluationController extends Controller
         return response()->json(['message' => 'PDF file not found on disk.'], 404);
     }
 
-    /**
-     * Comprehensive Analytics & Reports endpoint (replicates Analytics view + Summary + Semester + Monthly + Missing PDF POs)
-     */
     public function analytics(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -1988,13 +1846,12 @@ class SupplierEvaluationController extends Controller
 
         $submittedEvaluations = $query->orderByDesc('date_evaluation')->get();
 
-        // 1. Summary Report & Calculate Evaluations grouping (by Department + Supplier)
         $summaryGroups = [];
-        // 2. Semester Summary grouping (by Supplier)
+
         $semesterGroups = [];
-        // 3. Monthly evaluation counts (1..12)
+
         $monthlyCounts = array_fill(1, 12, 0);
-        // 4. Supplier average scores
+
         $supplierScoreGroups = [];
 
         foreach ($submittedEvaluations as $eval) {
@@ -2003,7 +1860,6 @@ class SupplierEvaluationController extends Controller
             $suppKey = strtoupper(trim($eval->supplier_name));
             $suppDisplay = trim($eval->supplier_name);
 
-            // Group by Dept + Supplier for Summary PDF & Calculate Modal
             $groupKey = $eval->office_id . '|' . $suppKey;
             if (!isset($summaryGroups[$groupKey])) {
                 $summaryGroups[$groupKey] = [
@@ -2035,7 +1891,6 @@ class SupplierEvaluationController extends Controller
                 }
             }
 
-            // Semester calculation (1st Sem: Jan-Jun, 2nd Sem: Jul-Dec)
             $month = $eval->date_evaluation ? (int) $eval->date_evaluation->format('n') : (int) $eval->created_at?->format('n');
             if ($month >= 1 && $month <= 12) {
                 $monthlyCounts[$month]++;
@@ -2056,7 +1911,6 @@ class SupplierEvaluationController extends Controller
             }
             $semesterGroups[$suppKey]['all_scores'][] = $score;
 
-            // Supplier Score chart
             if (!isset($supplierScoreGroups[$suppKey])) {
                 $supplierScoreGroups[$suppKey] = [
                     'supplier' => $suppDisplay,
@@ -2116,7 +1970,6 @@ class SupplierEvaluationController extends Controller
 
         usort($supplierScoresList, fn ($a, $b) => $b['average_score'] <=> $a['average_score']);
 
-        // 5. Purchase Orders Pending PDF Upload
         $missingPdfQuery = SupplierPurchaseOrder::where(function ($q) {
             $q->whereNull('pdf_po')->orWhere('pdf_po', '');
         });
@@ -2148,9 +2001,6 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    /**
-     * Paginated Supplier Activity Logs
-     */
     public function activityLogs(Request $request): JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);
@@ -2189,9 +2039,6 @@ class SupplierEvaluationController extends Controller
         return response()->json($paginated);
     }
 
-    /**
-     * Export Supplier Activity Logs as CSV
-     */
     public function exportActivityLogs(Request $request): StreamedResponse|JsonResponse
     {
         $user = $this->authorizeSupplierEvaluation($request);

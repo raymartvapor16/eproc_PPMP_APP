@@ -2,12 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Timer, AlertTriangle, LogOut, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { systemSettingService } from '../../services/api';
 
-/**
- * AfkInactivityGuard:
- * Monitors platform user activity across mouse, keyboard, touch, and scrolling events.
- * Automatically initiates session termination when a user is AFK/inactive for the configured duration
- * (Default: 15 minutes), displaying a countdown warning window prior to logout.
- */
 export const AfkInactivityGuard = ({ user = null, onLogout }) => {
     const [settings, setSettings] = useState({
         enabled: true,
@@ -20,7 +14,6 @@ export const AfkInactivityGuard = ({ user = null, onLogout }) => {
     const lastActivityRef = useRef(Date.now());
     const isLoggingOutRef = useRef(false);
 
-    // Fetch platform AFK logout settings
     const loadSettings = useCallback(async () => {
         if (!user) return;
         try {
@@ -57,14 +50,12 @@ export const AfkInactivityGuard = ({ user = null, onLogout }) => {
         return () => window.removeEventListener('afk_settings:updated', handleSettingsUpdate);
     }, [user, loadSettings]);
 
-    // Handle user interaction to reset inactivity timer
     const recordUserActivity = useCallback(() => {
-        // If warning dialog is currently active, user must explicitly click "Stay Logged In"
+
         if (isWarningOpen) return;
         lastActivityRef.current = Date.now();
     }, [isWarningOpen]);
 
-    // Attach passive event listeners to window
     useEffect(() => {
         if (!user || !settings.enabled) return;
 
@@ -85,7 +76,6 @@ export const AfkInactivityGuard = ({ user = null, onLogout }) => {
         };
     }, [user, settings.enabled, recordUserActivity]);
 
-    // Master inactivity checker running every 1 second
     useEffect(() => {
         if (!user || !settings.enabled) {
             setIsWarningOpen(false);
@@ -100,13 +90,11 @@ export const AfkInactivityGuard = ({ user = null, onLogout }) => {
             const totalTimeoutSeconds = settings.timeoutMinutes * 60;
             const remaining = totalTimeoutSeconds - elapsedSeconds;
 
-            // 1. Timeout reached -> Perform Automatic Logout
             if (remaining <= 0) {
                 isLoggingOutRef.current = true;
                 setIsWarningOpen(false);
                 clearInterval(interval);
 
-                // Notify user and execute logout
                 alert(`Security Session Timeout: You have been automatically logged out due to inactivity (${settings.timeoutMinutes} minutes AFK).`);
                 if (onLogout) {
                     onLogout();
@@ -114,7 +102,6 @@ export const AfkInactivityGuard = ({ user = null, onLogout }) => {
                 return;
             }
 
-            // 2. Warning Threshold reached -> Open Countdown Warning Modal
             if (remaining <= settings.warningSeconds) {
                 setSecondsRemaining(remaining);
                 setIsWarningOpen(true);
@@ -128,13 +115,11 @@ export const AfkInactivityGuard = ({ user = null, onLogout }) => {
         return () => clearInterval(interval);
     }, [user, settings, isWarningOpen, onLogout]);
 
-    // User chooses to stay logged in
     const handleStayLoggedIn = () => {
         lastActivityRef.current = Date.now();
         setIsWarningOpen(false);
     };
 
-    // User chooses to log out immediately
     const handleLogoutNow = () => {
         isLoggingOutRef.current = true;
         setIsWarningOpen(false);
@@ -145,7 +130,6 @@ export const AfkInactivityGuard = ({ user = null, onLogout }) => {
 
     if (!user || !isWarningOpen || !settings.enabled) return null;
 
-    // Format remaining time as MM:SS
     const minutes = Math.floor(secondsRemaining / 60);
     const seconds = secondsRemaining % 60;
     const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
@@ -153,15 +137,14 @@ export const AfkInactivityGuard = ({ user = null, onLogout }) => {
     return (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden text-center animate-in zoom-in-95 duration-150">
-                {/* Header Strip */}
+
                 <div className="p-4 bg-amber-500 text-slate-950 flex items-center justify-center gap-2 font-black uppercase text-xs tracking-wider">
                     <AlertTriangle className="w-4 h-4 text-slate-950 shrink-0" />
                     <span>Inactivity Warning &bull; Terminal AFK Detected</span>
                 </div>
 
-                {/* Body Content */}
                 <div className="p-6 space-y-5">
-                    {/* Pulsing Timer Graphic */}
+
                     <div className="relative mx-auto w-20 h-20 rounded-full bg-amber-100 flex items-center justify-center text-amber-700">
                         <Timer className="w-10 h-10 animate-pulse" />
                         <span className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-rose-600 text-white font-mono text-xs font-black flex items-center justify-center shadow-md animate-bounce">
@@ -182,7 +165,6 @@ export const AfkInactivityGuard = ({ user = null, onLogout }) => {
                         </p>
                     </div>
 
-                    {/* Countdown Display Box */}
                     <div className="p-4 rounded-xl bg-slate-900 text-white font-mono font-black text-3xl tracking-widest border border-slate-800 shadow-inner flex items-center justify-center gap-2">
                         <span className="text-amber-400">{formattedTime}</span>
                         <span className="text-xs font-sans text-slate-400 font-bold tracking-normal uppercase ml-1">
@@ -194,7 +176,6 @@ export const AfkInactivityGuard = ({ user = null, onLogout }) => {
                         Click "Stay Logged In" to extend your active session and continue working.
                     </p>
 
-                    {/* Action Buttons */}
                     <div className="pt-2 flex flex-col sm:flex-row items-center gap-2.5">
                         <button
                             type="button"
@@ -218,4 +199,3 @@ export const AfkInactivityGuard = ({ user = null, onLogout }) => {
         </div>
     );
 };
-

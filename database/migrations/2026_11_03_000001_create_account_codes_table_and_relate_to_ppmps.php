@@ -6,9 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+
     public function up(): void
     {
         Schema::create('account_codes', function (Blueprint $table) {
@@ -17,13 +15,12 @@ return new class extends Migration
             $table->string('name', 255)->index();
             $table->string('sub_code', 50)->nullable();
             $table->string('parent_name', 255)->nullable();
-            $table->string('account_class', 50)->nullable()->index(); // Assets, Liabilities, Equity, Income, Expenses
+            $table->string('account_class', 50)->nullable()->index();
             $table->text('full_description')->nullable();
             $table->boolean('is_active')->default(true)->index();
             $table->integer('display_order')->default(0);
             $table->timestamps();
 
-            // Unique constraint to prevent duplicate data
             $table->unique(['code', 'name'], 'account_codes_code_name_unique');
         });
 
@@ -36,9 +33,6 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::table('ppmps', function (Blueprint $table) {

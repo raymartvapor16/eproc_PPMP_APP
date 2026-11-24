@@ -10,10 +10,7 @@ use Illuminate\Http\Request;
 
 class OtherTermController extends Controller
 {
-    /**
-     * List other terms / green specifications.
-     * End-users receive active terms only. Admins can view all.
-     */
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -35,9 +32,6 @@ class OtherTermController extends Controller
         return response()->json($terms);
     }
 
-    /**
-     * Create a new other term / green specification (Admin only).
-     */
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -69,9 +63,6 @@ class OtherTermController extends Controller
         ], 201);
     }
 
-    /**
-     * Update an existing other term / green specification (Admin only).
-     */
     public function update(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -107,9 +98,6 @@ class OtherTermController extends Controller
         ]);
     }
 
-    /**
-     * Delete an other term / green specification (Admin only).
-     */
     public function destroy(Request $request, int $id): JsonResponse
     {
         $user = $request->user();

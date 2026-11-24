@@ -8,12 +8,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class RoleMiddleware
 {
-    /**
-     * Handle an incoming request.
-     *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
-     * @param  string  ...$roles
-     */
+
     public function handle(Request $request, Closure $next, ...$roles): Response
     {
         $user = $request->user();
@@ -26,12 +21,10 @@ class RoleMiddleware
             return response()->json(['message' => 'Account is inactive. Please contact your administrator.'], 403);
         }
 
-        // Super Admin can access everything
         if ($user->isSuperAdmin()) {
             return $next($request);
         }
 
-        // authorized_staff acts on behalf of head
         if ($user->role === 'authorized_staff' && in_array('head', $roles, true)) {
             return $next($request);
         }

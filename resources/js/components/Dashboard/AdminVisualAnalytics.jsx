@@ -33,29 +33,28 @@ import {
     CheckCircle,
 } from 'lucide-react';
 import { formatCurrency } from '../UI/StatusBadge';
+import { EndUserVisualAnalytics } from './EndUserVisualAnalytics';
 
-// Curated vibrant color palette for SVG donut charts and graphs
 const CHART_PALETTE = [
-    '#3b82f6', // blue-500
-    '#10b981', // emerald-500
-    '#8b5cf6', // purple-500
-    '#f59e0b', // amber-500
-    '#06b6d4', // cyan-500
-    '#ec4899', // pink-500
-    '#6366f1', // indigo-500
-    '#14b8a6', // teal-500
-    '#f97316', // orange-500
-    '#64748b', // slate-500
+    '#3b82f6',
+    '#10b981',
+    '#8b5cf6',
+    '#f59e0b',
+    '#06b6d4',
+    '#ec4899',
+    '#6366f1',
+    '#14b8a6',
+    '#f97316',
+    '#64748b',
 ];
 
-export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onSelectPpmp }) => {
+export const AdminVisualAnalytics = ({ analytics, endUserAnalytics = null, metrics, recentPpmps = [], onSelectPpmp }) => {
     const [selectedFiscalYear, setSelectedFiscalYear] = useState('ALL');
-    const [timelineView, setTimelineView] = useState('monthly'); // 'monthly' | 'quarterly'
+    const [timelineView, setTimelineView] = useState('monthly');
     const [officeSearch, setOfficeSearch] = useState('');
     const [hoveredMonth, setHoveredMonth] = useState(null);
     const [hoveredModality, setHoveredModality] = useState(null);
 
-    // Active dataset based on selected fiscal year
     const activeData = useMemo(() => {
         if (selectedFiscalYear !== 'ALL' && analytics?.by_fiscal_year?.[selectedFiscalYear]) {
             return analytics.by_fiscal_year[selectedFiscalYear];
@@ -63,7 +62,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
         return null;
     }, [selectedFiscalYear, analytics]);
 
-    // Active metrics dynamically responding to selected Fiscal Year
     const activeMetrics = activeData?.metrics || metrics || {};
     const totalBudget = activeMetrics?.total_budget ?? 0;
     const totalPpmps = activeMetrics?.total_ppmps ?? 0;
@@ -73,7 +71,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
     const headPending = activeMetrics?.head_pending ?? 0;
     const pendingAmendments = activeMetrics?.pending_amendments ?? 0;
 
-    // Analytics data payloads from active scope (filtered by FY if selected)
     const budgetByOffice = activeData?.budget_by_office ?? analytics?.budget_by_office ?? [];
     const procurementModes = activeData?.procurement_modes ?? analytics?.procurement_modes ?? [];
     const fundSources = activeData?.fund_sources ?? analytics?.fund_sources ?? [];
@@ -104,13 +101,11 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
         competitive_budget: 0,
     };
 
-    // Filtered calculations if fiscal year is chosen
     const activeBudget = totalBudget;
     const completionRate = totalPpmps > 0 ? Math.round((readyToPrint / totalPpmps) * 100) : 0;
     const inReviewRate = totalPpmps > 0 ? Math.round((inReview / totalPpmps) * 100) : 0;
     const averagePlanSize = totalPpmps > 0 ? totalBudget / totalPpmps : 0;
 
-    // Filter offices by search query
     const filteredOffices = useMemo(() => {
         if (!officeSearch.trim()) return budgetByOffice;
         const q = officeSearch.toLowerCase();
@@ -119,25 +114,20 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
         );
     }, [budgetByOffice, officeSearch]);
 
-    // Max office budget for scaling horizontal bars
     const maxOfficeBudget = Math.max(...budgetByOffice.map((o) => o.total_budget), 1);
-    // Max procurement mode amount for scaling
+
     const maxProcurementBudget = Math.max(...procurementModes.map((p) => p.total_amount), 1);
 
-    // Max monthly schedule amount for scaling timeline bars
     const maxMonthAmount = Math.max(...monthlySchedule.map((m) => m.amount), 1);
     const totalScheduledAmount = monthlySchedule.reduce((acc, m) => acc + m.amount, 0) || 1;
 
-    // Find peak procurement month
     const peakMonth = useMemo(() => {
         if (!monthlySchedule.length) return null;
         return [...monthlySchedule].sort((a, b) => b.amount - a.amount)[0];
     }, [monthlySchedule]);
 
-    // Total procurement modes valuation
     const totalModesValuation = procurementModes.reduce((acc, p) => acc + p.total_amount, 0) || 1;
 
-    // SVG Donut Slices for Procurement Modes
     const donutSlices = useMemo(() => {
         const radius = 38;
         const circumference = 2 * Math.PI * radius;
@@ -159,7 +149,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
         });
     }, [procurementModes, totalModesValuation]);
 
-    // Project types aggregation
     const goodsType = projectTypes.find((p) => p.project_type?.toLowerCase() === 'goods') || {
         project_type: 'Goods',
         count: 0,
@@ -179,9 +168,9 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
 
     return (
         <div className="space-y-6">
-            {/* Header / Summary banner with interactive Fiscal Year Controls */}
+
             <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white p-6 sm:p-7 rounded-2xl shadow-xl border border-slate-800">
-                {/* Background decorative glow elements */}
+
                 <div className="absolute top-0 right-0 -mr-16 -mt-16 w-80 h-80 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
                 <div className="absolute bottom-0 left-1/3 -mb-20 w-80 h-80 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -200,7 +189,7 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                     </div>
 
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-                        {/* Fiscal Year Filter Selector */}
+
                         <div className="bg-white/10 backdrop-blur-md px-3.5 py-2.5 rounded-xl border border-white/10 flex items-center gap-2">
                             <Calendar className="w-4 h-4 text-blue-300 shrink-0" />
                             <div className="text-left">
@@ -233,7 +222,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                             </div>
                         </div>
 
-                        {/* Total Approved Budget Highlight */}
                         <div className="bg-white/10 backdrop-blur-md px-5 py-3 rounded-xl border border-white/10 text-right">
                             <div className="text-[10px] font-bold text-blue-200 uppercase tracking-wider flex items-center justify-end gap-1">
                                 <DollarSign className="w-3 h-3 text-emerald-400" />
@@ -246,7 +234,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                     </div>
                 </div>
 
-                {/* Quick Metrics Bar inside Header */}
                 <div className="relative z-10 mt-6 pt-5 border-t border-white/10 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
                     <div>
                         <span className="text-slate-400 block text-[11px]">
@@ -269,9 +256,16 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                 </div>
             </div>
 
-            {/* KPI Cards Grid */}
+            {endUserAnalytics && (
+                <EndUserVisualAnalytics
+                    analytics={endUserAnalytics}
+                    isAdminView={true}
+                    onSelectPpmp={onSelectPpmp}
+                />
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Card 1: Total Registered Plans */}
+
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs hover:border-blue-400 hover:shadow-md transition group">
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
@@ -299,7 +293,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                     </div>
                 </div>
 
-                {/* Card 2: In Review Pipeline */}
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs hover:border-indigo-400 hover:shadow-md transition group">
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
@@ -327,7 +320,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                     </div>
                 </div>
 
-                {/* Card 3: Ready to Print (Approved for APP) */}
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs hover:border-emerald-400 hover:shadow-md transition group">
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
@@ -347,7 +339,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                     </div>
                 </div>
 
-                {/* Card 4: Pending Amendments */}
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs hover:border-purple-400 hover:shadow-md transition group">
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
@@ -368,7 +359,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                 </div>
             </div>
 
-            {/* ─── NEW CHART 1: MONTHLY & QUARTERLY PROCUREMENT EXPENDITURE TIMELINE ─── */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 sm:p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
                     <div>
@@ -417,9 +407,9 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
 
                 {timelineView === 'monthly' ? (
                     <div className="mt-6">
-                        {/* 12 Months Interactive Bar Graph */}
+
                         <div className="relative pt-6 pb-2">
-                            {/* Hover info badge */}
+
                             <div className="min-h-6 mb-3 text-xs flex items-center justify-between text-slate-600">
                                 {hoveredMonth ? (
                                     <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-50 border border-blue-200 text-blue-900 rounded-lg animate-fadeIn font-medium">
@@ -442,7 +432,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                                 </span>
                             </div>
 
-                            {/* Chart Bar Columns */}
                             <div className="h-56 flex items-end justify-between gap-1 sm:gap-3 px-1 border-b border-slate-200">
                                 {monthlySchedule.map((m) => {
                                     const percent = maxMonthAmount > 0 ? (m.amount / maxMonthAmount) * 100 : 0;
@@ -457,7 +446,7 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                                             onMouseEnter={() => setHoveredMonth(m)}
                                             onMouseLeave={() => setHoveredMonth(null)}
                                         >
-                                            {/* Bar container */}
+
                                             <div className="w-full flex items-end justify-center h-full pb-1">
                                                 <div
                                                     className={`w-full max-w-[42px] rounded-t-lg transition-all duration-300 relative ${
@@ -479,7 +468,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                                                 </div>
                                             </div>
 
-                                            {/* Month Label */}
                                             <div className="pt-2 text-center">
                                                 <span className={`block text-[11px] font-bold ${
                                                     isHovered ? 'text-blue-700 font-black' : isPeak ? 'text-amber-700' : 'text-slate-600'
@@ -497,7 +485,7 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                         </div>
                     </div>
                 ) : (
-                    /* Quarterly Breakdown Strip */
+
                     <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         {['Q1', 'Q2', 'Q3', 'Q4'].map((qKey) => {
                             const q = quarterlySchedule[qKey] || { label: qKey, amount: 0, count: 0 };
@@ -527,9 +515,8 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                 )}
             </div>
 
-            {/* ─── NEW CHART 2: MODALITIES DONUT + PROJECT CATEGORY SPLIT ─── */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {/* Modality SVG Donut Chart (7 cols) */}
+
                 <div className="lg:col-span-7 bg-white rounded-xl border border-slate-200 shadow-xs p-5 sm:p-6 flex flex-col justify-between">
                     <div>
                         <div className="flex items-center justify-between pb-4 border-b border-slate-100">
@@ -553,11 +540,11 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                             </div>
                         ) : (
                             <div className="mt-6 grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
-                                {/* SVG Ring Donut */}
+
                                 <div className="md:col-span-5 flex flex-col items-center justify-center relative">
                                     <div className="w-44 h-44 relative">
                                         <svg viewBox="0 0 100 100" className="w-full h-full transform -rotate-90">
-                                            {/* Background circle track */}
+
                                             <circle
                                                 cx="50"
                                                 cy="50"
@@ -566,7 +553,7 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                                                 stroke="#f1f5f9"
                                                 strokeWidth="12"
                                             />
-                                            {/* Dynamic Colored Slices */}
+
                                             {donutSlices.map((slice, idx) => (
                                                 <circle
                                                     key={idx}
@@ -584,7 +571,7 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                                                 />
                                             ))}
                                         </svg>
-                                        {/* Center Information */}
+
                                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-2">
                                             <span className="text-[10px] uppercase font-bold text-slate-400">
                                                 Modalities
@@ -602,7 +589,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                                     </span>
                                 </div>
 
-                                {/* Legend & List */}
                                 <div className="md:col-span-7 space-y-2.5 max-h-64 overflow-y-auto pr-1">
                                     {donutSlices.map((slice, idx) => {
                                         const isHovered = hoveredModality?.mode === slice.mode;
@@ -655,7 +641,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                     </div>
                 </div>
 
-                {/* Project Category Allocation Split (Goods / Infra / Consulting) (5 cols) */}
                 <div className="lg:col-span-5 bg-white rounded-xl border border-slate-200 shadow-xs p-5 sm:p-6 flex flex-col justify-between">
                     <div>
                         <div className="flex items-center justify-between pb-4 border-b border-slate-100">
@@ -670,9 +655,8 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                             </div>
                         </div>
 
-                        {/* 3 Categories Cards */}
                         <div className="mt-5 space-y-3.5">
-                            {/* Goods */}
+
                             {(() => {
                                 const goodsPercent = Math.round((goodsType.total_amount / totalProjectTypeAmount) * 100) || 0;
                                 return (
@@ -702,7 +686,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                                 );
                             })()}
 
-                            {/* Infrastructure */}
                             {(() => {
                                 const infraPercent = Math.round((infraType.total_amount / totalProjectTypeAmount) * 100) || 0;
                                 return (
@@ -732,7 +715,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                                 );
                             })()}
 
-                            {/* Consulting Services */}
                             {(() => {
                                 const consultPercent = Math.round((consultType.total_amount / totalProjectTypeAmount) * 100) || 0;
                                 return (
@@ -770,7 +752,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                 </div>
             </div>
 
-            {/* ─── NEW CHART 3: SOURCES OF FUND DISTRIBUTION ─── */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 sm:p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
                     <div>
@@ -787,7 +768,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                     </span>
                 </div>
 
-                {/* Fund Source Stacked Visual Progress Bar */}
                 {fundSources.length > 0 && (
                     <div className="mt-4">
                         <div className="w-full h-4 bg-slate-100 rounded-full overflow-hidden flex shadow-inner">
@@ -807,7 +787,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                     </div>
                 )}
 
-                {/* Fund Source Individual Cards Grid */}
                 <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     {fundSources.map((f, idx) => {
                         const percent = totalBudget > 0 ? ((f.total_amount / totalBudget) * 100).toFixed(1) : '0.0';
@@ -833,7 +812,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                 </div>
             </div>
 
-            {/* ─── NEW CHART 4: WORKFLOW PIPELINE VELOCITY & BOTTLENECK FUNNEL ─── */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 sm:p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
                     <div>
@@ -852,7 +830,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                     </div>
                 </div>
 
-                {/* Workflow Horizontal Funnel Steps */}
                 <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
                     {workflowStages.map((stage, idx) => {
                         const isCleared = stage.stage === 'READY_TO_PRINT';
@@ -899,7 +876,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                 </div>
             </div>
 
-            {/* ─── NEW CHART 5: TOP HIGH-VALUE PROCUREMENT PROJECTS LEADERBOARD ─── */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 sm:p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
                     <div>
@@ -945,7 +921,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                                             ? 'bg-orange-100 text-orange-800 border-orange-300'
                                             : 'bg-blue-50 text-blue-800 border-blue-200';
 
-                                    // Find matching PPMP if available
                                     const matchedPpmp = recentPpmps.find((p) => p.id === proj.ppmp_id);
 
                                     return (
@@ -1008,9 +983,8 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                 </div>
             </div>
 
-            {/* ─── EXISTING SECTION: OFFICE BUDGET BREAKDOWN & STATUS PROGRESSION ─── */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Office Budget Ranking with Search Filter */}
+
                 <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 sm:p-6">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
                         <div>
@@ -1027,7 +1001,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                         </span>
                     </div>
 
-                    {/* Search box for offices */}
                     {budgetByOffice.length > 5 && (
                         <div className="mt-3 relative">
                             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1076,7 +1049,7 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                                                 </span>
                                             </div>
                                         </div>
-                                        {/* Visual Progress Bar */}
+
                                         <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
                                             <div
                                                 className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-500 group-hover:from-blue-600 group-hover:to-indigo-700"
@@ -1090,7 +1063,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                     </div>
                 </div>
 
-                {/* Status Progression Distribution */}
                 <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 sm:p-6">
                     <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                         <div>
@@ -1140,7 +1112,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                             );
                         })}
 
-                        {/* Summary Box */}
                         <div className="mt-6 p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
                             <div className="text-xs text-slate-600">
                                 <span className="font-bold text-slate-800">Overall Clearance Rate: </span>
@@ -1154,7 +1125,6 @@ export const AdminVisualAnalytics = ({ analytics, metrics, recentPpmps = [], onS
                 </div>
             </div>
 
-            {/* ─── BOTTOM SECTION: MODALITIES BREAKDOWN FULL TABLE ─── */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 sm:p-6">
                 <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                     <div>

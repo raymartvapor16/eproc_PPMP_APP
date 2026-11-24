@@ -1,16 +1,6 @@
-/**
- * Custom Modal Alert & Confirm Dispatcher & Global Interceptor
- * 
- * Intercepts standard window.alert calls and emits events to display a modern,
- * accessible, and styled modal popup matching the provincial portal UI theme.
- * Also provides showConfirm for modern asynchronous confirmation dialogs.
- */
 
 const ALERT_EVENT_NAME = 'app:show_modal_alert';
 
-/**
- * Intelligent parser to parse raw alert strings into structured modal content
- */
 export function parseAlertMessage(raw) {
     if (!raw && raw !== 0) {
         return {
@@ -39,7 +29,6 @@ export function parseAlertMessage(raw) {
     const str = String(raw).trim();
     const lower = str.toLowerCase();
 
-    // Determine type based on content keywords
     let type = 'info';
     if (
         lower.includes('failed') ||
@@ -71,12 +60,10 @@ export function parseAlertMessage(raw) {
         type = 'success';
     }
 
-    // Split paragraphs
     const lines = str.split(/\r?\n/);
     let title = '';
     let startIdx = 0;
 
-    // Check if first line looks like a title (e.g. "Submission Incomplete:", "Cannot submit for review:")
     if (lines.length > 0) {
         const firstLine = lines[0].trim();
         if (
@@ -85,7 +72,7 @@ export function parseAlertMessage(raw) {
         ) {
             title = firstLine.replace(/:\s*$/, '').trim();
             startIdx = 1;
-            // Skip subsequent blank lines
+
             while (startIdx < lines.length && lines[startIdx].trim() === '') {
                 startIdx++;
             }
@@ -103,7 +90,7 @@ export function parseAlertMessage(raw) {
     const bulletItems = [];
     const introParagraphs = [];
     const outroParagraphs = [];
-    let state = 'intro'; // 'intro' -> 'bullets' -> 'outro'
+    let state = 'intro';
 
     for (let i = 0; i < remainingLines.length; i++) {
         const line = remainingLines[i].trim();
@@ -139,14 +126,10 @@ export function parseAlertMessage(raw) {
     };
 }
 
-/**
- * Trigger the custom modal alert programmatically
- * Returns a Promise that resolves when the alert is dismissed.
- */
 export function showAlert(optionsOrMessage) {
     return new Promise((resolve) => {
         const parsed = parseAlertMessage(optionsOrMessage);
-        
+
         const payload = {
             ...parsed,
             isConfirm: false,
@@ -174,10 +157,6 @@ export function showAlert(optionsOrMessage) {
     });
 }
 
-/**
- * Trigger a modern confirmation modal dialog
- * Returns a Promise that resolves to true (Confirmed) or false (Cancelled).
- */
 export function showConfirm(optionsOrMessage) {
     return new Promise((resolve) => {
         let options = {};
@@ -253,9 +232,6 @@ export function showConfirm(optionsOrMessage) {
     });
 }
 
-/**
- * Initialize global override of window.alert and expose showConfirm globally
- */
 export function initGlobalAlertModal() {
     if (typeof window === 'undefined') return;
 
@@ -267,7 +243,6 @@ export function initGlobalAlertModal() {
         showAlert(message);
     };
 
-    // Expose helpers on window
     window.showModalAlert = showAlert;
     window.showConfirm = showConfirm;
     window.appConfirm = showConfirm;

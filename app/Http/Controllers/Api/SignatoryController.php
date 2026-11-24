@@ -10,18 +10,13 @@ use Illuminate\Http\Request;
 
 class SignatoryController extends Controller
 {
-    /**
-     * Get all active signatories (public for authenticated users)
-     */
+
     public function index(): JsonResponse
     {
         $signatories = PpmpSignatory::orderBy('signatory_type')->latest('id')->get();
         return response()->json($signatories);
     }
 
-    /**
-     * Store new signatory (Admin only)
-     */
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -38,7 +33,6 @@ class SignatoryController extends Controller
 
         $isActive = $request->boolean('is_active', true);
 
-        // If this new one is active, deactivate others of the exact same type
         if ($isActive) {
             PpmpSignatory::where('signatory_type', $validated['signatory_type'])->update(['is_active' => false]);
         }
@@ -58,9 +52,6 @@ class SignatoryController extends Controller
         ], 201);
     }
 
-    /**
-     * Update signatory (Admin only)
-     */
     public function update(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -96,9 +87,6 @@ class SignatoryController extends Controller
         ]);
     }
 
-    /**
-     * Delete signatory (Admin only)
-     */
     public function destroy(Request $request, int $id): JsonResponse
     {
         $user = $request->user();

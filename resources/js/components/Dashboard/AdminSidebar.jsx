@@ -20,6 +20,8 @@ import {
     Tags,
     Database,
     Timer,
+    ShieldAlert,
+    Eye,
 } from 'lucide-react';
 
 export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingUsersCount }) => {
@@ -60,8 +62,9 @@ export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingU
             id: 'reports',
             label: 'Reports & Exports',
             icon: FileSpreadsheet,
-            badge: null,
-            description: 'Consolidated Sheets & Excel',
+            badge: metrics?.ready_to_print ? `${metrics.ready_to_print * 2} docs` : null,
+            badgeColor: 'bg-emerald-100 text-emerald-800',
+            description: 'Excel & Bulk PPMP/APP PDF',
         },
         {
             id: 'offices',
@@ -115,6 +118,13 @@ export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingU
             description: 'Roles & Passwords',
         },
         {
+            id: 'monitoring_viewers',
+            label: 'Authorize Viewer (Monitoring)',
+            icon: Eye,
+            badge: null,
+            description: 'View All Published PPMPs',
+        },
+        {
             id: 'signatories',
             label: 'Official Signatories',
             icon: Shield,
@@ -146,6 +156,14 @@ export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingU
             description: 'Manual Dump & Backup Key',
         },
         {
+            id: 'security_threats',
+            label: 'Threat & Intrusion Logs',
+            icon: ShieldAlert,
+            badge: 'IDS / Auto',
+            badgeColor: 'bg-rose-100 text-rose-800 font-bold',
+            description: 'IP, Hijack, CLI & 15-Day Backup',
+        },
+        {
             id: 'logs',
             label: 'Activity Logs',
             icon: Activity,
@@ -158,7 +176,7 @@ export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingU
     return (
         <aside className="w-full lg:w-64 shrink-0">
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden sticky top-20">
-                {/* Admin Header Tile */}
+
                 <div className="p-4 bg-gradient-to-br from-slate-900 via-slate-800 to-blue-950 text-white border-b border-slate-700">
                     <div className="flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-xl bg-blue-600/90 flex items-center justify-center font-bold text-white shadow-xs border border-blue-400/30">
@@ -175,11 +193,10 @@ export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingU
                     </div>
                 </div>
 
-                {/* Navigation Menu Links */}
                 <div className="p-2 space-y-1">
                     {navItems.map((item) => {
                         const Icon = item.icon;
-                        const isActive = activeSection === item.id || 
+                        const isActive = activeSection === item.id ||
                             (item.id === 'security' && activeSection === 'settings') ||
                             (item.id === 'afk_management' && activeSection === 'afk');
                         return (
@@ -237,7 +254,6 @@ export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingU
                     })}
                 </div>
 
-                {/* System Status Footnote */}
                 <div className="p-3 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-500 space-y-1">
                     <div className="flex items-center justify-between">
                         <span className="font-semibold text-slate-600">Province of Davao del Sur</span>

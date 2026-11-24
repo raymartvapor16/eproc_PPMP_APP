@@ -1,42 +1,43 @@
 import React from 'react';
 import { formatCurrency, formatDate } from '../UI/StatusBadge';
 import { CheckCircle, ShieldCheck, PenTool } from 'lucide-react';
-import { useSignatureSettings } from '../../utils/signatureController';
+import { useSignatureSettings, isSignatoryPnpkiActive, resolveSubmittedBySignatory } from '../../utils/signatureController';
 
 export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
-    const { isEnabled } = useSignatureSettings();
+    const { isEnabled, isPnpkiEnabled: isGlobalPnpkiEnabled } = useSignatureSettings();
     const isSignatureEnabled = ppmp?.signature_settings?.ppmp !== undefined
         ? Boolean(ppmp.signature_settings.ppmp)
         : isEnabled('ppmp');
+    const isPnpkiSystemEnabled = ppmp?.signature_settings?.pnpki_enabled !== undefined
+        ? Boolean(ppmp.signature_settings.pnpki_enabled)
+        : isGlobalPnpkiEnabled;
 
     const signatures = ppmp?.signatures || [];
 
     const isScopeAttachmentOnly = ppmp?.amendment_scope === 'ATTACHMENT_LIST';
 
-    // Reviewer signatures require review approval before their initial/signature is valid
-    // New routing order: TWG -> (Budget Officer or PACCO) -> OPPMO -> Ready to Print
     const hasTwgApproved = Boolean(
         ppmp?.twg_approved_at ||
-        ['BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+        ['BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'BUDGET_HEAD_REVIEW', 'BUDGET_HEAD_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'PACCO_HEAD_REVIEW', 'PACCO_HEAD_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED', 'OPPMO_HEAD_REVIEW', 'OPPMO_HEAD_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
     );
     const hasBudgetApproved = Boolean(
         ppmp?.budget_approved_at ||
-        ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+        ['BUDGET_HEAD_REVIEW', 'BUDGET_HEAD_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED', 'OPPMO_HEAD_REVIEW', 'OPPMO_HEAD_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
     );
     const hasPaccoApproved = Boolean(
         ppmp?.pacco_approved_at ||
-        ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+        ['PACCO_HEAD_REVIEW', 'PACCO_HEAD_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED', 'OPPMO_HEAD_REVIEW', 'OPPMO_HEAD_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
     );
     const hasOppmoApproved = Boolean(
         ppmp?.oppmo_approved_at ||
-        ['HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
+        ['OPPMO_HEAD_REVIEW', 'OPPMO_HEAD_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(ppmp?.status)
     );
     const hasHeadApproved = Boolean(
+        isScopeAttachmentOnly ||
         ppmp?.head_approved_at ||
         ppmp?.status === 'READY_TO_PRINT'
     );
 
-    // Signatures mapping
     const preparedSig = signatures.find(s => s.role === 'end_user')
         || (ppmp?.parent?.signatures?.find(s => s.role === 'end_user'))
         || null;
@@ -63,7 +64,30 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
         ? (signatures.find(s => s.role === 'oppmo') || ppmp?.parent?.signatures?.find(s => s.role === 'oppmo') || null)
         : (hasOppmoApproved ? signatures.find(s => s.role === 'oppmo') : null);
 
+    const paccoHeadSig = isTrustFund
+        ? (signatures.find(s => s.role === 'pacco_head') || (isScopeAttachmentOnly ? ppmp?.parent?.signatures?.find(s => s.role === 'pacco_head') : null))
+        : null;
+    const budgetHeadSig = signatures.find(s => s.role === 'budget_head')
+        || (isScopeAttachmentOnly ? ppmp?.parent?.signatures?.find(s => s.role === 'budget_head') : null)
+        || null;
+    const oppmoHeadSig = signatures.find(s => s.role === 'oppmo_head')
+        || (isScopeAttachmentOnly ? ppmp?.parent?.signatures?.find(s => s.role === 'oppmo_head') : null)
+        || null;
+
     const twgSig = hasTwgApproved ? signatures.find(s => s.role === 'twg') : null;
+
+    const isPreparedPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(preparedSig, ppmp?.creator);
+    const submittedByResolved = resolveSubmittedBySignatory(ppmp, headSig, [oppmoHeadSig, budgetHeadSig, paccoHeadSig], hasHeadApproved);
+    const submittedByUser = submittedByResolved.user;
+    const submittedBySignedAt = submittedByResolved.signedAt;
+    const isHeadPnpki = isPnpkiSystemEnabled && submittedByResolved.isPnpkiActive;
+    const isPaccoPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(paccoSig, ppmp?.budget_reviewer || ppmp?.budgetReviewer);
+    const isPaccoHeadPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(paccoHeadSig);
+    const isBudgetPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(budgetSig, ppmp?.budget_reviewer || ppmp?.budgetReviewer);
+    const isBudgetHeadPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(budgetHeadSig);
+    const isOppmoPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(oppmoSig, ppmp?.oppmo_reviewer || ppmp?.oppmoReviewer);
+    const isOppmoHeadPnpki = isPnpkiSystemEnabled && isSignatoryPnpkiActive(oppmoHeadSig);
+    const hasAnyPnpkiSig = isPreparedPnpki || isHeadPnpki || isPaccoPnpki || isPaccoHeadPnpki || isBudgetPnpki || isBudgetHeadPnpki || isOppmoPnpki || isOppmoHeadPnpki;
 
     const resolvedHeadName =
         headSig?.signer_name ||
@@ -89,9 +113,9 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
 
     return (
         <div className={`mt-6 border border-slate-900 bg-white ${isPrintMode ? 'print-signature-box' : 'shadow-sm rounded-lg overflow-hidden'}`}>
-            {/* Top row: Prepared By & Submitted By */}
+
             <div className="grid grid-cols-2 divide-x divide-slate-900 border-b border-slate-900">
-                {/* Prepared By (End User) */}
+
                 <div className="p-4 flex flex-col justify-between min-h-[140px]">
                     <div className="text-xs font-bold uppercase tracking-wider text-slate-700">
                         Prepared By:
@@ -101,19 +125,27 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
                         {preparedSig ? (
                             <div className="inline-flex flex-col items-center">
                                 {isSignatureEnabled && preparedSig?.user?.signature_path ? (
-                                    <div className="h-10 flex items-center justify-center mb-1">
-                                        <img
-                                            src={`/api/users/${preparedSig.user.id}/signature`}
-                                            alt="Signature"
-                                            className="max-h-10 max-w-[130px] object-contain"
-                                        />
-                                    </div>
+                                    <>
+                                        <div className={`h-10 flex items-center justify-center mb-1 ${!isPreparedPnpki ? 'no-print print:hidden' : ''}`}>
+                                            <img
+                                                src={`/api/users/${preparedSig.user.id}/signature`}
+                                                alt="Signature"
+                                                className="max-h-10 max-w-[130px] object-contain"
+                                            />
+                                        </div>
+                                        {!isPreparedPnpki && <div className="hidden print:block pdf-export-spacer h-6" />}
+                                    </>
                                 ) : (!isPrintMode && isSignatureEnabled) ? (
-                                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-300 rounded text-emerald-800 text-[11px] font-mono mb-1">
-                                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                                        <span>{preparedSig.signature_indicator}</span>
-                                    </div>
-                                ) : null}
+                                    <>
+                                        <div className={`flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-300 rounded text-emerald-800 text-[11px] font-mono mb-1 ${!isPreparedPnpki ? 'no-print print:hidden' : ''}`}>
+                                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                            <span>{preparedSig.signature_indicator}</span>
+                                        </div>
+                                        {!isPreparedPnpki && <div className="hidden print:block pdf-export-spacer h-6" />}
+                                    </>
+                                ) : (
+                                    <div className="h-6" />
+                                )}
                                 <div className="font-bold text-sm uppercase text-slate-900 underline decoration-slate-400 underline-offset-4">
                                     {preparedSig.signer_name}
                                 </div>
@@ -121,7 +153,7 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
                                     {preparedSig.signer_designation || 'Project End-User / In-Charge'}
                                 </div>
                                 {isSignatureEnabled && (
-                                    <div className="text-[10px] text-slate-500 mt-0.5">
+                                    <div className={`text-[10px] text-slate-500 mt-0.5 ${!isPreparedPnpki ? 'no-print print:hidden' : ''}`}>
                                         Date/Time: {formatDate(preparedSig.signed_at)}
                                     </div>
                                 )}
@@ -134,61 +166,27 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
                     </div>
                 </div>
 
-                {/* Submitted By (Head of Office) */}
                 <div className="p-4 flex flex-col justify-between min-h-[140px]">
                     <div className="text-xs font-bold uppercase tracking-wider text-slate-700">
                         Submitted By:
                     </div>
 
                     <div className="text-center my-2">
-                        {headSig ? (
-                            <div className="inline-flex flex-col items-center">
-                                {isSignatureEnabled && headSig?.user?.signature_path ? (
-                                    <div className="h-10 flex items-center justify-center mb-1">
-                                        <img
-                                            src={`/api/users/${headSig.user.id}/signature`}
-                                            alt="Signature"
-                                            className="max-h-10 max-w-[130px] object-contain"
-                                        />
-                                    </div>
-                                ) : (!isPrintMode && isSignatureEnabled) ? (
-                                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 border border-blue-300 rounded text-blue-800 text-[11px] font-mono mb-1">
-                                        <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                                        <span>{headSig.signature_indicator}</span>
-                                    </div>
-                                ) : null}
-                                <div className="font-bold text-sm uppercase text-slate-900 underline decoration-slate-400 underline-offset-4">
-                                    {headSig.signer_name || resolvedHeadName}
-                                </div>
-                                <div className="text-xs text-slate-600 font-bold uppercase">
-                                    {headSig.signer_designation || resolvedHeadDesignation}
-                                </div>
-                                {isSignatureEnabled && (
-                                    <div className="text-[10px] text-slate-500 mt-0.5">
-                                        Date/Time: {formatDate(headSig.signed_at)}
-                                    </div>
-                                )}
+                        <div className="inline-flex flex-col items-center">
+                            <div className="h-10" />
+                            <div className="font-bold text-sm uppercase text-slate-900 underline decoration-slate-400 underline-offset-4">
+                                {headSig?.signer_name || resolvedHeadName || 'HEAD OF OFFICE'}
                             </div>
-                        ) : (
-                            <div className="text-center py-1">
-                                <div className="font-bold text-sm uppercase text-slate-700 underline decoration-slate-400 underline-offset-4">
-                                    {resolvedHeadName || 'HEAD OF OFFICE'}
-                                </div>
-                                <div className="text-xs text-slate-600 font-bold uppercase mt-0.5">
-                                    {resolvedHeadDesignation || 'HEAD OF OFFICE'}
-                                </div>
-                                <div className="text-[11px] text-amber-600 font-medium mt-1">
-                                    {ppmp?.status === 'HEAD_PENDING' ? 'Awaiting Head Endorsement & E-Signature' : 'Pending Submission'}
-                                </div>
+                            <div className="text-xs text-slate-600 font-bold uppercase mt-0.5">
+                                {headSig?.signer_designation || resolvedHeadDesignation || 'HEAD OF OFFICE'}
                             </div>
-                        )}
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Bottom row: Reviewed as to Budgetary Requirement (or Trust Fund by PACCO) & Reviewed by BAC-Secretariat */}
             <div className="grid grid-cols-2 divide-x divide-slate-900">
-                {/* Reviewed as to Budgetary Requirement (General Fund) OR Trust Fund (PACCO) */}
+
                 <div className="p-4 flex flex-col justify-between min-h-[140px]">
                     <div className="text-xs font-bold uppercase tracking-wider text-slate-700">
                         Reviewed as to Budgetary Requirement:
@@ -198,6 +196,20 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
                         {isTrustFund ? (
                             paccoSig ? (
                                 <div className="inline-flex flex-col items-center">
+                                    {isSignatureEnabled && paccoHeadSig?.user?.signature_path ? (
+                                        <>
+                                            <div className={`h-10 flex items-center justify-center mb-1 ${!isPaccoHeadPnpki ? 'no-print print:hidden' : ''}`}>
+                                                <img
+                                                    src={`/api/users/${paccoHeadSig.user.id}/signature`}
+                                                    alt="PACCO Head Signature"
+                                                    className="max-h-10 max-w-[140px] object-contain"
+                                                />
+                                            </div>
+                                            {!isPaccoHeadPnpki && <div className="hidden print:block pdf-export-spacer h-6" />}
+                                        </>
+                                    ) : (
+                                        <div className="h-6" />
+                                    )}
                                     <div className="flex items-center justify-center gap-2">
                                         <span className="font-bold text-sm uppercase text-slate-900 underline decoration-slate-400 underline-offset-4">
                                             {ppmp?.default_signatories?.pacco_requirement?.name || (paccoSig.signer_name && paccoSig.signer_name !== 'PACCO Reviewer' ? paccoSig.signer_name : 'MAY FERNANDO-UY, CPA')}
@@ -206,7 +218,7 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
                                             <img
                                                 src={`/api/users/${paccoSig.user.id}/signature`}
                                                 alt="Initial Signature"
-                                                className="h-8 max-w-[70px] object-contain"
+                                                className={`h-8 max-w-[70px] object-contain ${!isPaccoPnpki ? 'no-print print:hidden' : ''}`}
                                             />
                                         )}
                                     </div>
@@ -214,25 +226,26 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
                                         {ppmp?.default_signatories?.pacco_requirement?.position || (paccoSig.signer_designation && paccoSig.signer_designation !== 'Provincial Accounting Reviewer' ? paccoSig.signer_designation : 'Provincial Accountant')}
                                     </div>
                                     {isSignatureEnabled && (
-                                        <div className="flex items-center justify-center gap-1.5 mt-1">
+                                        <div className={`flex items-center justify-center gap-1.5 mt-1 ${!(isPaccoHeadPnpki || isPaccoPnpki) ? 'no-print print:hidden' : ''}`}>
                                             <span className="px-2 py-0.5 bg-teal-100 border border-teal-400 text-teal-900 font-mono font-bold text-[10px] rounded">
-                                                [{paccoSig.signature_indicator}]
+                                                [{(paccoHeadSig || paccoSig).signature_indicator}]
                                             </span>
                                             <span className="text-[10px] text-slate-500">
-                                                • {formatDate(paccoSig.signed_at)}
+                                                • {formatDate((paccoHeadSig || paccoSig).signed_at)}
                                             </span>
                                         </div>
                                     )}
                                 </div>
                             ) : (
                                 <div className="text-center py-1">
+                                    <div className="h-6" />
                                     <div className="font-bold text-sm uppercase text-slate-700">
                                         {ppmp?.default_signatories?.pacco_requirement?.name || 'MAY FERNANDO-UY, CPA'}
                                     </div>
                                     <div className="text-xs text-slate-500 font-medium">
                                         {ppmp?.default_signatories?.pacco_requirement?.position || 'Provincial Accountant'}
                                     </div>
-                                    <div className="text-[11px] text-amber-600 font-medium mt-1">
+                                    <div className="text-[11px] text-amber-600 font-medium mt-1 no-print print:hidden">
                                         Pending Certification (Trust Fund)
                                     </div>
                                 </div>
@@ -240,6 +253,20 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
                         ) : (
                             budgetSig ? (
                                 <div className="inline-flex flex-col items-center">
+                                    {isSignatureEnabled && budgetHeadSig?.user?.signature_path ? (
+                                        <>
+                                            <div className={`h-10 flex items-center justify-center mb-1 ${!isBudgetHeadPnpki ? 'no-print print:hidden' : ''}`}>
+                                                <img
+                                                    src={`/api/users/${budgetHeadSig.user.id}/signature`}
+                                                    alt="Budget Head Signature"
+                                                    className="max-h-10 max-w-[140px] object-contain"
+                                                />
+                                            </div>
+                                            {!isBudgetHeadPnpki && <div className="hidden print:block pdf-export-spacer h-6" />}
+                                        </>
+                                    ) : (
+                                        <div className="h-6" />
+                                    )}
                                     <div className="flex items-center justify-center gap-2">
                                         <span className="font-bold text-sm uppercase text-slate-900 underline decoration-slate-400 underline-offset-4">
                                             {ppmp?.default_signatories?.budget_requirement?.name || 'DESSAMIE BUAT-SANCHEZ, CPA, JD'}
@@ -248,7 +275,7 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
                                             <img
                                                 src={`/api/users/${budgetSig.user.id}/signature`}
                                                 alt="Initial Signature"
-                                                className="h-8 max-w-[70px] object-contain"
+                                                className={`h-8 max-w-[70px] object-contain ${!isBudgetPnpki ? 'no-print print:hidden' : ''}`}
                                             />
                                         )}
                                     </div>
@@ -256,25 +283,26 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
                                         {ppmp?.default_signatories?.budget_requirement?.position || 'PGDH - PBO / BAC - Chairman'}
                                     </div>
                                     {isSignatureEnabled && (
-                                        <div className="flex items-center justify-center gap-1.5 mt-1">
+                                        <div className={`flex items-center justify-center gap-1.5 mt-1 ${!(isBudgetHeadPnpki || isBudgetPnpki) ? 'no-print print:hidden' : ''}`}>
                                             <span className="px-2 py-0.5 bg-indigo-100 border border-indigo-400 text-indigo-900 font-mono font-bold text-[10px] rounded">
-                                                [{budgetSig.signature_indicator}]
+                                                [{(budgetHeadSig || budgetSig).signature_indicator}]
                                             </span>
                                             <span className="text-[10px] text-slate-500">
-                                                • {formatDate(budgetSig.signed_at)}
+                                                • {formatDate((budgetHeadSig || budgetSig).signed_at)}
                                             </span>
                                         </div>
                                     )}
                                 </div>
                             ) : (
                                 <div className="text-center py-1">
+                                    <div className="h-6" />
                                     <div className="font-bold text-sm uppercase text-slate-700">
                                         {ppmp?.default_signatories?.budget_requirement?.name || 'DESSAMIE BUAT-SANCHEZ, CPA, JD'}
                                     </div>
                                     <div className="text-xs text-slate-500 font-medium">
                                         {ppmp?.default_signatories?.budget_requirement?.position || 'PGDH - PBO / BAC - Chairman'}
                                     </div>
-                                    <div className="text-[11px] text-amber-600 font-medium mt-1">
+                                    <div className="text-[11px] text-amber-600 font-medium mt-1 no-print print:hidden">
                                         Pending Budget Officer Review
                                     </div>
                                 </div>
@@ -283,16 +311,29 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
                     </div>
                 </div>
 
-                {/* Reviewed by BAC-Secretariat (OPPMO Initial) */}
                 <div className="p-4 flex flex-col justify-between min-h-[140px]">
                     <div className="text-xs font-bold uppercase tracking-wider text-slate-700">
                         Reviewed by OPPMO - BAC Secretariat:
                     </div>
 
                     <div className="space-y-3 my-1">
-                        {/* OPPMO Initial Section */}
+
                         {oppmoSig ? (
                             <div className="text-center">
+                                {isSignatureEnabled && oppmoHeadSig?.user?.signature_path ? (
+                                    <>
+                                        <div className={`h-10 flex items-center justify-center mb-1 ${!isOppmoHeadPnpki ? 'no-print print:hidden' : ''}`}>
+                                            <img
+                                                src={`/api/users/${oppmoHeadSig.user.id}/signature`}
+                                                alt="OPPMO Head Signature"
+                                                className="max-h-10 max-w-[140px] object-contain"
+                                            />
+                                        </div>
+                                        {!isOppmoHeadPnpki && <div className="hidden print:block pdf-export-spacer h-6" />}
+                                    </>
+                                ) : (
+                                    <div className="h-6" />
+                                )}
                                 <div className="flex items-center justify-center gap-2">
                                     <span className="font-bold text-sm uppercase text-slate-900 underline decoration-slate-400 underline-offset-4">
                                         {ppmp?.default_signatories?.bac_secretariat?.name || 'NORJANNA M. CAMAGUIN, MPA'}
@@ -301,7 +342,7 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
                                         <img
                                             src={`/api/users/${oppmoSig.user.id}/signature`}
                                             alt="Initial Signature"
-                                            className="h-8 max-w-[70px] object-contain"
+                                            className={`h-8 max-w-[70px] object-contain ${!isOppmoPnpki ? 'no-print print:hidden' : ''}`}
                                         />
                                     )}
                                 </div>
@@ -309,25 +350,26 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
                                     {ppmp?.default_signatories?.bac_secretariat?.position || 'PGDH - OPPMO'}
                                 </div>
                                 {isSignatureEnabled && (
-                                    <div className="flex items-center justify-center gap-1.5 mt-1">
+                                    <div className={`flex items-center justify-center gap-1.5 mt-1 ${!(isOppmoHeadPnpki || isOppmoPnpki) ? 'no-print print:hidden' : ''}`}>
                                         <span className="px-2 py-0.5 bg-purple-100 border border-purple-400 text-purple-900 font-mono font-bold text-[10px] rounded">
-                                            [{oppmoSig.signature_indicator}]
+                                            [{(oppmoHeadSig || oppmoSig).signature_indicator}]
                                         </span>
                                         <span className="text-[10px] text-slate-500">
-                                            • {formatDate(oppmoSig.signed_at)}
+                                            • {formatDate((oppmoHeadSig || oppmoSig).signed_at)}
                                         </span>
                                     </div>
                                 )}
                             </div>
                         ) : (
                             <div className="text-center py-1">
+                                <div className="h-6" />
                                 <div className="font-bold text-sm uppercase text-slate-700">
                                     {ppmp?.default_signatories?.bac_secretariat?.name || 'NORJANNA M. CAMAGUIN, MPA'}
                                 </div>
                                 <div className="text-[11px] text-slate-500 font-medium">
                                     {ppmp?.default_signatories?.bac_secretariat?.position || 'PGDH - OPPMO'}
                                 </div>
-                                <div className="text-[11px] text-amber-600 font-medium mt-0.5">
+                                <div className="text-[11px] text-amber-600 font-medium mt-0.5 no-print print:hidden">
                                     Pending BAC Secretariat Review
                                 </div>
                             </div>
@@ -336,11 +378,10 @@ export const SignatureSection = ({ ppmp, isPrintMode = false }) => {
                 </div>
             </div>
 
-            {/* Electronic certification statement */}
             {isSignatureEnabled && (
-                <div className="border-t border-slate-200 bg-slate-50/50 py-1.5 px-3 text-center">
+                <div className={`border-t border-slate-200 bg-slate-50/50 py-1.5 px-3 text-center ${!hasAnyPnpkiSig ? 'no-print print:hidden' : ''}`}>
                     <p className="text-[9px] italic text-slate-500">
-                        * This is an electronically generated and certified document under the Electronic Procurement Management System. Valid even without a physical or handwritten signature.
+                        * This is an electronically generated document under the Electronic Procurement Management System. Signatures affixed with a valid PNPKI Digital E-Signature are electronically certified; others require a physical/handwritten signature.
                     </p>
                 </div>
             )}

@@ -1,14 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ShieldCheck, Check, RotateCcw } from 'lucide-react';
 
-/**
- * Cloudflare Turnstile Security Verification Component
- *
- * Supports two modes seamlessly:
- * 1. Live Cloudflare Turnstile Mode: Activated automatically when `VITE_TURNSTILE_SITE_KEY` is set in `.env`.
- * 2. Built-in Managed Turnstile Mode: Works out-of-the-box for local/intranet/offline environments without
- *    requiring an external Cloudflare account, while rendering the authentic Cloudflare Turnstile UI.
- */
 export const CloudflareSecurityVerification = ({
     onVerify,
     onExpire,
@@ -18,7 +10,7 @@ export const CloudflareSecurityVerification = ({
     const siteKey =
         (typeof window !== 'undefined' && window.App?.turnstile_site_key) ||
         (typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_TURNSTILE_SITE_KEY || '') : '');
-    const [status, setStatus] = useState('verifying'); // 'idle' | 'verifying' | 'verified' | 'error'
+    const [status, setStatus] = useState('verifying');
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [useFallback, setUseFallback] = useState(!siteKey);
     const turnstileContainerRef = useRef(null);
@@ -63,7 +55,6 @@ export const CloudflareSecurityVerification = ({
         }, 1200);
     }, [generateClientToken, scheduleCollapse]);
 
-    // Handle Live Cloudflare Turnstile script loading when siteKey is configured
     useEffect(() => {
         if (!siteKey) {
             setUseFallback(true);
@@ -104,12 +95,14 @@ export const CloudflareSecurityVerification = ({
                     },
                     'error-callback': () => {
                         if (!isMounted) return;
-                        // Fallback to built-in verification only if offline or hostname mismatch
-                        setUseFallback(true);
+                        if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
+                        setIsCollapsed(false);
+                        setStatus('error');
+                        if (onVerifyRef.current) onVerifyRef.current('');
                     },
                 });
             } catch (err) {
-                if (isMounted) setUseFallback(true);
+                if (isMounted) setStatus('error');
             }
         };
 
@@ -143,10 +136,12 @@ export const CloudflareSecurityVerification = ({
                 } catch (e) {}
                 widgetIdRef.current = null;
             }
+            if (turnstileContainerRef.current) {
+                turnstileContainerRef.current.innerHTML = '';
+            }
         };
     }, [siteKey, scheduleCollapse]);
 
-    // Trigger fallback verification or reset when resetTrigger increments
     useEffect(() => {
         const isResetEvent = prevResetTriggerRef.current !== resetTrigger;
         prevResetTriggerRef.current = resetTrigger;
@@ -172,7 +167,6 @@ export const CloudflareSecurityVerification = ({
         }
     };
 
-    // 12 dots arranged in a circle for the authentic Cloudflare Turnstile green spinner
     const spinnerDots = Array.from({ length: 12 }, (_, i) => i);
 
     return (
@@ -184,7 +178,7 @@ export const CloudflareSecurityVerification = ({
                     : 'max-h-[220px] opacity-100 py-2 scale-100'
             }`}
         >
-            {/* Top Security Verification Pill Badge */}
+
             <div className="inline-flex items-center gap-2 px-5 py-1.5 rounded-full bg-[#e3efed] border border-[#7ab3aa]/60 text-[#0f6e60] shadow-2xs">
                 <ShieldCheck className="w-4 h-4 text-[#0f6e60] stroke-[2.2] shrink-0" />
                 <span className="text-xs sm:text-[13px] font-bold tracking-wide">
@@ -192,18 +186,31 @@ export const CloudflareSecurityVerification = ({
                 </span>
             </div>
 
-            {/* Instructional Subtitle */}
             <p className="text-slate-500 text-xs sm:text-[13px] font-medium text-center mt-2 mb-3">
                 Please verify that you are human to {actionLabel}
             </p>
 
-            {/* Official Live Cloudflare Turnstile Container (if siteKey is active and online) */}
             {!useFallback ? (
-                <div className="flex justify-center w-full overflow-hidden">
-                    <div ref={turnstileContainerRef} />
+                <div className="flex flex-col items-center justify-center w-full min-h-[65px]">
+                    <div ref={turnstileContainerRef} className="min-w-[300px] flex justify-center" />
+                    {status === 'error' && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (widgetIdRef.current !== null && window.turnstile) {
+                                    setStatus('verifying');
+                                    window.turnstile.reset(widgetIdRef.current);
+                                }
+                            }}
+                            className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold border border-slate-300 transition cursor-pointer"
+                        >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Retry Cloudflare Verification</span>
+                        </button>
+                    )}
                 </div>
             ) : (
-                /* Authentic Cloudflare Turnstile Widget Box */
+
                 <div
                     onClick={handleManualClick}
                     role="region"
@@ -212,11 +219,11 @@ export const CloudflareSecurityVerification = ({
                         status === 'idle' || status === 'error' ? 'cursor-pointer hover:border-slate-400' : ''
                     }`}
                 >
-                    {/* Left Status Area */}
+
                     <div className="flex items-center gap-3.5">
                         {status === 'verifying' && (
                             <>
-                                {/* 12-Dot Circular Green Spinner matching Cloudflare Turnstile */}
+
                                 <div className="relative w-7 h-7 flex items-center justify-center shrink-0">
                                     {spinnerDots.map((dotIdx) => {
                                         const angle = dotIdx * 30;
@@ -283,22 +290,21 @@ export const CloudflareSecurityVerification = ({
                         )}
                     </div>
 
-                    {/* Right Cloudflare Branding Area */}
                     <div className="flex flex-col items-end justify-center shrink-0 pl-2">
-                        {/* Cloudflare Cloud Logo + Wordmark */}
+
                         <div className="flex flex-col items-end">
                             <svg
                                 viewBox="0 0 64 28"
                                 className="h-5 w-auto"
                                 aria-hidden="true"
                             >
-                                {/* Main Orange Cloud (Left/Center) */}
+
                                 <path
                                     d="M42.8 19.6H14.2c-3.6 0-6.5-2.8-6.5-6.3 0-3.1 2.3-5.7 5.4-6.2.7-4.2 4.4-7.4 8.9-7.4 4.1 0 7.6 2.6 8.6 6.3.9-.4 1.9-.6 3-.6 3.7 0 6.8 2.8 7.2 6.3 2.9.4 5.1 2.8 5.1 5.7 0 1.2-.4 2.2-1.1 2.2z"
                                     fill="#f48120"
                                     transform="translate(4, 2)"
                                 />
-                                {/* Secondary Gold/Amber Cloud (Right) */}
+
                                 <path
                                     d="M49.5 11.4c-.3 0-.6 0-.9.1-.7-2.9-3.3-5-6.4-5-.5 0-1 .1-1.5.2.9 1.5 1.4 3.2 1.3 5.1 2.2.6 3.8 2.6 3.8 4.9 0 .5-.1 1-.2 1.5h3.9c2.5 0 4.5-2 4.5-4.4 0-2.4-2-4.4-4.5-4.4z"
                                     fill="#faad3f"
@@ -310,7 +316,6 @@ export const CloudflareSecurityVerification = ({
                             </span>
                         </div>
 
-                        {/* Privacy & Help Links */}
                         <div className="flex items-center gap-1 text-[8.5px] text-[#555555] leading-none mt-1">
                             <a
                                 href="https://www.cloudflare.com/privacypolicy/"
@@ -334,7 +339,6 @@ export const CloudflareSecurityVerification = ({
                         </div>
                     </div>
 
-                    {/* Keyframe animation for the 12-dot spinner */}
                     <style>{`
                         @keyframes cfDotFade {
                             0% { opacity: 1; }

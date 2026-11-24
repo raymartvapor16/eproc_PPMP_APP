@@ -25,12 +25,6 @@ class OppmoTeamMember extends Model
         'sort_order' => 'integer',
     ];
 
-    /**
-     * Scope a query to only include active team members.
-     *
-     * @param Builder $query
-     * @return Builder
-     */
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('status', 'active')->orderBy('sort_order', 'asc');

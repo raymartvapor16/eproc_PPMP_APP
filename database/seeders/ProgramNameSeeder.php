@@ -9,9 +9,7 @@ use Illuminate\Support\Facades\DB;
 
 class ProgramNameSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
+
     public function run(): void
     {
         $csvPath = __DIR__ . '/program_names.csv';
@@ -26,7 +24,6 @@ class ProgramNameSeeder extends Seeder
             return;
         }
 
-        // Skip header
         $header = fgetcsv($handle);
         $records = [];
         $seen = [];
@@ -47,7 +44,6 @@ class ProgramNameSeeder extends Seeder
             $sector = isset($row[2]) && trim($row[2]) !== '' ? trim($row[2]) : 'I. GENERAL PUBLIC SERVICES';
             $displayOrder = isset($row[3]) ? (int) $row[3] : 0;
 
-            // Unique deduplication key
             $key = mb_strtoupper($name) . '|' . ($respCenter ?? '');
             if (isset($seen[$key])) {
                 continue;
@@ -67,7 +63,6 @@ class ProgramNameSeeder extends Seeder
 
         fclose($handle);
 
-        // Chunk insert in batches of 100
         foreach (array_chunk($records, 100) as $chunk) {
             ProgramName::upsert(
                 $chunk,
@@ -79,13 +74,9 @@ class ProgramNameSeeder extends Seeder
 
         $this->command?->info("ProgramNameSeeder: Seeded {$importedCount} program names successfully.");
 
-        // Automatically link existing PPMP records where program_name matches
         $this->linkExistingPpmps();
     }
 
-    /**
-     * Link existing PPMPs to newly seeded ProgramName records.
-     */
     private function linkExistingPpmps(): void
     {
         $ppmps = Ppmp::whereNotNull('program_name')
@@ -113,4 +104,3 @@ class ProgramNameSeeder extends Seeder
         }
     }
 }
-

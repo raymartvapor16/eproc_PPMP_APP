@@ -26,11 +26,10 @@ export const GreenSpecDropdown = ({
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedCategory, setSelectedCategory] = useState('ALL'); // 'ALL' | 'CSE' | 'NON-CSE' | 'GENERAL'
+    const [selectedCategory, setSelectedCategory] = useState('ALL');
     const dropdownRef = useRef(null);
     const searchInputRef = useRef(null);
 
-    // Close on click outside or Escape key
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -47,7 +46,7 @@ export const GreenSpecDropdown = ({
         if (isOpen) {
             document.addEventListener('mousedown', handleClickOutside);
             document.addEventListener('keydown', handleKeyDown);
-            // Auto focus search input when dropdown opens
+
             setTimeout(() => {
                 searchInputRef.current?.focus();
             }, 50);
@@ -59,13 +58,11 @@ export const GreenSpecDropdown = ({
         };
     }, [isOpen]);
 
-    // Currently selected term
     const selectedTerm = useMemo(() => {
         if (!selectedTermId || selectedTermId === 'CUSTOM') return null;
         return terms.find((t) => String(t.id) === String(selectedTermId)) || null;
     }, [selectedTermId, terms]);
 
-    // Category counts
     const categoryCounts = useMemo(() => {
         const counts = { ALL: terms.length, CSE: 0, 'NON-CSE': 0, GENERAL: 0 };
         terms.forEach((t) => {
@@ -77,7 +74,6 @@ export const GreenSpecDropdown = ({
         return counts;
     }, [terms]);
 
-    // Filtered terms list
     const filteredTerms = useMemo(() => {
         return terms.filter((term) => {
             const matchesCategory =
@@ -95,7 +91,6 @@ export const GreenSpecDropdown = ({
         });
     }, [terms, selectedCategory, searchQuery]);
 
-    // Group filtered terms by category
     const groupedTerms = useMemo(() => {
         const groups = {
             CSE: [],
@@ -160,7 +155,7 @@ export const GreenSpecDropdown = ({
 
     return (
         <div ref={dropdownRef} className="relative w-full">
-            {/* ── TRIGGER BUTTON ── */}
+
             <button
                 type="button"
                 disabled={disabled}
@@ -248,10 +243,9 @@ export const GreenSpecDropdown = ({
                 </div>
             </button>
 
-            {/* ── FLOATING POPOVER DROPDOWN ── */}
             {isOpen && (
                 <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 min-w-[320px] max-w-full">
-                    {/* Header + Search Bar */}
+
                     <div className="p-2.5 bg-gradient-to-b from-slate-50 to-white border-b border-slate-100 space-y-2">
                         <div className="relative">
                             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -274,7 +268,6 @@ export const GreenSpecDropdown = ({
                             )}
                         </div>
 
-                        {/* Category Filter Pills */}
                         <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-none text-[11px]">
                             <button
                                 type="button"
@@ -323,7 +316,6 @@ export const GreenSpecDropdown = ({
                         </div>
                     </div>
 
-                    {/* Scrollable Items List */}
                     <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 overscroll-contain">
                         {filteredTerms.length === 0 ? (
                             <div className="p-6 text-center text-slate-400 space-y-1">
@@ -335,7 +327,7 @@ export const GreenSpecDropdown = ({
                             </div>
                         ) : (
                             <>
-                                {/* CSE Group */}
+
                                 {groupedTerms.CSE.length > 0 && (
                                     <div className="bg-white">
                                         <div className="sticky top-0 z-10 px-3 py-1.5 bg-emerald-50/90 backdrop-blur-xs border-y border-emerald-100 text-[10px] font-black uppercase tracking-wider text-emerald-800 flex items-center justify-between">
@@ -351,7 +343,6 @@ export const GreenSpecDropdown = ({
                                     </div>
                                 )}
 
-                                {/* NON-CSE Group */}
                                 {groupedTerms['NON-CSE'].length > 0 && (
                                     <div className="bg-white">
                                         <div className="sticky top-0 z-10 px-3 py-1.5 bg-blue-50/90 backdrop-blur-xs border-y border-blue-100 text-[10px] font-black uppercase tracking-wider text-blue-800 flex items-center justify-between">
@@ -367,7 +358,6 @@ export const GreenSpecDropdown = ({
                                     </div>
                                 )}
 
-                                {/* General Group */}
                                 {groupedTerms.GENERAL.length > 0 && (
                                     <div className="bg-white">
                                         <div className="sticky top-0 z-10 px-3 py-1.5 bg-slate-100/90 backdrop-blur-xs border-y border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-700 flex items-center justify-between">
@@ -386,7 +376,6 @@ export const GreenSpecDropdown = ({
                         )}
                     </div>
 
-                    {/* Bottom Action Footer */}
                     <div className="p-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
                         <button
                             type="button"
@@ -450,7 +439,6 @@ export const GreenSpecDropdown = ({
                     )}
                 </div>
 
-                {/* Right Action buttons */}
                 <div className="flex items-center gap-1 shrink-0 pt-0.5">
                     {currentText && !isSelected && (
                         <button

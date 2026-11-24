@@ -1,11 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
-/**
- * ExpandableText:
- * High-performance, lightweight text expand/collapse component for long tabular content (e.g. Project Titles, Office Names).
- * Avoids browser re-render lag via local component state and native CSS line-clamp.
- */
 export const ExpandableText = ({
     text = '',
     maxLength = 65,
@@ -60,10 +55,6 @@ export const ExpandableText = ({
     );
 };
 
-/**
- * ExpandableFundBadge:
- * Displays Source of Fund badge with click-to-expand / toggle for long fund names (e.g. Trust Funds, PAGCOR, SEF, Grants).
- */
 export const ExpandableFundBadge = ({
     fund = '',
     maxLength = 24,
@@ -112,4 +103,3 @@ export const ExpandableFundBadge = ({
         </div>
     );
 };
-

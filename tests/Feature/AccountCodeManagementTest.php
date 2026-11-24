@@ -78,20 +78,17 @@ class AccountCodeManagementTest extends TestCase
         ]);
         $this->assertGreaterThanOrEqual(2, $res->json('total'));
 
-        // Filter by class
         $resClass = $this->actingAs($this->adminUser)->getJson('/api/account-codes?class=Assets');
         $resClass->assertOk();
         foreach ($resClass->json('data') as $item) {
             $this->assertEquals('Assets', $item['account_class']);
         }
 
-        // Search by code
         $resSearch = $this->actingAs($this->adminUser)->getJson('/api/account-codes?search=5-02-03-220');
         $resSearch->assertOk();
         $this->assertCount(1, $resSearch->json('data'));
         $this->assertEquals('5-02-03-220', $resSearch->json('data.0.code'));
 
-        // Stats endpoint
         $resStats = $this->actingAs($this->superAdminUser)->getJson('/api/account-codes/stats');
         $resStats->assertOk();
         $resStats->assertJsonStructure(['total', 'active', 'inactive', 'classes', 'total_ppmps_linked']);
@@ -114,7 +111,6 @@ class AccountCodeManagementTest extends TestCase
             'account_class' => 'Expenses',
         ]);
 
-        // Duplicate insertion must fail with 422
         $dupRes = $this->actingAs($this->adminUser)->postJson('/api/account-codes', $payload);
         $dupRes->assertStatus(422);
     }
@@ -132,7 +128,6 @@ class AccountCodeManagementTest extends TestCase
         $this->assertEquals('Updated Semi-Expendable Supplies Expenses', $this->accountCode->fresh()->name);
         $this->assertEquals(5, $this->accountCode->fresh()->display_order);
 
-        // Toggle status
         $toggleRes = $this->actingAs($this->adminUser)->patchJson("/api/account-codes/{$this->accountCode->id}/toggle-status");
         $toggleRes->assertOk();
         $this->assertFalse($this->accountCode->fresh()->is_active);
@@ -159,14 +154,12 @@ class AccountCodeManagementTest extends TestCase
             'total_budget' => 50000,
         ]);
 
-        // Trying to delete must be blocked with 422
         $delRes = $this->actingAs($this->adminUser)->deleteJson("/api/account-codes/{$this->accountCode->id}");
         $delRes->assertStatus(422);
         $delRes->assertJsonFragment([
             'message' => "Cannot delete account code [{$this->accountCode->code}] {$this->accountCode->name} because it is currently linked to 1 PPMP record(s). You can deactivate it instead to prevent new selections."
         ]);
 
-        // Unlink PPMP, now delete succeeds
         $ppmp->update(['account_code_id' => null]);
         $delSuccessRes = $this->actingAs($this->adminUser)->deleteJson("/api/account-codes/{$this->accountCode->id}");
         $delSuccessRes->assertOk();
@@ -190,13 +183,12 @@ class AccountCodeManagementTest extends TestCase
 
     public function test_end_user_can_fetch_dropdown_and_ppmp_links_account_code(): void
     {
-        // End user fetches active account codes for dropdown
+
         $res = $this->actingAs($this->endUser)->getJson('/api/account-codes?dropdown=1');
         $res->assertOk();
         $this->assertIsArray($res->json());
         $this->assertTrue(collect($res->json())->contains('id', $this->accountCode->id));
 
-        // Create PPMP with account_code_id
         $createRes = $this->actingAs($this->endUser)->postJson('/api/ppmps', [
             'title' => 'Procurement of IT Supplies',
             'account_code_id' => $this->accountCode->id,
@@ -219,7 +211,6 @@ class AccountCodeManagementTest extends TestCase
         $this->assertNotEmpty($ppmpUuid, 'Failed to retrieve PPMP UUID from response: ' . $createRes->getContent());
         $ppmp = Ppmp::where('uuid', $ppmpUuid)->firstOrFail();
 
-        // Verify normalized relationship!
         $this->assertEquals($this->accountCode->id, $ppmp->account_code_id);
         $this->assertNotNull($ppmp->accountCodeRef);
         $this->assertEquals('5-02-03-220', $ppmp->accountCodeRef->code);

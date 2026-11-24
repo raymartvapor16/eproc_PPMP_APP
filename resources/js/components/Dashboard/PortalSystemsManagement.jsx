@@ -214,7 +214,7 @@ export const PortalSystemsManagement = () => {
 
     return (
         <div className="space-y-6">
-            {/* Header Tile */}
+
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <div className="flex items-center gap-2">
@@ -254,7 +254,6 @@ export const PortalSystemsManagement = () => {
                 </div>
             )}
 
-            {/* List Table */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
                 {loading ? (
                     <div className="py-20 flex flex-col items-center justify-center text-slate-500">
@@ -373,7 +372,6 @@ export const PortalSystemsManagement = () => {
                 )}
             </div>
 
-            {/* Modal */}
             {modalOpen && (
                 <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
                     <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">

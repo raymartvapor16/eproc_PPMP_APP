@@ -195,19 +195,17 @@ class SupplementalContinuationTest extends TestCase
 
         $childPpmp = Ppmp::where('parent_id', $this->annualPpmp->id)->firstOrFail();
 
-        // 1. Same tracker number
         $this->assertEquals($this->annualPpmp->tracking_number, $childPpmp->tracking_number);
-        // 2. Draft status
+
         $this->assertEquals('DRAFT', $childPpmp->status);
-        // 3. Current year fiscal year
+
         $this->assertEquals((string) date('Y'), $childPpmp->fiscal_year);
-        // 4. Marked as continuation with baseline budget recorded
+
         $this->assertTrue((bool) $childPpmp->is_continuation);
         $this->assertEquals(300000.00, (float) $childPpmp->baseline_annual_budget);
         $this->assertEquals(0.00, (float) $childPpmp->total_budget);
         $this->assertNull($childPpmp->delivery_period);
 
-        // 5. Line items: dates, delivery period, and estimated budget are null
         $item = $childPpmp->items()->firstOrFail();
         $this->assertEquals('Catering Package A', $item->description);
         $this->assertEquals('Goods', $item->project_type);
@@ -236,12 +234,10 @@ class SupplementalContinuationTest extends TestCase
 
         $childPpmp = Ppmp::where('parent_id', $this->annualPpmp->id)->firstOrFail();
 
-        // 1. Same tracker number
         $this->assertEquals($this->annualPpmp->tracking_number, $childPpmp->tracking_number);
         $this->assertFalse((bool) $childPpmp->is_continuation);
         $this->assertEquals(300000.00, (float) $childPpmp->total_budget);
 
-        // 2. Line items preserved
         $item = $childPpmp->items()->firstOrFail();
         $this->assertEquals('2025-01-10', $item->start_date);
         $this->assertEquals('2025-01-20', $item->end_date);
@@ -264,7 +260,6 @@ class SupplementalContinuationTest extends TestCase
         $this->actingAs($this->adminUser)->postJson("/api/ppmps/{$this->annualPpmp->uuid}/amendment/approve");
         $childPpmp = Ppmp::where('parent_id', $this->annualPpmp->id)->firstOrFail();
 
-        // Try updating child PPMP with 350,000 (exceeds annual baseline of 300,000)
         $response = $this->actingAs($this->endUser)->putJson("/api/ppmps/{$childPpmp->uuid}", [
             'title' => $childPpmp->title,
             'fiscal_year' => $childPpmp->fiscal_year,
@@ -278,7 +273,7 @@ class SupplementalContinuationTest extends TestCase
                     'start_date' => '2026-03-01',
                     'end_date' => '2026-03-10',
                     'delivery_period' => '10 calendar days',
-                    'estimated_budget' => 350000.00, // Exceeds 300k
+                    'estimated_budget' => 350000.00,
                 ],
             ],
         ]);
@@ -286,7 +281,6 @@ class SupplementalContinuationTest extends TestCase
         $response->assertStatus(422);
         $response->assertJsonValidationErrors(['total_budget']);
 
-        // Update with 250,000 (within 300k budget) -> Succeeds
         $responseOk = $this->actingAs($this->endUser)->putJson("/api/ppmps/{$childPpmp->uuid}", [
             'title' => $childPpmp->title,
             'fiscal_year' => $childPpmp->fiscal_year,
@@ -325,7 +319,6 @@ class SupplementalContinuationTest extends TestCase
         $this->actingAs($this->adminUser)->postJson("/api/ppmps/{$this->annualPpmp->uuid}/amendment/approve");
         $childPpmp = Ppmp::where('parent_id', $this->annualPpmp->id)->firstOrFail();
 
-        // Attach required attachment list and market scoping mock so submission reaches continuation check
         $childPpmp->update([
             'attachment_list_data' => ['rows' => [['item_description' => 'Catering']]],
         ]);
@@ -341,12 +334,10 @@ class SupplementalContinuationTest extends TestCase
             'file_size' => 1024,
         ]);
 
-        // Attempt submit while item cells (start_date, end_date, delivery_period, estimated_budget) are still null
         $responseIncomplete = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$childPpmp->uuid}/submit-for-review");
         $responseIncomplete->assertStatus(422);
         $this->assertStringContainsString('all item cells must be completely filled out', $responseIncomplete->json('message'));
 
-        // Fill out all cells
         $childPpmp->items()->first()->update([
             'start_date' => '2026-04-01',
             'end_date' => '2026-04-15',
@@ -355,7 +346,6 @@ class SupplementalContinuationTest extends TestCase
         ]);
         $childPpmp->update(['total_budget' => 200000.00]);
 
-        // Now submit succeeds
         $responseOk = $this->actingAs($this->endUser)->postJson("/api/ppmps/{$childPpmp->uuid}/submit-for-review", [
             'twg_reviewer_id' => $this->twgUser->id,
         ]);
@@ -378,7 +368,6 @@ class SupplementalContinuationTest extends TestCase
             'letter_file' => $file,
         ]);
 
-        // Verify index endpoint includes serialized amendment fields
         $indexRes = $this->actingAs($this->adminUser)->getJson('/api/ppmps');
         $indexRes->assertStatus(200);
         $itemData = collect($indexRes->json('data'))->firstWhere('uuid', $this->annualPpmp->uuid);
@@ -386,7 +375,6 @@ class SupplementalContinuationTest extends TestCase
         $this->assertEquals('OTHER', $itemData['requested_supplemental_purpose']);
         $this->assertEquals('Emergency disaster response catering', $itemData['requested_supplemental_specify']);
 
-        // Verify dashboard endpoint includes serialized amendment fields
         $dashRes = $this->actingAs($this->adminUser)->getJson('/api/dashboard');
         $dashRes->assertStatus(200);
         $pendingItem = collect($dashRes->json('pending_amendments'))->firstWhere('uuid', $this->annualPpmp->uuid);

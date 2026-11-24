@@ -49,7 +49,7 @@ class UserProfilePhotoTest extends TestCase
 
         $this->user->refresh();
         $this->assertNotNull($this->user->profile_photo_path);
-        // Stored with sanitized name e.g. profile/juandelacruz.png
+
         $this->assertEquals('profile/juandelacruz.png', $this->user->profile_photo_path);
         Storage::disk('local')->assertExists('profile/juandelacruz.png');
     }

@@ -11,16 +11,59 @@ use Illuminate\Http\Request;
 
 class NotificationController extends Controller
 {
-    /**
-     * Get user's notifications and unread count
-     */
+
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        // If user is a Department/Office Head or Authorized Staff, ensure notifications are synced for their office
+        if ($user && \App\Models\SystemSetting::isPnpkiEnabled() && \Illuminate\Support\Facades\Schema::hasTable('pnpki_signatures')) {
+            $pnpki = $user->pnpkiSignature;
+            if ($pnpki && $pnpki->expiration_date) {
+                $expDateStr = $pnpki->expiration_date->format('Y-m-d');
+                if ($pnpki->is_expired) {
+                    $expiredTitle = "PNPKI Digital E-Signature Expired ({$expDateStr})";
+                    $alreadyNotified = SystemNotification::where('user_id', $user->id)
+                        ->where('title', $expiredTitle)
+                        ->exists();
+
+                    if (!$alreadyNotified) {
+                        SystemNotification::notify(
+                            $user->id,
+                            $expiredTitle,
+                            "Your PNPKI Digital E-Signature expired on {$expDateStr}. Until you renew your PNPKI certificate, your account is forced to use the Optional Digital Signature (your old expiration date and proof PDF remain preserved). Click to renew now.",
+                            null,
+                            'danger'
+                        );
+                    }
+                } elseif ($pnpki->signature_type === 'pnpki' && $pnpki->is_expiring_soon) {
+                    $days = (int) $pnpki->days_until_expiration;
+                    $soonTitle = $days === 0
+                        ? "PNPKI Digital E-Signature Expires Today ({$expDateStr})"
+                        : "PNPKI Digital E-Signature Expiring Soon ({$expDateStr})";
+
+                    $alreadyNotified = SystemNotification::where('user_id', $user->id)
+                        ->where('title', $soonTitle)
+                        ->exists();
+
+                    if (!$alreadyNotified) {
+                        $msg = $days === 0
+                            ? "Reminder: Your PNPKI Digital E-Signature expires today ({$expDateStr})! Please renew your PNPKI certificate now so your account is not forced to use the Optional Digital Signature."
+                            : "Reminder: Your PNPKI Digital E-Signature will expire in {$days} day(s) on {$expDateStr}. Please renew your PNPKI registration before it expires.";
+
+                        SystemNotification::notify(
+                            $user->id,
+                            $soonTitle,
+                            $msg,
+                            null,
+                            'warning'
+                        );
+                    }
+                }
+            }
+        }
+
         if ($user && $user->isHead() && $user->office_id) {
-            // Auto-heal office head_user_id link if needed (only write when head_user_id is actually null)
+
             if (!$user->relationLoaded('office') || !$user->office || $user->office->head_user_id === null) {
                 Office::where('id', $user->office_id)
                     ->whereNull('head_user_id')
@@ -44,7 +87,7 @@ class NotificationController extends Controller
                 ->get();
 
             if ($officePpmps->isNotEmpty()) {
-                // Batch-fetch existing notifications for these PPMPs in a single query to avoid N+1 loop
+
                 $existingByPpmp = SystemNotification::where('user_id', $user->id)
                     ->whereIn('ppmp_id', $officePpmps->pluck('id'))
                     ->select(['ppmp_id', 'title'])
@@ -118,7 +161,6 @@ class NotificationController extends Controller
             }
         }
 
-        // If user is a PACCO Reviewer, ensure notifications are synced for Trust Fund & PACCO review items
         if ($user && $user->isPacco()) {
             $paccoPpmps = Ppmp::without(['milestones', 'amendment'])
                 ->select(['id', 'uuid', 'tracking_number', 'ppmp_number', 'title', 'status', 'office_id', 'source_of_fund'])
@@ -177,7 +219,7 @@ class NotificationController extends Controller
                             );
                         }
                     } else {
-                        // Submitted for review or progressing through subsequent pipeline
+
                         $exists = $existingTitles->contains(fn ($t) => stripos((string) $t, 'Review') !== false || stripos((string) $t, 'Submitted') !== false);
                         if (!$exists) {
                             SystemNotification::notify(
@@ -193,7 +235,6 @@ class NotificationController extends Controller
             }
         }
 
-        // If user is a Budget Officer, ensure notifications are synced for General Fund & Budget review items
         if ($user && $user->isBudgetOfficer()) {
             $budgetPpmps = Ppmp::without(['milestones', 'amendment'])
                 ->select(['id', 'uuid', 'tracking_number', 'ppmp_number', 'title', 'status', 'office_id', 'source_of_fund'])
@@ -266,7 +307,6 @@ class NotificationController extends Controller
             }
         }
 
-        // If user is OPPMO / BAC Secretariat
         if ($user && $user->isOppmo()) {
             $oppmoPpmps = Ppmp::without(['milestones', 'amendment'])
                 ->select(['id', 'uuid', 'tracking_number', 'ppmp_number', 'title', 'status', 'office_id'])
@@ -325,7 +365,6 @@ class NotificationController extends Controller
             }
         }
 
-        // If user is TWG Reviewer
         if ($user && $user->isTwg()) {
             $twgPpmps = Ppmp::without(['milestones', 'amendment'])
                 ->select(['id', 'uuid', 'tracking_number', 'ppmp_number', 'title', 'status', 'office_id'])
@@ -384,7 +423,6 @@ class NotificationController extends Controller
             }
         }
 
-        // If user is an End User, ensure notifications are synced for their PPMPs
         if ($user && $user->isEndUser()) {
             $endUserPpmps = Ppmp::without(['milestones', 'amendment'])
                 ->select(['id', 'uuid', 'tracking_number', 'ppmp_number', 'title', 'status', 'office_id'])
@@ -438,11 +476,9 @@ class NotificationController extends Controller
 
         $query = SystemNotification::where('user_id', $user->id)
             ->with([
-                'ppmp:id,uuid,tracking_number,ppmp_number,title,status,office_id,implementing_unit,program_name,created_by,source_of_fund,attachment_list_data,app_data',
+                'ppmp:id,uuid,tracking_number,ppmp_number,title,status,office_id,implementing_unit,program_name,created_by,source_of_fund',
                 'ppmp.milestones',
                 'ppmp.amendment',
-                'ppmp.attachments',
-                'ppmp.monitoringProjects',
             ])
             ->latest('id');
 
@@ -451,6 +487,12 @@ class NotificationController extends Controller
         } else {
             $notifications = $query->take(20)->get();
         }
+
+        $notifications->each(function ($n) {
+            if ($n->ppmp) {
+                $n->ppmp->setAppends([]);
+            }
+        });
 
         $returnedNotifPpmps = $notifications
             ->pluck('ppmp')
@@ -471,9 +513,6 @@ class NotificationController extends Controller
         ]);
     }
 
-    /**
-     * Mark single notification as read
-     */
     public function markAsRead(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -487,9 +526,6 @@ class NotificationController extends Controller
         return response()->json(['message' => 'Notification marked as read.']);
     }
 
-    /**
-     * Mark all as read
-     */
     public function markAllAsRead(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -501,9 +537,6 @@ class NotificationController extends Controller
         return response()->json(['message' => 'All notifications marked as read.']);
     }
 
-    /**
-     * Delete / Dismiss single notification
-     */
     public function destroy(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
@@ -517,9 +550,6 @@ class NotificationController extends Controller
         return response()->json(['message' => 'Notification dismissed.']);
     }
 
-    /**
-     * Clear all notifications for user
-     */
     public function clearAll(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -529,9 +559,6 @@ class NotificationController extends Controller
         return response()->json(['message' => 'All notifications cleared.']);
     }
 
-    /**
-     * List all offices (for forms/filters)
-     */
     public function offices(): JsonResponse
     {
         return response()->json(Office::with('head')->get());

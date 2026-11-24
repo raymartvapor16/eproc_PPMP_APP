@@ -24,7 +24,6 @@ class PpmpSignatory extends Model
         ];
     }
 
-    // Scopes & In-Memory Cache
     protected static ?\Illuminate\Support\Collection $activeCache = null;
 
     public static function flushCache(): void

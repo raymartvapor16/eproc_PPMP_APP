@@ -35,11 +35,9 @@ export const GeneratePurchaseRequestModal = ({
     const [error, setError] = useState('');
     const [fetchedData, setFetchedData] = useState(null);
 
-    // Multiple PDF Attachments state (PDF only, max 10MB per file)
     const [pdfFiles, setPdfFiles] = useState([]);
     const fileInputRef = useRef(null);
 
-    // Secure External Links state (HTTPS only)
     const [secureLinks, setSecureLinks] = useState([]);
     const [newLinkUrl, setNewLinkUrl] = useState('');
     const [newLinkTitle, setNewLinkTitle] = useState('');
@@ -142,9 +140,8 @@ export const GeneratePurchaseRequestModal = ({
         };
     }, [isOpen, ppmpUuid]);
 
-    // Check if the current PPMP's Type of Project to be Procured is INFRASTRUCTURE
     const isInfraProject = useMemo(() => {
-        // 1. Direct category flags from backend / monitoring / prepopulated
+
         if (
             formData.category === 'INFRA' ||
             fetchedData?.prepopulated?.category === 'INFRA' ||
@@ -155,23 +152,20 @@ export const GeneratePurchaseRequestModal = ({
         }
 
         const ppmp = fetchedData?.ppmp;
-        // 2. Direct project_type or general_description on PPMP
+
         const directType = String(ppmp?.project_type || ppmp?.general_description || '').toLowerCase();
         if (directType.includes('infra')) return true;
 
-        // 3. Type of the Project to be Procured on PPMP items
         const ppmpItems = ppmp?.items || [];
         if (ppmpItems.some((item) => !item.is_header && String(item.project_type || '').toLowerCase().includes('infra'))) {
             return true;
         }
 
-        // 4. Form items if user modified or prefilled
         const formItems = formData?.items || [];
         if (formItems.some((item) => !item.is_lot_header && String(item.project_type || '').toLowerCase().includes('infra'))) {
             return true;
         }
 
-        // 5. Tracking / tracker ID containing INFRA
         const tracker = String(ppmp?.tracking_number || ppmp?.ppmp_number || formData.tracker_id || '').toLowerCase();
         if (tracker.includes('infra')) return true;
 
@@ -180,7 +174,6 @@ export const GeneratePurchaseRequestModal = ({
 
     if (!isOpen) return null;
 
-    // Recalculate total cost from items
     const handleItemChange = (index, field, value) => {
         const newItems = [...formData.items];
         newItems[index] = { ...newItems[index], [field]: value };
@@ -229,7 +222,6 @@ export const GeneratePurchaseRequestModal = ({
         }));
     };
 
-    // Handle Multiple PDF Files Selection
     const handlePdfFilesChange = (e) => {
         const files = Array.from(e.target.files || []);
         if (files.length === 0) return;
@@ -238,7 +230,7 @@ export const GeneratePurchaseRequestModal = ({
         const validFiles = [];
 
         for (const file of files) {
-            // Strict PDF validation: check mime and extension
+
             const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
             if (!isPdf) {
                 setError(`Validation Error: "${file.name}" is not a PDF. Only PDF files are allowed.`);
@@ -246,7 +238,6 @@ export const GeneratePurchaseRequestModal = ({
                 break;
             }
 
-            // Max 10MB limit (10 * 1024 * 1024 bytes)
             if (file.size > 10 * 1024 * 1024) {
                 setError(`File size error: "${file.name}" exceeds the 10MB maximum limit (${(file.size / (1024 * 1024)).toFixed(2)} MB).`);
                 hasError = true;
@@ -261,7 +252,6 @@ export const GeneratePurchaseRequestModal = ({
             setPdfFiles((prev) => [...prev, ...validFiles]);
         }
 
-        // Reset file input value so same files can be re-selected if removed
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
@@ -271,7 +261,6 @@ export const GeneratePurchaseRequestModal = ({
         setPdfFiles((prev) => prev.filter((_, i) => i !== index));
     };
 
-    // Handle Secure External Links (HTTPS only)
     const handleAddSecureLink = () => {
         setLinkError('');
         const trimmedUrl = newLinkUrl.trim();
@@ -282,7 +271,6 @@ export const GeneratePurchaseRequestModal = ({
             return;
         }
 
-        // Strict HTTPS security check
         if (!trimmedUrl.toLowerCase().startsWith('https://')) {
             setLinkError('Security requirement: URL must strictly begin with https:// (e.g. https://drive.google.com/...)');
             return;
@@ -332,14 +320,13 @@ export const GeneratePurchaseRequestModal = ({
 
         setSubmitting(true);
         try {
-            // Package as FormData to handle multiple PDF files & secure links seamlessly
+
             const formDataToSend = new FormData();
             formDataToSend.append('ppmp_uuid', ppmpUuid);
             if (monitoringProjectId || fetchedData?.monitoring_project?.id) {
                 formDataToSend.append('monitoring_project_id', monitoringProjectId || fetchedData?.monitoring_project?.id);
             }
 
-            // Sanitize items: ensure string item_no and numeric totals
             const sanitizedItems = (formData.items || []).map((it, idx) => ({
                 item_no: String(it.item_no || idx + 1),
                 unit: it.unit || 'lot',
@@ -351,10 +338,9 @@ export const GeneratePurchaseRequestModal = ({
             }));
             formDataToSend.append('items', JSON.stringify(sanitizedItems));
 
-            // Append scalar form fields, skipping empty strings so nullable dates/ids aren't rejected
             Object.entries(formData).forEach(([key, val]) => {
                 if (key === 'items') {
-                    // Handled above
+
                 } else if (key === 'date_published') {
                     formDataToSend.append('date_published', new Date().toISOString().split('T')[0]);
                 } else if (val !== null && val !== undefined && val !== '') {
@@ -362,12 +348,10 @@ export const GeneratePurchaseRequestModal = ({
                 }
             });
 
-            // Append multiple PDF attachments (each validated <= 10MB)
             pdfFiles.forEach((file) => {
                 formDataToSend.append('pdf_files[]', file);
             });
 
-            // Append secure external links (strictly for Infrastructure projects)
             if (isInfraProject && secureLinks.length > 0) {
                 formDataToSend.append('links', JSON.stringify(secureLinks));
             }
@@ -375,7 +359,6 @@ export const GeneratePurchaseRequestModal = ({
             const res = await pimsService.generatePurchaseRequest(formDataToSend);
             const generatedPr = res.data.purchase_request;
 
-            // Update published cache in localStorage
             try {
                 const stored = localStorage.getItem('pims_published_ppmps');
                 const map = stored ? JSON.parse(stored) : {};
@@ -383,7 +366,6 @@ export const GeneratePurchaseRequestModal = ({
                 localStorage.setItem('pims_published_ppmps', JSON.stringify(map));
             } catch (e) {}
 
-            // Notify all listening components across modules
             window.dispatchEvent(new CustomEvent('pims:pr_generated', { detail: generatedPr }));
             window.dispatchEvent(new CustomEvent('pims:published'));
             window.dispatchEvent(new CustomEvent('monitoring:updated'));
@@ -412,7 +394,7 @@ export const GeneratePurchaseRequestModal = ({
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl overflow-hidden flex flex-col max-h-[92vh]">
-                {/* Header */}
+
                 <div className="px-6 py-4 bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-300">
@@ -439,7 +421,6 @@ export const GeneratePurchaseRequestModal = ({
                     </button>
                 </div>
 
-                {/* Form Body */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
                     {loading ? (
                         <div className="py-20 flex flex-col items-center justify-center gap-3 text-slate-500">
@@ -455,7 +436,6 @@ export const GeneratePurchaseRequestModal = ({
                                 </div>
                             )}
 
-                            {/* Section 1: Identification & Document Meta */}
                             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
                                 <div className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
                                     <FileText className="w-4 h-4 text-blue-600" />
@@ -552,7 +532,6 @@ export const GeneratePurchaseRequestModal = ({
                                 </div>
                             </div>
 
-                            {/* Section 2: Items and Description Breakdown */}
                             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
                                 <div className="flex items-center justify-between">
                                     <div className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
@@ -659,7 +638,6 @@ export const GeneratePurchaseRequestModal = ({
                                 </div>
                             </div>
 
-                            {/* Section 3: Delivery Terms & Green Specifications */}
                             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-4">
                                 <div className="text-xs font-bold text-slate-800 uppercase tracking-wide">
                                     Contractual Terms & Technical Specifications
@@ -726,7 +704,6 @@ export const GeneratePurchaseRequestModal = ({
                                 </div>
                             </div>
 
-                            {/* Section 4: Attach Multiple PDF Documents (PDF Only, Max 10MB each) */}
                             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
                                 <div className="flex items-center justify-between">
                                     <div className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
@@ -755,7 +732,6 @@ export const GeneratePurchaseRequestModal = ({
                                     className="hidden"
                                 />
 
-                                {/* Upload drop/browse banner */}
                                 <div
                                     onClick={() => fileInputRef.current?.click()}
                                     className="border-2 border-dashed border-slate-300 hover:border-blue-400 bg-white hover:bg-blue-50/40 rounded-xl p-4 text-center cursor-pointer transition flex flex-col items-center justify-center gap-1.5"
@@ -771,7 +747,6 @@ export const GeneratePurchaseRequestModal = ({
                                     </p>
                                 </div>
 
-                                {/* List of selected new PDF files */}
                                 {pdfFiles.length > 0 && (
                                     <div className="space-y-1.5 mt-2">
                                         <div className="text-[11px] font-bold text-slate-600">
@@ -814,7 +789,6 @@ export const GeneratePurchaseRequestModal = ({
                                 )}
                             </div>
 
-                            {/* Section 5: Secure External Cloud Links (Infrastructure Projects Only) */}
                             {isInfraProject && (
                                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
                                     <div className="flex items-center justify-between">
@@ -879,7 +853,6 @@ export const GeneratePurchaseRequestModal = ({
                                         </div>
                                     )}
 
-                                    {/* List of added secure links */}
                                     {secureLinks.length > 0 && (
                                         <div className="space-y-1.5 mt-2">
                                             <div className="text-[11px] font-bold text-slate-600">
@@ -929,7 +902,6 @@ export const GeneratePurchaseRequestModal = ({
                                 </div>
                             )}
 
-                            {/* Section 6: Existing Inherited PPMP Attachments */}
                             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
                                 <div className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
                                     <FileText className="w-4 h-4 text-indigo-600" />
@@ -961,7 +933,6 @@ export const GeneratePurchaseRequestModal = ({
                                 )}
                             </div>
 
-                            {/* Footer Buttons */}
                             <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
                                 <button
                                     type="button"
@@ -996,4 +967,3 @@ export const GeneratePurchaseRequestModal = ({
         </div>
     );
 };
-

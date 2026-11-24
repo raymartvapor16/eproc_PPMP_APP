@@ -27,10 +27,6 @@ class SupplierEvaluation extends Model
         'period_year'     => 'integer',
     ];
 
-    // =========================
-    // RELATIONSHIPS
-    // =========================
-
     public function criteriaScores()
     {
         return $this->hasMany(SupplierCriteriaScore::class, 'evaluation_id');
@@ -72,10 +68,6 @@ class SupplierEvaluation extends Model
         return $this->belongsTo(SupplierPurchaseOrder::class, 'po_no', 'po_no');
     }
 
-    // =========================
-    // SCOPES
-    // =========================
-
     public function scopeForUser($query, $user)
     {
         if (!$user->isAdmin() && !$user->isPgso()) {
@@ -93,4 +85,3 @@ class SupplierEvaluation extends Model
         });
     }
 }
-

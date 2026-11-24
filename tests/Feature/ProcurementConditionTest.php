@@ -223,7 +223,7 @@ class ProcurementConditionTest extends TestCase
 
         $this->assertNotNull($ppmp);
         $this->assertEquals('POL Condition', $ppmp->additional_condition);
-        // When POL Condition is selected, delivery period, place of delivery, and payment method are null/locked
+
         $this->assertNull($ppmp->place_of_delivery);
         $this->assertNull($ppmp->delivery_period);
         $this->assertNull($ppmp->payment_method);

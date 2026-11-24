@@ -3,11 +3,12 @@ import { StatusBadge, formatCurrency, formatDate } from '../../components/UI/Sta
 import { PaginationControl } from '../../components/UI/PaginationControl';
 import { AdminActivityLog } from '../../components/Dashboard/AdminActivityLog';
 import { UnifiedSecurityControls } from '../../components/Dashboard/UnifiedSecurityControls';
-import { getSupplementalKindInfo } from '../../utils/workflowHelpers';
+import { getSupplementalKindInfo, isInfrastructurePpmp, getPpmpProjectTypeLabel } from '../../utils/workflowHelpers';
 import { userService, ppmpService, officeService } from '../../services/api';
 import { getStandardFiscalYears } from '../../utils/fiscalYears';
 import { showConfirm } from '../../utils/modalAlert';
 import { UserActionDropdown } from '../../components/Dashboard/UserActionDropdown';
+import { MonitoringAuthorizeViewersPanel } from '../../components/Dashboard/MonitoringAuthorizeViewersPanel';
 import {
     getPpmpStartOfActivity,
     getPimsReminderInfo
@@ -53,7 +54,13 @@ import {
     BookOpen,
     Compass,
     Timer,
+    Package,
+    HardHat,
+    Printer,
+    BarChart3,
 } from 'lucide-react';
+import { AdminReportsView } from '../../components/Dashboard/AdminReportsView';
+import { AdminVisualAnalytics } from '../../components/Dashboard/AdminVisualAnalytics';
 import { AfkLogoutManagement } from '../../components/Dashboard/AfkLogoutManagement';
 import { FundSourcesManagement } from '../../components/Dashboard/FundSourcesManagement';
 import { ProcurementModesManagement } from '../../components/Dashboard/ProcurementModesManagement';
@@ -67,10 +74,11 @@ import { CreateUserModal } from '../../components/Dashboard/CreateUserModal';
 import { UserSignatureModal } from '../../components/Dashboard/UserSignatureModal';
 import { UserSystemAccessModal } from '../../components/Dashboard/UserSystemAccessModal';
 import { UserAccountCodesModal } from '../../components/Dashboard/UserAccountCodesModal';
+import { UserRolesModal, getUserRolesList } from '../../components/Dashboard/UserRolesModal';
 import { ExpandableText, ExpandableFundBadge } from '../../components/UI/ExpandableCell';
 
 export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) => {
-    // Current Active Tab: 'users' | 'amendments' | 'logs' | 'ppmps' | 'fund_sources' | 'conditions' | 'other_terms' | 'supporting_docs' | 'signatories'
+
     const [activeTab, setActiveTab] = useState('users');
 
     useEffect(() => {
@@ -90,18 +98,14 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
         };
     }, [onReload]);
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // USERS MANAGEMENT STATE
-    // ──────────────────────────────────────────────────────────────────────────
     const [usersList, setUsersList] = useState(data?.users || []);
     const [userSearch, setUserSearch] = useState('');
-    const [userSubFilter, setUserSubFilter] = useState('all'); // 'all', 'pending', 'active', 'rejected'
+    const [userSubFilter, setUserSubFilter] = useState('all');
     const [userPage, setUserPage] = useState(1);
     const [userPerPage, setUserPerPage] = useState(10);
     const [processingUserId, setProcessingUserId] = useState(null);
     const [userFeedback, setUserFeedback] = useState({ type: '', text: '' });
 
-    // Modals for User management
     const [passwordModalUser, setPasswordModalUser] = useState(null);
     const [systemAccessModalUser, setSystemAccessModalUser] = useState(null);
     const [twgAccountCodesModalUser, setTwgAccountCodesModalUser] = useState(null);
@@ -122,13 +126,10 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
     const [signaturePreviewUser, setSignaturePreviewUser] = useState(null);
     const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AMENDED & SUPPLEMENTAL STATE
-    // ──────────────────────────────────────────────────────────────────────────
     const [amendmentsList, setAmendmentsList] = useState(data?.pending_amendments || []);
     const [loadingAmendments, setLoadingAmendments] = useState(false);
-    const [amendmentFilter, setAmendmentFilter] = useState('PENDING_APPROVAL'); // 'ALL', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'
-    const [amendmentTypeFilter, setAmendmentTypeFilter] = useState('ALL'); // 'ALL', 'SUPPLEMENTAL', 'AMENDMENT'
+    const [amendmentFilter, setAmendmentFilter] = useState('PENDING_APPROVAL');
+    const [amendmentTypeFilter, setAmendmentTypeFilter] = useState('ALL');
     const [amendmentSearch, setAmendmentSearch] = useState('');
     const [amendmentPage, setAmendmentPage] = useState(1);
     const [amendmentPerPage, setAmendmentPerPage] = useState(10);
@@ -141,9 +142,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
     const [receivingUuid, setReceivingUuid] = useState(null);
     const [amendmentFeedback, setAmendmentFeedback] = useState({ type: '', text: '' });
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // PPMP LIST OVERSIGHT STATE
-    // ──────────────────────────────────────────────────────────────────────────
     const [ppmpsList, setPpmpsList] = useState(data?.recent_ppmps || []);
     const [loadingPpmps, setLoadingPpmps] = useState(false);
     const [ppmpSearch, setPpmpSearch] = useState('');
@@ -151,8 +149,11 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
     const [ppmpOfficeFilter, setPpmpOfficeFilter] = useState('ALL');
     const [ppmpYearFilter, setPpmpYearFilter] = useState('ALL');
     const [availableFiscalYears, setAvailableFiscalYears] = useState([]);
+    const [ppmpCategoryTab, setPpmpCategoryTab] = useState('goods_consulting');
     const [ppmpPage, setPpmpPage] = useState(1);
-    const [ppmpPerPage, setPpmpPerPage] = useState(10);
+    const [ppmpPerPage, setPpmpPerPage] = useState(5);
+    const [ppmpInfraPage, setPpmpInfraPage] = useState(1);
+    const [ppmpInfraPerPage, setPpmpInfraPerPage] = useState(5);
     const [ppmpPagination, setPpmpPagination] = useState(null);
 
     const adminPpmpYearOptions = useMemo(() => {
@@ -166,14 +167,12 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
     const officesList = data?.offices || [];
     const metrics = data?.metrics || {};
 
-    // Sync users when data updates
     useEffect(() => {
         if (data?.users) {
             setUsersList(data.users);
         }
     }, [data?.users]);
 
-    // Fetch full amendments list when tab is 'amendments'
     const fetchAmendments = async () => {
         setLoadingAmendments(true);
         try {
@@ -183,7 +182,7 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
             }
             const res = await ppmpService.getAll(params);
             const items = res.data?.data || res.data || [];
-            // If filter is ALL, ensure we show all PPMPs that had or have an amendment status
+
             const filtered = items.filter(p => p.amendment_status || p.parent_id);
             setAmendmentsList(filtered);
         } catch (e) {
@@ -193,13 +192,12 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
         }
     };
 
-    // Fetch full PPMP list when tab is 'ppmps'
     const fetchPpmps = async () => {
         setLoadingPpmps(true);
         try {
             const params = {
-                page: ppmpPage,
-                per_page: ppmpPerPage,
+                page: 1,
+                per_page: 100,
             };
             if (ppmpSearch) params.search = ppmpSearch;
             if (ppmpStatusFilter !== 'ALL') params.status = ppmpStatusFilter;
@@ -239,7 +237,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
         }
     }, [activeTab, ppmpPage, ppmpPerPage, ppmpStatusFilter, ppmpOfficeFilter, ppmpYearFilter]);
 
-    // Auto-dismiss user feedback
     useEffect(() => {
         if (userFeedback.text) {
             const t = setTimeout(() => setUserFeedback({ type: '', text: '' }), 4000);
@@ -247,7 +244,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
         }
     }, [userFeedback]);
 
-    // Auto-dismiss amendment feedback
     useEffect(() => {
         if (amendmentFeedback.text) {
             const t = setTimeout(() => setAmendmentFeedback({ type: '', text: '' }), 4000);
@@ -255,9 +251,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
         }
     }, [amendmentFeedback]);
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // USER ACTIONS
-    // ──────────────────────────────────────────────────────────────────────────
     const handleApproveUser = async (targetUser) => {
         const confirmed = await showConfirm({
             title: 'Approve User Registration',
@@ -383,9 +376,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
         }
     };
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AMENDMENT ACTIONS
-    // ──────────────────────────────────────────────────────────────────────────
     const handleReceiveAmendment = async (ppmp) => {
         setReceivingUuid(ppmp.uuid);
         try {
@@ -446,15 +436,11 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
         }
     };
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // COMPUTED COUNTS
-    // ──────────────────────────────────────────────────────────────────────────
     const pendingUsersCount = usersList.filter(u => !u.is_active && u.approval_status !== 'rejected').length;
     const activeUsersCount = usersList.filter(u => u.is_active && u.approval_status !== 'rejected').length;
     const rejectedUsersCount = usersList.filter(u => u.approval_status === 'rejected').length;
     const pendingAmendmentsCount = metrics.pending_amendments || amendmentsList.filter(a => a.amendment_status === 'PENDING_APPROVAL').length;
 
-    // Filtered Users (Newest registered users first, oldest on the bottom)
     const filteredUsers = useMemo(() => {
         let list = usersList;
         if (userSubFilter === 'pending') {
@@ -475,7 +461,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
             );
         }
 
-        // Always display newly registered users first (highest id/newest created_at)
         return [...list].sort((a, b) => {
             const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
             const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
@@ -484,7 +469,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
         });
     }, [usersList, userSubFilter, userSearch]);
 
-    // Filtered Amendments
     const filteredAmendments = useMemo(() => {
         let list = amendmentsList;
         if (amendmentTypeFilter !== 'ALL') {
@@ -503,7 +487,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
         return list;
     }, [amendmentsList, amendmentTypeFilter, amendmentSearch]);
 
-    // Role display label & color mapping
     const getRoleBadge = (role) => {
         switch (role) {
             case 'super_admin':
@@ -531,7 +514,7 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
 
     return (
         <div className="space-y-6">
-            {/* Header / Admin Banner */}
+
             <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 rounded-2xl p-6 text-white shadow-md border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex items-center gap-3.5">
                     <div className="w-12 h-12 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-lg border border-blue-400/30 shrink-0">
@@ -569,9 +552,8 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 </div>
             </div>
 
-            {/* Top Stat Metric Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Metric 1: Users */}
+
                 <div
                     onClick={() => { setActiveTab('users'); setUserSubFilter('all'); }}
                     className={`bg-white p-5 rounded-xl border transition shadow-xs cursor-pointer hover:border-blue-400 ${activeTab === 'users' ? 'ring-2 ring-blue-500 border-blue-500' : 'border-slate-200'}`}
@@ -598,7 +580,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                     </div>
                 </div>
 
-                {/* Metric 2: Amendments */}
                 <div
                     onClick={() => setActiveTab('amendments')}
                     className={`bg-white p-5 rounded-xl border transition shadow-xs cursor-pointer hover:border-purple-400 ${activeTab === 'amendments' ? 'ring-2 ring-purple-500 border-purple-500' : 'border-slate-200'}`}
@@ -619,7 +600,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                     </div>
                 </div>
 
-                {/* Metric 3: PPMP Oversight */}
                 <div
                     onClick={() => setActiveTab('ppmps')}
                     className={`bg-white p-5 rounded-xl border transition shadow-xs cursor-pointer hover:border-emerald-400 ${activeTab === 'ppmps' ? 'ring-2 ring-emerald-500 border-emerald-500' : 'border-slate-200'}`}
@@ -640,7 +620,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                     </div>
                 </div>
 
-                {/* Metric 4: Security & Audit */}
                 <div
                     onClick={() => setActiveTab('security')}
                     className={`bg-white p-5 rounded-xl border transition shadow-xs cursor-pointer hover:border-emerald-400 ${activeTab === 'security' || activeTab === 'settings' ? 'ring-2 ring-emerald-500 border-emerald-500' : 'border-slate-200'}`}
@@ -664,7 +643,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 </div>
             </div>
 
-            {/* Navigation Tabs Bar */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-1.5 flex items-center gap-2 overflow-x-auto">
                 <button
                     type="button"
@@ -756,6 +734,37 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 >
                     <FileSpreadsheet className="w-4 h-4" />
                     <span>PPMP Master List</span>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('analytics')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
+                        activeTab === 'analytics'
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                >
+                    <BarChart3 className="w-4 h-4" />
+                    Visual Analytics
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        activeTab === 'analytics' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                    }`}>
+                        Live
+                    </span>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('reports')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
+                        activeTab === 'reports'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                >
+                    <Printer className="w-4 h-4" />
+                    <span>Reports &amp; Bulk Print/PDF</span>
                 </button>
 
                 <button
@@ -861,14 +870,24 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                     <PenTool className="w-4 h-4" />
                     <span>Official Signatories (APP / PPMP)</span>
                 </button>
+
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('monitoring_viewers')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
+                        activeTab === 'monitoring_viewers'
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                >
+                    <Eye className="w-4 h-4" />
+                    <span>Authorize Viewer (Monitoring)</span>
+                </button>
             </div>
 
-            {/* ══════════════════════════════════════════════════════════════════ */}
-            {/* TAB 1: USERS MANAGEMENT                                          */}
-            {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'users' && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden space-y-4">
-                    {/* Header + Feedback */}
+
                     <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
                             <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide flex items-center gap-2">
@@ -890,9 +909,8 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                         </div>
                     )}
 
-                    {/* Filter Bar */}
                     <div className="px-5 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-                        {/* Sub tabs */}
+
                         <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg text-xs font-semibold shrink-0 overflow-x-auto">
                             <button
                                 type="button"
@@ -929,7 +947,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                             </button>
                         </div>
 
-                        {/* Search & Add User */}
                         <div className="flex items-center gap-2 flex-1 max-w-lg">
                             <div className="relative flex-1">
                                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -953,7 +970,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                         </div>
                     </div>
 
-                    {/* Users Table */}
                     <div className="overflow-x-auto border-t border-slate-100 min-h-[300px]">
                         <table className="w-full text-left text-xs">
                             <thead className="bg-slate-50 text-slate-700 uppercase font-semibold border-b border-slate-200">
@@ -1004,14 +1020,20 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                                         )}
                                                     </td>
                                                     <td className="p-3">
-                                                        {getRoleBadge(u.role)}
+                                                        <div className="flex flex-wrap gap-1 max-w-[200px]">
+                                                            {getUserRolesList(u).map((roleKey) => (
+                                                                <React.Fragment key={roleKey}>
+                                                                    {getRoleBadge(roleKey)}
+                                                                </React.Fragment>
+                                                            ))}
+                                                        </div>
                                                         {u.designation && (
                                                             <div className="text-[10px] text-slate-500 mt-0.5 truncate max-w-[140px]">
                                                                 {u.designation}
                                                             </div>
                                                         )}
-                                                        {/* TWG Assigned Account Codes Pill */}
-                                                        {u.role === 'twg' && (() => {
+
+                                                        {getUserRolesList(u).includes('twg') && (() => {
                                                             const codes = u.account_codes || u.accountCodes || [];
                                                             return (
                                                                 <div className="mt-1">
@@ -1033,7 +1055,7 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                                                 </div>
                                                             );
                                                         })()}
-                                                        {/* Systems Access Badges */}
+
                                                         {(() => {
                                                             let systems = [];
                                                             if (Array.isArray(u.accessible_systems)) {
@@ -1086,8 +1108,44 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                                                 title={u.signature_path ? "View / Manage Signature" : "Add / Upload Signature"}
                                                             >
                                                                 <PenTool className="w-3 h-3 text-indigo-600" />
-                                                                <span>{u.signature_path ? 'Signature' : 'No Signature (Add)'}</span>
+                                                                <span>
+                                                                    {u.signature_path
+                                                                        ? u.pnpki_signature?.signature_type === 'pnpki'
+                                                                            ? 'PNPKI E-Sig'
+                                                                            : 'Signature'
+                                                                        : 'No Signature (Add)'}
+                                                                </span>
                                                             </button>
+                                                            {u.pnpki_signature?.signature_type === 'pnpki' && (
+                                                                <>
+                                                                    {u.pnpki_signature?.expiration_date && (
+                                                                        <span
+                                                                            className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-bold border ${
+                                                                                u.pnpki_signature?.is_expired
+                                                                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                                                                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                            }`}
+                                                                            title={`PNPKI Expiration Date: ${u.pnpki_signature.expiration_date}`}
+                                                                        >
+                                                                            {u.pnpki_signature?.is_expired
+                                                                                ? `Expired (${u.pnpki_signature.expiration_date})`
+                                                                                : `Exp: ${u.pnpki_signature.expiration_date}`}
+                                                                        </span>
+                                                                    )}
+                                                                    {u.pnpki_signature?.proof_pdf_url && (
+                                                                        <a
+                                                                            href={u.pnpki_signature.proof_pdf_url}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className="inline-flex items-center gap-1 text-[10px] text-emerald-700 hover:text-emerald-900 font-semibold underline underline-offset-2 hover:bg-emerald-50 px-1 py-0.5 rounded transition"
+                                                                            title="View PNPKI Proof of Registration PDF"
+                                                                        >
+                                                                            <FileText className="w-3 h-3 text-emerald-600" />
+                                                                            <span>PNPKI PDF</span>
+                                                                        </a>
+                                                                    )}
+                                                                </>
+                                                            )}
                                                             {u.authorization_letter_path && (
                                                                 <a
                                                                     href={`/api/users/${u.id}/authorization-letter`}
@@ -1144,6 +1202,7 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                                             }}
                                                             onManageCodes={() => setTwgAccountCodesModalUser(u)}
                                                             onManageSystems={() => setSystemAccessModalUser(u)}
+                                                            onManageSignature={() => setSignaturePreviewUser(u)}
                                                             onApprove={() => handleApproveUser(u)}
                                                             onReject={() => {
                                                                 setRejectModalUser(u);
@@ -1163,7 +1222,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                         </table>
                     </div>
 
-                    {/* Pagination */}
                     {filteredUsers.length > 0 && (() => {
                         const totalItems = filteredUsers.length;
                         const totalPages = Math.ceil(totalItems / userPerPage) || 1;
@@ -1188,9 +1246,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 </div>
             )}
 
-            {/* ══════════════════════════════════════════════════════════════════ */}
-            {/* TAB 2: AMENDED & SUPPLEMENTAL MANAGEMENT                        */}
-            {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'amendments' && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden space-y-4">
                     <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1214,9 +1269,8 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                         </div>
                     )}
 
-                    {/* Filter & Search Bar */}
                     <div className="px-5 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-                        {/* Status subtabs */}
+
                         <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg text-xs font-semibold shrink-0 overflow-x-auto">
                             <button
                                 type="button"
@@ -1253,7 +1307,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                             </button>
                         </div>
 
-                        {/* Search & Type filter */}
                         <div className="flex items-center gap-2 flex-1 max-w-md">
                             <select
                                 value={amendmentTypeFilter}
@@ -1278,7 +1331,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                         </div>
                     </div>
 
-                    {/* Amendments Table */}
                     <div className="overflow-x-auto border-t border-slate-100">
                         <table className="w-full text-left text-xs">
                             <thead className="bg-slate-50 text-slate-700 uppercase font-semibold border-b border-slate-200">
@@ -1487,18 +1539,12 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 </div>
             )}
 
-            {/* ══════════════════════════════════════════════════════════════════ */}
-            {/* TAB 3: SYSTEM LOGS & AUDIT TRAIL                                */}
-            {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'logs' && (
                 <div className="space-y-4">
                     <AdminActivityLog />
                 </div>
             )}
 
-            {/* ══════════════════════════════════════════════════════════════════ */}
-            {/* TAB 4: PPMP MASTER LIST                                          */}
-            {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'ppmps' && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden space-y-4">
                     <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1513,10 +1559,9 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                         </div>
                     </div>
 
-                    {/* Filter controls */}
                     <div className="px-5 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between flex-wrap">
                         <div className="flex items-center gap-2 flex-wrap flex-1">
-                            {/* Search */}
+
                             <div className="relative min-w-[200px] flex-1">
                                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                 <input
@@ -1529,7 +1574,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                 />
                             </div>
 
-                            {/* Office Filter */}
                             <select
                                 value={ppmpOfficeFilter}
                                 onChange={(e) => { setPpmpOfficeFilter(e.target.value); setPpmpPage(1); }}
@@ -1543,7 +1587,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                 ))}
                             </select>
 
-                            {/* Fiscal Year Filter */}
                             <select
                                 value={ppmpYearFilter}
                                 onChange={(e) => { setPpmpYearFilter(e.target.value); setPpmpPage(1); }}
@@ -1555,7 +1598,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                                 ))}
                             </select>
 
-                            {/* Status Filter */}
                             <select
                                 value={ppmpStatusFilter}
                                 onChange={(e) => { setPpmpStatusFilter(e.target.value); setPpmpPage(1); }}
@@ -1576,229 +1618,307 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                         </div>
                     </div>
 
-                    {/* PPMPs Table */}
-                    <div className="overflow-x-auto border-t border-slate-100">
-                        <table className="w-full text-left text-xs">
-                            <thead className="bg-slate-50 text-slate-700 uppercase font-semibold border-b border-slate-200">
-                                <tr>
-                                    <th className="p-3">Tracking &amp; PPMP No.</th>
-                                    <th className="p-3">Office</th>
-                                    <th className="p-3">Project Title</th>
-                                    <th className="p-3">Fiscal Year</th>
-                                    <th className="p-3">Source of Funds</th>
-                                    <th className="p-3">Estimated Budget</th>
-                                    <th className="p-3">Status</th>
-                                    <th className="p-3 text-right">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {loadingPpmps ? (
-                                    <tr>
-                                        <td colSpan={8} className="p-8 text-center text-slate-500">
-                                            <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-emerald-600" />
-                                            <span>Loading PPMP records...</span>
-                                        </td>
-                                    </tr>
-                                ) : ppmpsList.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={8} className="p-8 text-center text-slate-400 italic">
-                                            No Project Procurement Management Plans found.
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    ppmpsList.map((ppmp) => {
-                                        const suppInfo = getSupplementalKindInfo(ppmp);
-                                        return (
-                                        <tr key={ppmp.id} className="hover:bg-slate-50/80 transition">
-                                            <td className="p-3 font-medium">
-                                                <div className="font-bold text-slate-900">{ppmp.ppmp_number || 'Pending No.'}</div>
-                                                <div className="text-[11px] font-mono text-blue-700 font-semibold">{ppmp.tracking_number}</div>
-                                                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                                    {!ppmp.parent_id ? (
-                                                        <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold tracking-tight uppercase border bg-blue-100 text-blue-800 border-blue-300">
-                                                            Annual
-                                                        </span>
-                                                    ) : (
-                                                        <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold tracking-tight uppercase border ${
-                                                            ppmp.amendment_type === 'AMENDMENT'
-                                                                ? 'bg-purple-100 text-purple-800 border-purple-300'
-                                                                : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                                        }`} title={suppInfo.specify ? `Purpose: ${suppInfo.specify}` : ''}>
-                                                            {ppmp.amendment_type === 'AMENDMENT'
-                                                                ? 'Amended'
-                                                                : `Supplemental (${suppInfo.label || 'Continuation'})`}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="p-3">
-                                                <ExpandableText text={ppmp.office?.name || '—'} maxLength={35} textClassName="font-medium text-slate-800" />
-                                                {ppmp.office?.code && (
-                                                    <span className="font-mono text-[10px] text-slate-500 font-bold">{ppmp.office.code}</span>
-                                                )}
-                                            </td>
-                                            <td className="p-3 max-w-sm">
-                                                <ExpandableText text={ppmp.title} maxLength={50} textClassName="font-semibold text-slate-900" />
-                                                {(() => {
-                                                    const schedule = getPpmpStartOfActivity(ppmp);
-                                                    if (!schedule) return null;
-                                                    const rem = getPimsReminderInfo(schedule);
-                                                    if (!rem) return null;
-                                                    return (
-                                                        <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-                                                            <span
-                                                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                                                    rem.isUrgent
-                                                                        ? 'bg-rose-100 text-rose-800 border border-rose-300 animate-pulse'
-                                                                        : 'bg-amber-50 text-amber-900 border border-amber-200'
-                                                                }`}
-                                                                title={rem.message}
-                                                            >
-                                                                {rem.isUrgent ? <AlertTriangle className="w-2.5 h-2.5 text-rose-600" /> : <Clock className="w-2.5 h-2.5 text-amber-600" />}
-                                                                PIMS: Start {schedule.summaryLabel} {rem.isNearEnd && '(Near End of Month)'}
-                                                            </span>
-                                                        </div>
-                                                    );
-                                                })()}
-                                                {ppmp.creator && (
-                                                    <div className="text-[10px] text-slate-400 mt-0.5">
-                                                        Prepared by: {ppmp.creator.name}
-                                                    </div>
-                                                )}
-                                            </td>
-                                            <td className="p-3">
-                                                <span className="font-mono text-slate-700 font-semibold">FY {ppmp.fiscal_year}</span>
-                                                <div className="text-[10px] text-slate-400">{ppmp.plan_type}</div>
-                                            </td>
-                                            <td className="p-3 text-slate-700">
-                                                <ExpandableFundBadge fund={ppmp.source_of_fund || ppmp.items?.find(i => i.source_of_fund)?.source_of_fund || 'General Fund'} />
-                                            </td>
-                                            <td className="p-3 font-bold text-slate-900">
-                                                {formatCurrency(ppmp.total_budget || 0)}
-                                            </td>
-                                            <td className="p-3">
-                                                <div className="flex flex-col items-start gap-1">
-                                                    <StatusBadge status={ppmp.status} />
-                                                    {ppmp.amendment_status === 'PENDING_APPROVAL' && (
-                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse" title={suppInfo.specify ? `Specify: ${suppInfo.specify}` : ''}>
-                                                            Pending {(ppmp.requested_amendment_type || ppmp.amendment_type) === 'SUPPLEMENTAL'
-                                                                ? `Supplemental (${suppInfo.purpose === 'OTHER' ? (suppInfo.specify ? `Other: ${suppInfo.specify}` : 'Other') : 'Continuation'})`
-                                                                : 'Amendment'}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="p-3 text-right">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => onSelectPpmp && onSelectPpmp(ppmp.uuid)}
-                                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold transition shadow-2xs cursor-pointer"
-                                                >
-                                                    <Eye className="w-3.5 h-3.5" />
-                                                    <span>View</span>
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })
-                            )}
-                            </tbody>
-                        </table>
-                    </div>
+                    {(() => {
+                        const goodsList = ppmpsList.filter((p) => !isInfrastructurePpmp(p));
+                        const infraList = ppmpsList.filter((p) => isInfrastructurePpmp(p));
+                        const isInfraTab = ppmpCategoryTab === 'infrastructure';
+                        const activeItems = isInfraTab ? infraList : goodsList;
+                        const activeCurrentPage = isInfraTab ? ppmpInfraPage : ppmpPage;
+                        const activeOnPageChange = isInfraTab ? setPpmpInfraPage : setPpmpPage;
+                        const activePerPage = isInfraTab ? ppmpInfraPerPage : ppmpPerPage;
+                        const activeOnPerPageChange = isInfraTab ? setPpmpInfraPerPage : setPpmpPerPage;
+                        const activeEmptyLabel = isInfraTab ? 'Infrastructure PPMPs' : 'Goods & Consulting Services PPMPs';
 
-                    {/* PPMP Pagination */}
-                    {ppmpPagination && ppmpPagination.total > ppmpPerPage && (
-                        <div className="px-5 py-3 border-t border-slate-200 bg-slate-50/70">
-                            <PaginationControl
-                                currentPage={ppmpPage}
-                                totalPages={ppmpPagination.last_page}
-                                onPageChange={setPpmpPage}
-                                perPage={ppmpPerPage}
-                                onPerPageChange={setPpmpPerPage}
-                                totalEntries={ppmpPagination.total}
-                                startIndex={(ppmpPage - 1) * ppmpPerPage}
-                                endIndex={ppmpPage * ppmpPerPage}
-                            />
-                        </div>
-                    )}
+                        const totalItems = activeItems.length;
+                        const totalPages = Math.ceil(totalItems / activePerPage) || 1;
+                        const safePage = Math.min(activeCurrentPage, totalPages);
+                        const startIndex = (safePage - 1) * activePerPage;
+                        const endIndex = Math.min(safePage * activePerPage, totalItems);
+                        const paginated = activeItems.slice(startIndex, startIndex + activePerPage);
+
+                        return (
+                            <div className="border-t border-slate-200">
+                                <div className="px-5 pt-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => setPpmpCategoryTab('goods_consulting')}
+                                            className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide border-b-2 transition cursor-pointer ${
+                                                ppmpCategoryTab === 'goods_consulting'
+                                                    ? 'border-blue-600 text-blue-700 bg-white rounded-t-lg shadow-2xs'
+                                                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                                            }`}
+                                        >
+                                            <Package className="w-3.5 h-3.5" />
+                                            Goods &amp; Consulting Services PPMPs
+                                            <span
+                                                className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                                                    ppmpCategoryTab === 'goods_consulting'
+                                                        ? 'bg-blue-100 text-blue-800'
+                                                        : 'bg-slate-200 text-slate-600'
+                                                }`}
+                                            >
+                                                {goodsList.length}
+                                            </span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setPpmpCategoryTab('infrastructure')}
+                                            className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide border-b-2 transition cursor-pointer ${
+                                                ppmpCategoryTab === 'infrastructure'
+                                                    ? 'border-amber-600 text-amber-800 bg-white rounded-t-lg shadow-2xs'
+                                                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                                            }`}
+                                        >
+                                            <HardHat className="w-3.5 h-3.5" />
+                                            Infrastructure PPMPs
+                                            <span
+                                                className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                                                    ppmpCategoryTab === 'infrastructure'
+                                                        ? 'bg-amber-100 text-amber-800'
+                                                        : 'bg-slate-200 text-slate-600'
+                                                }`}
+                                            >
+                                                {infraList.length}
+                                            </span>
+                                        </button>
+                                    </div>
+
+                                    <span className="text-[11px] text-slate-400 italic pb-1.5">
+                                        {isInfraTab
+                                            ? 'Civil works, construction, rehabilitation, improvement, and infrastructure projects'
+                                            : 'Supplies, materials, equipment, general support services, and consulting services'}
+                                    </span>
+                                </div>
+
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs">
+                                        <thead className="bg-slate-50 text-slate-700 uppercase font-semibold border-b border-slate-200">
+                                            <tr>
+                                                <th className="p-3">Tracking &amp; PPMP No.</th>
+                                                <th className="p-3">Office</th>
+                                                <th className="p-3">Project Title</th>
+                                                <th className="p-3">Fiscal Year</th>
+                                                <th className="p-3">Source of Funds</th>
+                                                <th className="p-3">Estimated Budget</th>
+                                                <th className="p-3">Status</th>
+                                                <th className="p-3 text-right">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {loadingPpmps ? (
+                                                <tr>
+                                                    <td colSpan={8} className="p-8 text-center text-slate-500">
+                                                        <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-emerald-600" />
+                                                        <span>Loading PPMP records...</span>
+                                                    </td>
+                                                </tr>
+                                            ) : paginated.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={8} className="p-8 text-center text-slate-400 italic">
+                                                        No {activeEmptyLabel} found.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                paginated.map((ppmp) => {
+                                                    const suppInfo = getSupplementalKindInfo(ppmp);
+                                                    const projectTypeLabel = getPpmpProjectTypeLabel(ppmp);
+                                                    const isInfra = projectTypeLabel === 'Infrastructure';
+                                                    return (
+                                                        <tr key={ppmp.id} className="hover:bg-slate-50/80 transition">
+                                                            <td className="p-3 font-medium">
+                                                                <div className="font-bold text-slate-900">{ppmp.ppmp_number || 'Pending No.'}</div>
+                                                                <div className="text-[11px] font-mono text-blue-700 font-semibold">{ppmp.tracking_number}</div>
+                                                                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                                                    {!ppmp.parent_id ? (
+                                                                        <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold tracking-tight uppercase border bg-blue-100 text-blue-800 border-blue-300">
+                                                                            Annual
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold tracking-tight uppercase border ${
+                                                                            ppmp.amendment_type === 'AMENDMENT'
+                                                                                ? 'bg-purple-100 text-purple-800 border-purple-300'
+                                                                                : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                                                        }`} title={suppInfo.specify ? `Purpose: ${suppInfo.specify}` : ''}>
+                                                                            {ppmp.amendment_type === 'AMENDMENT'
+                                                                                ? 'Amended'
+                                                                                : `Supplemental (${suppInfo.label || 'Continuation'})`}
+                                                                        </span>
+                                                                    )}
+                                                                    <span
+                                                                        className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-bold tracking-tight uppercase border ${
+                                                                            isInfra
+                                                                                ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                                                                : 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                                                                        }`}
+                                                                    >
+                                                                        {projectTypeLabel}
+                                                                    </span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="p-3">
+                                                                <ExpandableText text={ppmp.office?.name || '—'} maxLength={35} textClassName="font-medium text-slate-800" />
+                                                                {ppmp.office?.code && (
+                                                                    <span className="font-mono text-[10px] text-slate-500 font-bold">{ppmp.office.code}</span>
+                                                                )}
+                                                            </td>
+                                                            <td className="p-3 max-w-sm">
+                                                                <ExpandableText text={ppmp.title} maxLength={50} textClassName="font-semibold text-slate-900" />
+                                                                {(() => {
+                                                                    const schedule = getPpmpStartOfActivity(ppmp);
+                                                                    if (!schedule) return null;
+                                                                    const rem = getPimsReminderInfo(schedule);
+                                                                    if (!rem) return null;
+                                                                    return (
+                                                                        <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                                                            <span
+                                                                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                                                    rem.isUrgent
+                                                                                        ? 'bg-rose-100 text-rose-800 border border-rose-300 animate-pulse'
+                                                                                        : 'bg-amber-50 text-amber-900 border border-amber-200'
+                                                                                }`}
+                                                                                title={rem.message}
+                                                                            >
+                                                                                {rem.isUrgent ? <AlertTriangle className="w-2.5 h-2.5 text-rose-600" /> : <Clock className="w-2.5 h-2.5 text-amber-600" />}
+                                                                                PIMS: Start {schedule.summaryLabel} {rem.isNearEnd && '(Near End of Month)'}
+                                                                            </span>
+                                                                        </div>
+                                                                    );
+                                                                })()}
+                                                                {ppmp.creator && (
+                                                                    <div className="text-[10px] text-slate-400 mt-0.5">
+                                                                        Prepared by: {ppmp.creator.name}
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                            <td className="p-3">
+                                                                <span className="font-mono text-slate-700 font-semibold">FY {ppmp.fiscal_year}</span>
+                                                                <div className="text-[10px] text-slate-400">{ppmp.plan_type}</div>
+                                                            </td>
+                                                            <td className="p-3 text-slate-700">
+                                                                <ExpandableFundBadge fund={ppmp.source_of_fund || ppmp.items?.find(i => i.source_of_fund)?.source_of_fund || 'General Fund'} />
+                                                            </td>
+                                                            <td className="p-3 font-bold text-slate-900">
+                                                                {formatCurrency(ppmp.total_budget || 0)}
+                                                            </td>
+                                                            <td className="p-3">
+                                                                <div className="flex flex-col items-start gap-1">
+                                                                    <StatusBadge status={ppmp.status} />
+                                                                    {ppmp.amendment_status === 'PENDING_APPROVAL' && (
+                                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse" title={suppInfo.specify ? `Specify: ${suppInfo.specify}` : ''}>
+                                                                            Pending {(ppmp.requested_amendment_type || ppmp.amendment_type) === 'SUPPLEMENTAL'
+                                                                                ? `Supplemental (${suppInfo.purpose === 'OTHER' ? (suppInfo.specify ? `Other: ${suppInfo.specify}` : 'Other') : 'Continuation'})`
+                                                                                : 'Amendment'}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td className="p-3 text-right">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => onSelectPpmp && onSelectPpmp(ppmp.uuid)}
+                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold transition shadow-2xs cursor-pointer"
+                                                                >
+                                                                    <Eye className="w-3.5 h-3.5" />
+                                                                    <span>View</span>
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {!loadingPpmps && totalItems > 0 && (
+                                    <div className="px-5 py-3 border-t border-slate-200 bg-slate-50/70">
+                                        <PaginationControl
+                                            currentPage={safePage}
+                                            totalPages={totalPages}
+                                            onPageChange={activeOnPageChange}
+                                            perPage={activePerPage}
+                                            onPerPageChange={(val) => {
+                                                activeOnPerPageChange(val);
+                                                activeOnPageChange(1);
+                                            }}
+                                            totalEntries={totalItems}
+                                            startIndex={startIndex}
+                                            endIndex={endIndex}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </div>
             )}
 
-            {/* ══════════════════════════════════════════════════════════════════ */}
-            {/* TAB 5: SOURCES OF FUND & REVIEW ROUTING                           */}
-            {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'fund_sources' && (
                 <FundSourcesManagement user={user} />
             )}
 
-            {/* ══════════════════════════════════════════════════════════════════ */}
-            {/* TAB 5B: MODES OF PROCUREMENT (RA 12009 MASTERLIST)                */}
-            {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'procurement_modes' && (
                 <ProcurementModesManagement />
             )}
 
-            {/* ══════════════════════════════════════════════════════════════════ */}
-            {/* TAB 5C: ACCOUNT CODES (CHART OF ACCOUNTS MASTERLIST)               */}
-            {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'account_codes' && (
                 <AccountCodesManagement />
             )}
 
-            {/* ══════════════════════════════════════════════════════════════════ */}
-            {/* TAB 5D: PROGRAM NAMES DIRECTORY                                    */}
-            {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'program_names' && (
                 <ProgramNamesManagement />
             )}
 
-            {/* ══════════════════════════════════════════════════════════════════ */}
-            {/* TAB 6: PROCUREMENT CONDITIONS & DELIVERY TERMS                    */}
-            {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'conditions' && (
                 <ProcurementConditionsManagement />
             )}
 
-            {/* ══════════════════════════════════════════════════════════════════ */}
-            {/* TAB 7: OTHER TERMS & GREEN SPECIFICATIONS                        */}
-            {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'other_terms' && (
                 <OtherTermsManagement />
             )}
 
-            {/* ══════════════════════════════════════════════════════════════════ */}
-            {/* TAB 8: SUPPORTING DOCUMENTS MANAGEMENT                           */}
-            {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'supporting_docs' && (
                 <SupportingDocumentsManagement />
             )}
 
-            {/* ══════════════════════════════════════════════════════════════════ */}
-            {/* TAB 8: OFFICIAL SIGNATORIES MANAGEMENT (APP & PPMP)               */}
-            {/* ══════════════════════════════════════════════════════════════════ */}
             {activeTab === 'signatories' && (
                 <SignatoriesManagement initialSignatories={data?.signatories} onReload={onReload} />
             )}
 
-            {/* ══════════════════════════════════════════════════════════════════ */}
-            {/* TAB 9: UNIFIED SECURITY & ACCESS CONTROLS (CONSOLIDATED)          */}
-            {/* ══════════════════════════════════════════════════════════════════ */}
             {(activeTab === 'security' || activeTab === 'settings') && (
                 <UnifiedSecurityControls />
             )}
 
-            {/* ══════════════════════════════════════════════════════════════════ */}
-            {/* TAB 10: AFK AUTO-LOGOUT SECURITY MANAGEMENT                       */}
-            {/* ══════════════════════════════════════════════════════════════════ */}
             {(activeTab === 'afk' || activeTab === 'afk_management') && (
                 <AfkLogoutManagement />
             )}
 
-            {/* ══════════════════════════════════════════════════════════════════ */}
-            {/* MODALS                                                           */}
-            {/* ══════════════════════════════════════════════════════════════════ */}
+            {activeTab === 'analytics' && (
+                <AdminVisualAnalytics
+                    analytics={data?.analytics}
+                    endUserAnalytics={data?.end_user_analytics}
+                    metrics={data?.metrics}
+                    recentPpmps={ppmpsList.length > 0 ? ppmpsList : (data?.recent_ppmps || [])}
+                    onSelectPpmp={onSelectPpmp}
+                />
+            )}
 
-            {/* Password Reset Modal */}
+            {activeTab === 'reports' && (
+                <AdminReportsView
+                    recentPpmps={ppmpsList.length > 0 ? ppmpsList : (data?.recent_ppmps || [])}
+                    offices={data?.offices || []}
+                    onSelectPpmp={onSelectPpmp}
+                    user={user}
+                    data={data}
+                />
+            )}
+
+            {activeTab === 'monitoring_viewers' && (
+                <MonitoringAuthorizeViewersPanel />
+            )}
+
             {passwordModalUser && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
                     <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
@@ -1864,7 +1984,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 </div>
             )}
 
-            {/* Reject User Modal */}
             {rejectModalUser && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
                     <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
@@ -1917,76 +2036,22 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 </div>
             )}
 
-            {/* Change Role Modal */}
-            {roleModalUser && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-                    <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-                        <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <SlidersHorizontal className="w-4 h-4 text-blue-400" />
-                                <h3 className="text-sm font-bold">Assign Role — {roleModalUser.name}</h3>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setRoleModalUser(null)}
-                                className="text-slate-400 hover:text-white cursor-pointer"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-                        <form onSubmit={handleRoleSubmit} className="p-5 space-y-4">
-                            {roleError && (
-                                <div className="p-3 bg-rose-50 text-rose-800 rounded-lg text-xs font-medium border border-rose-200">
-                                    {roleError}
-                                </div>
-                            )}
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Select System Role</label>
-                                <select
-                                    value={selectedRole}
-                                    onChange={(e) => setSelectedRole(e.target.value)}
-                                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                                >
-                                    <option value="end_user">End User / Project In-Charge</option>
-                                    <option value="head">Department / Office Head</option>
-                                    <option value="authorized_staff">Authorize Staff (Acting Head)</option>
-                                    <option value="budget_officer">Provincial Budget Officer</option>
-                                    <option value="oppmo">OPPMO / BAC Secretariat</option>
-                                    <option value="twg">BAC-TWG Evaluator</option>
-                                    <option value="pacco">PACCO Reviewer (Provincial Accounting)</option>
-                                    <option value="monitor">OPPMO Monitoring Officer</option>
-                                    <option value="admin">Administrator</option>
-                                    {user?.role === 'super_admin' && (
-                                        <option value="super_admin">Super Administrator</option>
-                                    )}
-                                </select>
-                            </div>
-                            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                                <button
-                                    type="button"
-                                    onClick={() => setRoleModalUser(null)}
-                                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={savingRole}
-                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold cursor-pointer disabled:opacity-50"
-                                >
-                                    {savingRole ? 'Saving...' : 'Save Role'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
+            <UserRolesModal
+                user={roleModalUser}
+                currentUserRole={user?.role}
+                onClose={() => setRoleModalUser(null)}
+                onSaved={(updatedUser, msg) => {
+                    setUsersList(prev => prev.map(u => u.id === updatedUser.id ? { ...u, ...updatedUser } : u));
+                    setActionBanner({ type: 'success', text: msg || 'User roles updated successfully.' });
+                    setTimeout(() => setActionBanner(null), 4000);
+                }}
+            />
 
-            {/* Signature Preview & Update Modal */}
             <UserSignatureModal
                 user={signaturePreviewUser}
                 isOpen={Boolean(signaturePreviewUser)}
                 onClose={() => setSignaturePreviewUser(null)}
+                currentUserRole={user?.role}
                 onUpdated={(updatedUser) => {
                     setUsersList(prev => prev.map(u => u.id === updatedUser.id ? { ...u, ...updatedUser } : u));
                     setSignaturePreviewUser(null);
@@ -1994,7 +2059,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 }}
             />
 
-            {/* Create User Modal */}
             <CreateUserModal
                 isOpen={isCreateUserModalOpen}
                 onClose={() => setIsCreateUserModalOpen(false)}
@@ -2006,7 +2070,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 }}
             />
 
-            {/* Manage Systems Access Modal */}
             <UserSystemAccessModal
                 isOpen={!!systemAccessModalUser}
                 onClose={() => setSystemAccessModalUser(null)}
@@ -2023,7 +2086,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 }}
             />
 
-            {/* Manage TWG Assigned Account Codes Modal */}
             <UserAccountCodesModal
                 isOpen={!!twgAccountCodesModalUser}
                 onClose={() => setTwgAccountCodesModalUser(null)}
@@ -2041,7 +2103,6 @@ export const AdminDashboard = ({ data, user, onSelectPpmp, onNavigate, onReload 
                 }}
             />
 
-            {/* Disapprove Amendment Modal */}
             {rejectAmendmentPpmp && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
                     <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">

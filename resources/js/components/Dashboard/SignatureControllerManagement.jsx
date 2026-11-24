@@ -23,7 +23,7 @@ import {
 export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
     const [settings, setSettings] = useState(() => getSignatureSettings());
     const [loading, setLoading] = useState(true);
-    const [savingKey, setSavingKey] = useState(null); // 'ppmp' | 'app' | 'attachment_list' | 'all' | null
+    const [savingKey, setSavingKey] = useState(null);
     const [notification, setNotification] = useState(null);
 
     const loadSettings = async () => {
@@ -73,10 +73,24 @@ export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
                 onSettingsUpdated(saved);
             }
 
-            const docName = key === 'ppmp' ? 'PPMP' : key === 'app' ? 'APP' : 'Detailed Specifications';
+            const docName =
+                key === 'pnpki_enabled'
+                    ? 'PNPKI Digital E-Signature System'
+                    : key === 'ppmp'
+                      ? 'PPMP'
+                      : key === 'app'
+                        ? 'APP'
+                        : 'Detailed Specifications';
             setNotification({
                 type: 'success',
-                message: `${docName} signature insertion is now ${nextValue ? 'ENABLED (ON)' : 'DISABLED (OFF)'}. All users and reviewers will follow this setting.`,
+                message:
+                    key === 'pnpki_enabled'
+                        ? `PNPKI Digital E-Signature System is now ${nextValue ? 'ENABLED (ON)' : 'DISABLED (OFF)'}. ${
+                              nextValue
+                                  ? 'Users can select PNPKI Digital E-Signature on registration and active PNPKI signatures display on print documents.'
+                                  : 'Registration only shows Optional Digital Signature. E-signatures still display on-screen in PPMP, APP, and Detailed Specifications, and are removed on Print / Download PDF.'
+                          }`
+                        : `${docName} signature insertion is now ${nextValue ? 'ENABLED (ON)' : 'DISABLED (OFF)'}. All users and reviewers will follow this setting.`,
             });
         } catch (e) {
             const err = e.response?.data?.message || 'Failed to update signature settings. Only Super Administrators are authorized.';
@@ -133,7 +147,7 @@ export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
             title: 'PPMP Signatures',
             subtitle: 'Project Procurement Management Plan',
             description:
-                'Controls electronic signature insertion for End-User, Office Head, PBO Reviewer, PACCO Reviewer, OPPMO Reviewer, and Provincial Governor on PPMP views and printouts.',
+                'When ON: Active PNPKI Digital E-Signatures display with Date/Time on both the PPMP screen and Print/Save PDF. Optional Digital Signatures display on the PPMP screen only and are hidden (signature + Date/Time) on Print/Save PDF.',
             icon: FileText,
             color: 'indigo',
             roles: ['End-User', 'Office Head', 'Budget Officer (PBO)', 'Provincial Accountant (PACCO)', 'OPPMO - BAC Secretariat', 'Provincial Governor'],
@@ -143,7 +157,7 @@ export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
             title: 'APP Signatures',
             subtitle: 'Annual Procurement Plan (Consolidated)',
             description:
-                'Controls electronic signature insertion for Prepared by (ADAS II), Checked by (OPPMO PGDH), BAC Members, BAC Chairman, and Provincial Governor on consolidated APP tables and prints.',
+                'When ON: Active PNPKI Digital E-Signatures display on consolidated APP views and Print/Save PDF. Optional Digital Signatures display on screen only and are hidden on Print/Save PDF.',
             icon: FileSpreadsheet,
             color: 'emerald',
             roles: ['Prepared by (ADAS II)', 'Checked by (PGDH - OPPMO)', 'BAC Members', 'BAC Chairman (PBO)', 'Provincial Governor'],
@@ -153,23 +167,26 @@ export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
             title: 'Detailed Specifications Signatures',
             subtitle: 'Annexes, Attachments & Certification Sheets',
             description:
-                'Controls electronic signature insertion on Detailed Specifications, supporting document summaries, and endorsement signing blocks.',
+                'When ON: Active PNPKI Digital E-Signatures display with Date/Time on Detailed Specifications on screen and Print/Save PDF. Optional Digital Signatures display on screen only and are hidden (signature + Date/Time) on Print/Save PDF.',
             icon: Layers,
             color: 'blue',
-            roles: ['End-User / Implementing Unit', 'Office Head Endorsement', 'Reviewer Verification'],
+            roles: ['End-User / Implementing Unit', 'Office Head Endorsement', 'BAC-TWG Approval'],
         },
     ];
 
     return (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            {/* Header */}
+
             <div className="p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 via-white to-slate-50/50">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="space-y-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-200">
                                 <Shield className="w-3 h-3" />
                                 Super Admin Controller
+                            </span>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                PNPKI &amp; Optional Signature Governance
                             </span>
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
                                 <Sliders className="w-3 h-3" />
@@ -178,16 +195,15 @@ export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
                         </div>
                         <h2 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
                             <PenTool className="w-5 h-5 text-indigo-600" />
-                            Electronic Signature Insertion Controller
+                            Electronic Signature &amp; PNPKI Print/PDF Controller
                         </h2>
                         <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
                             Master switch for document signature insertion across <strong>PPMP</strong>, <strong>APP</strong>, and <strong>Detailed Specifications</strong>.
-                            When <strong>ON</strong>, stored electronic signatures are inserted onto documents.
-                            When <strong>OFF</strong>, signatures are omitted and only standard clean signature lines are shown for manual wet signing. All end-users, heads, and reviewers follow this controller.
+                            Users with an active <strong>PNPKI Digital E-Signature</strong> display their e-signature and Date/Time on screen and on <strong>Print / Save PDF</strong>.
+                            Users with an <strong>Optional Digital Signature</strong> display their signature on screen, but <strong>do not display the signature or Date/Time on Print / Save PDF</strong>.
                         </p>
                     </div>
 
-                    {/* Master Controls & Refresh */}
                     <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap">
                         <button
                             type="button"
@@ -233,7 +249,6 @@ export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
                 </div>
             </div>
 
-            {/* Notification Banner */}
             {notification && (
                 <div
                     className={`mx-6 mt-4 p-3.5 rounded-xl border text-xs flex items-start gap-2.5 animate-fade-in ${
@@ -251,7 +266,116 @@ export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
                 </div>
             )}
 
-            {/* 3 Document Switches */}
+            <div className="px-6 pt-5 pb-1">
+                <div
+                    className={`p-5 rounded-2xl border-2 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                        settings.pnpki_enabled !== false
+                            ? 'border-indigo-300 bg-gradient-to-r from-indigo-50/60 via-white to-blue-50/40'
+                            : 'border-slate-300 bg-slate-50/80'
+                    }`}
+                >
+                    <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                                <Shield className={`w-4 h-4 ${settings.pnpki_enabled !== false ? 'text-indigo-600' : 'text-slate-500'}`} />
+                                Use PNPKI Digital E-Signature System (Enable / Disable)
+                            </span>
+                            <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                                    settings.pnpki_enabled !== false
+                                        ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                                        : 'bg-slate-200 text-slate-700 border-slate-300'
+                                }`}
+                            >
+                                {settings.pnpki_enabled !== false ? 'PNPKI E-Sig Enabled' : 'PNPKI E-Sig Disabled'}
+                            </span>
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed max-w-3xl">
+                            {settings.pnpki_enabled !== false
+                                ? 'When ENABLED: Users registering an account can choose between PNPKI Digital E-Signature and Optional Digital Signature, and valid PNPKI e-signatures appear on PPMP print documents.'
+                                : 'When DISABLED: Registration only shows Optional Digital Signature (no PNPKI option). E-signatures still display on-screen in PPMP, APP, and Detailed Specifications, but are automatically removed on Print or Download/Export PDF (empty signature space, no Date/Time, no bottom certification sentence).'}
+                        </p>
+                    </div>
+
+                    <div className="flex items-center gap-3 self-start md:self-center shrink-0">
+                        <span className="text-xs font-bold text-slate-700 uppercase">
+                            {settings.pnpki_enabled !== false ? 'Enabled' : 'Disabled'}
+                        </span>
+                        <button
+                            type="button"
+                            onClick={() => handleToggle('pnpki_enabled')}
+                            disabled={loading || savingKey !== null}
+                            aria-pressed={settings.pnpki_enabled !== false}
+                            className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 ${
+                                settings.pnpki_enabled !== false ? 'bg-indigo-600' : 'bg-slate-300'
+                            }`}
+                        >
+                            <span className="sr-only">Toggle PNPKI Digital E-Signature System</span>
+                            <span
+                                aria-hidden="true"
+                                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out flex items-center justify-center ${
+                                    settings.pnpki_enabled !== false ? 'translate-x-7' : 'translate-x-0'
+                                }`}
+                            >
+                                {savingKey === 'pnpki_enabled' ? (
+                                    <RefreshCw className="w-3 h-3 text-slate-500 animate-spin" />
+                                ) : settings.pnpki_enabled !== false ? (
+                                    <Check className="w-3.5 h-3.5 text-indigo-600 stroke-[3]" />
+                                ) : (
+                                    <X className="w-3.5 h-3.5 text-slate-400 stroke-[2.5]" />
+                                )}
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div className="px-6 pt-5 pb-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/50 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-extrabold text-emerald-900 uppercase tracking-wide flex items-center gap-1.5">
+                            <Shield className="w-4 h-4 text-emerald-600 shrink-0" />
+                            1. PNPKI Digital E-Signature (Active Certificate)
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 uppercase">
+                            Print &amp; PDF Enabled
+                        </span>
+                    </div>
+                    <ul className="text-[11px] text-slate-700 space-y-1 leading-relaxed">
+                        <li className="flex items-center gap-1.5">
+                            <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span><strong>PPMP &amp; Detailed Specifications (On-Screen):</strong> Displays E-Sig + Date &amp; Time</span>
+                        </li>
+                        <li className="flex items-center gap-1.5">
+                            <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span><strong>Printing &amp; Save/Import PDF:</strong> Displays E-Sig + Date &amp; Time</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/40 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-extrabold text-blue-900 uppercase tracking-wide flex items-center gap-1.5">
+                            <PenTool className="w-4 h-4 text-blue-600 shrink-0" />
+                            2. Optional Digital Signature (or Expired PNPKI)
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300 uppercase">
+                            Hidden on Print / PDF
+                        </span>
+                    </div>
+                    <ul className="text-[11px] text-slate-700 space-y-1 leading-relaxed">
+                        <li className="flex items-center gap-1.5">
+                            <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                            <span><strong>PPMP &amp; Detailed Specifications (On-Screen):</strong> Displays Signature + Date &amp; Time</span>
+                        </li>
+                        <li className="flex items-center gap-1.5">
+                            <X className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                            <span><strong>Printing &amp; Save/Import PDF:</strong> Does <strong>NOT</strong> display Signature or Date &amp; Time</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
             <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-5">
                 {sections.map((section) => {
                     const Icon = section.icon;
@@ -268,7 +392,7 @@ export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
                             }`}
                         >
                             <div>
-                                {/* Top Badges & Switch */}
+
                                 <div className="flex items-center justify-between gap-3 mb-3">
                                     <div className="flex items-center gap-2">
                                         <div
@@ -288,7 +412,6 @@ export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
                                         </div>
                                     </div>
 
-                                    {/* ON / OFF Switch */}
                                     <button
                                         type="button"
                                         onClick={() => handleToggle(section.key)}
@@ -316,7 +439,6 @@ export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
                                     </button>
                                 </div>
 
-                                {/* Status indicator */}
                                 <div className="mb-3">
                                     <span
                                         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider ${
@@ -334,13 +456,11 @@ export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
                                     </span>
                                 </div>
 
-                                {/* Description */}
                                 <p className="text-xs text-slate-600 leading-relaxed mb-4">
                                     {section.description}
                                 </p>
                             </div>
 
-                            {/* Covered Roles / Scope */}
                             <div className="pt-3 border-t border-slate-100 mt-auto">
                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
                                     Signatories Bound by this Controller:
@@ -361,7 +481,6 @@ export const SignatureControllerManagement = ({ onSettingsUpdated = null }) => {
                 })}
             </div>
 
-            {/* Bottom info banner */}
             <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between text-xs text-slate-500 gap-2">
                 <div className="flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />

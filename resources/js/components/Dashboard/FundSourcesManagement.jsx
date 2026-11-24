@@ -37,7 +37,7 @@ export const FundSourcesManagement = ({ user: propUser }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [routeFilter, setRouteFilter] = useState(() => (isPacco ? 'pacco' : (isBudgetOfficer ? 'budget' : 'ALL')));
     const [categoryFilter, setCategoryFilter] = useState(() => (isPacco ? 'Trust Fund' : 'ALL'));
-    const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'INACTIVE'
+    const [statusFilter, setStatusFilter] = useState('ALL');
     const [currentPage, setCurrentPage] = useState(1);
     const [perPage, setPerPage] = useState(10);
 
@@ -51,7 +51,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
         }
     }, [isPacco, isBudgetOfficer]);
 
-    // Form Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingSource, setEditingSource] = useState(null);
     const [formData, setFormData] = useState({
@@ -66,16 +65,13 @@ export const FundSourcesManagement = ({ user: propUser }) => {
     const [saving, setSaving] = useState(false);
     const [modalError, setModalError] = useState('');
 
-    // Delete Modal state
     const [deleteModalSource, setDeleteModalSource] = useState(null);
     const [deleting, setDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState('');
 
-    // Print / PDF Modal state
     const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
     const [isExportingExcel, setIsExportingExcel] = useState(false);
 
-    // Feedback notification
     const [feedback, setFeedback] = useState({ type: '', text: '' });
 
     const showFeedback = (type, text) => {
@@ -108,15 +104,13 @@ export const FundSourcesManagement = ({ user: propUser }) => {
         fetchFundSources();
     }, [isPacco, isBudgetOfficer]);
 
-    // Role-separated filtered list
     const filteredSources = useMemo(() => {
         return fundSources.filter((fs) => {
-            // Strict role separation:
-            // PACCO reviewer account: ONLY Trust Funds (workflow_route === 'pacco' or category === 'Trust Fund')
+
             if (isPacco && fs.workflow_route !== 'pacco' && fs.category !== 'Trust Fund') {
                 return false;
             }
-            // Budget reviewer account: ONLY Budget Officer pipeline (workflow_route === 'budget' or category !== 'Trust Fund')
+
             if (isBudgetOfficer && (fs.workflow_route === 'pacco' || fs.category === 'Trust Fund')) {
                 return false;
             }
@@ -148,12 +142,10 @@ export const FundSourcesManagement = ({ user: propUser }) => {
         });
     }, [fundSources, searchQuery, routeFilter, categoryFilter, statusFilter, isPacco, isBudgetOfficer]);
 
-    // Reset page to 1 whenever filters or search query change
     useEffect(() => {
         setCurrentPage(1);
     }, [searchQuery, routeFilter, categoryFilter, statusFilter]);
 
-    // Paginated slice
     const totalEntries = filteredSources.length;
     const totalPages = Math.max(1, Math.ceil(totalEntries / perPage));
     const safePage = Math.min(currentPage, totalPages) || 1;
@@ -163,7 +155,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
         return filteredSources.slice(startIndex, endIndex);
     }, [filteredSources, startIndex, endIndex]);
 
-    // Open Modal for Add
     const handleOpenAddModal = () => {
         setEditingSource(null);
         setFormData({
@@ -179,7 +170,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
         setIsModalOpen(true);
     };
 
-    // Open Modal for Edit
     const handleOpenEditModal = (source) => {
         setEditingSource(source);
         setFormData({
@@ -195,7 +185,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
         setIsModalOpen(true);
     };
 
-    // Save Form (Create or Update)
     const handleSave = async (e) => {
         e.preventDefault();
         if (!formData.name.trim()) {
@@ -228,7 +217,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
         }
     };
 
-    // Quick toggle active status
     const handleToggleActive = async (source) => {
         try {
             const nextStatus = !source.is_active;
@@ -244,7 +232,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
         }
     };
 
-    // Delete confirmation
     const handleDelete = async () => {
         if (!deleteModalSource) return;
         setDeleting(true);
@@ -263,7 +250,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
         }
     };
 
-    // Export to Excel / CSV
     const handleExportExcel = async () => {
         setIsExportingExcel(true);
         try {
@@ -289,7 +275,7 @@ export const FundSourcesManagement = ({ user: propUser }) => {
             window.URL.revokeObjectURL(url);
             showFeedback('success', 'Excel/CSV file exported successfully.');
         } catch (err) {
-            // Client-side fallback generation if server endpoint encounters issue
+
             try {
                 let csvContent = '\uFEFFID,Source of Fund Name,Code,Category,Review Route,Status,PPMP Usage Count,Description,Display Order\n';
                 filteredSources.forEach(s => {
@@ -323,7 +309,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
         }
     };
 
-    // Print Document / PDF Generator
     const handlePrintDocument = () => {
         window.print();
     };
@@ -336,7 +321,7 @@ export const FundSourcesManagement = ({ user: propUser }) => {
 
     return (
         <div className="space-y-6 animate-in fade-in duration-150">
-            {/* Feedback notification */}
+
             {feedback.text && (
                 <div className={`p-4 rounded-xl border flex items-center justify-between text-xs font-semibold shadow-xs ${
                     feedback.type === 'error'
@@ -353,7 +338,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                 </div>
             )}
 
-            {/* Header Banner - Tailored to PACCO Reviewer vs Budget Officer */}
             <div className={`text-white rounded-2xl p-6 border shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4 ${
                 isPacco
                     ? 'bg-gradient-to-r from-slate-900 via-teal-950 to-slate-900 border-teal-800/40'
@@ -414,7 +398,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                         <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
                     </button>
 
-                    {/* Export Excel Button */}
                     <button
                         type="button"
                         onClick={handleExportExcel}
@@ -426,7 +409,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                         <span>Export Excel</span>
                     </button>
 
-                    {/* Export PDF / Print Button */}
                     <button
                         type="button"
                         onClick={() => setIsPrintModalOpen(true)}
@@ -437,7 +419,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                         <span>Export PDF / Print</span>
                     </button>
 
-                    {/* Add Fund Source Button */}
                     <button
                         type="button"
                         onClick={handleOpenAddModal}
@@ -453,9 +434,8 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                 </div>
             </div>
 
-            {/* Workflow Routing Explainer Cards - Separated: PACCO sees only PACCO; Budget sees only Budget */}
             <div className={`grid gap-4 ${isAdmin ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
-                {/* Budget Route Card - Hidden for PACCO Reviewer */}
+
                 {!isPacco && (
                     <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-xs flex flex-col justify-between">
                         <div className="flex items-center justify-between mb-2">
@@ -484,7 +464,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                     </div>
                 )}
 
-                {/* PACCO Route Card - Hidden for Budget Officer */}
                 {!isBudgetOfficer && (
                     <div className="bg-white p-4 rounded-xl border border-teal-100 shadow-xs flex flex-col justify-between">
                         <div className="flex items-center justify-between mb-2">
@@ -514,7 +493,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                 )}
             </div>
 
-            {/* Controls Bar: Search & Category Tabs */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col lg:flex-row items-center justify-between gap-3">
                 <div className="relative w-full lg:w-80">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -528,7 +506,7 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                 </div>
 
                 <div className="flex items-center gap-2 w-full lg:w-auto overflow-x-auto flex-wrap">
-                    {/* Category Filter Tabs - Separated per account */}
+
                     {isPacco ? (
                         <div className="flex items-center gap-1.5 bg-teal-50 border border-teal-200 px-3 py-1.5 rounded-lg">
                             <span className="w-2 h-2 rounded-full bg-teal-500" />
@@ -612,7 +590,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                         </div>
                     )}
 
-                    {/* Status Filter */}
                     <select
                         value={statusFilter}
                         onChange={(e) => setStatusFilter(e.target.value)}
@@ -623,7 +600,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                         <option value="INACTIVE">Inactive Only</option>
                     </select>
 
-                    {/* Entries Per Page Selector in Header Controls */}
                     <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg text-xs">
                         <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Show:</span>
                         <select
@@ -644,7 +620,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                 </div>
             </div>
 
-            {/* Fund Sources Table */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs text-slate-600">
@@ -681,12 +656,11 @@ export const FundSourcesManagement = ({ user: propUser }) => {
 
                                     return (
                                         <tr key={source.id} className="hover:bg-slate-50/70 transition">
-                                            {/* Order */}
+
                                             <td className="px-5 py-3.5 font-mono font-bold text-slate-400 text-center w-12">
                                                 {source.display_order ?? 0}
                                             </td>
 
-                                            {/* Name & Code */}
                                             <td className="px-5 py-3.5">
                                                 <div className="flex items-center gap-2.5">
                                                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
@@ -712,7 +686,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                                                 </div>
                                             </td>
 
-                                            {/* Category */}
                                             <td className="px-5 py-3.5">
                                                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                                                     isTrust
@@ -723,7 +696,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                                                 </span>
                                             </td>
 
-                                            {/* Workflow Route Pipeline */}
                                             <td className="px-5 py-3.5">
                                                 {isBudgetRoute ? (
                                                     <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200 font-semibold text-[11px]">
@@ -738,12 +710,10 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                                                 )}
                                             </td>
 
-                                            {/* Description */}
                                             <td className="px-5 py-3.5 max-w-xs text-slate-600 text-xs truncate">
                                                 {source.description || <span className="text-slate-300 italic">No notes</span>}
                                             </td>
 
-                                            {/* PPMPs Count */}
                                             <td className="px-5 py-3.5 text-center">
                                                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
                                                     (source.ppmps_count || 0) > 0
@@ -754,7 +724,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                                                 </span>
                                             </td>
 
-                                            {/* Status */}
                                             <td className="px-5 py-3.5 text-center">
                                                 <button
                                                     type="button"
@@ -780,7 +749,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                                                 </button>
                                             </td>
 
-                                            {/* Actions */}
                                             <td className="px-5 py-3.5 text-right">
                                                 <div className="flex items-center justify-end gap-1.5">
                                                     <button
@@ -812,7 +780,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                     </table>
                 </div>
 
-                {/* Table Footer with Pagination & Entries */}
                 <div className="p-3.5 bg-slate-50/70 border-t border-slate-200">
                     <PaginationControl
                         currentPage={safePage}
@@ -832,11 +799,10 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                 </div>
             </div>
 
-            {/* FORM MODAL: Add / Edit Fund Source */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-150">
-                        {/* Modal Header */}
+
                         <div className={`p-5 text-white flex items-center justify-between border-b ${
                             isPacco
                                 ? 'bg-gradient-to-r from-slate-900 to-teal-950 border-teal-800'
@@ -867,7 +833,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                             </button>
                         </div>
 
-                        {/* Modal Body */}
                         <form onSubmit={handleSave} className="p-6 space-y-4">
                             {modalError && (
                                 <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
@@ -876,7 +841,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                                 </div>
                             )}
 
-                            {/* Name */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
                                     Source of Fund Name <span className="text-rose-500">*</span>
@@ -891,7 +855,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                                 />
                             </div>
 
-                            {/* Code, Category & Display Order */}
                             <div className="grid grid-cols-3 gap-3">
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -960,7 +923,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                                 </div>
                             </div>
 
-                            {/* Review Route Choice */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                                     Automated Review Workflow Pipeline <span className="text-rose-500">*</span>
@@ -1046,7 +1008,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                                 )}
                             </div>
 
-                            {/* Description / Notes */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 mb-1">
                                     Description / Remarks <span className="text-slate-400 font-normal">(Optional)</span>
@@ -1060,7 +1021,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                                 />
                             </div>
 
-                            {/* Active Checkbox */}
                             <div className="flex items-center gap-2 pt-1">
                                 <input
                                     type="checkbox"
@@ -1074,7 +1034,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                                 </label>
                             </div>
 
-                            {/* Modal Actions */}
                             <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
                                 <button
                                     type="button"
@@ -1097,7 +1056,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                 </div>
             )}
 
-            {/* MODAL: Delete Confirmation */}
             {deleteModalSource && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden p-6 space-y-4">
@@ -1145,11 +1103,10 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                 </div>
             )}
 
-            {/* MODAL: Official Printable PDF / Document View */}
             {isPrintModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
                     <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-                        {/* Print Modal Top Controls */}
+
                         <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 no-print">
                             <div className="flex items-center gap-2.5">
                                 <Printer className="w-5 h-5 text-indigo-400" />
@@ -1177,10 +1134,9 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                             </div>
                         </div>
 
-                        {/* Printable Document Preview Area */}
                         <div className="flex-1 overflow-y-auto p-8 bg-slate-100 custom-scrollbar">
                             <div className="bg-white p-8 rounded-xl shadow-md border border-slate-200 max-w-3xl mx-auto text-slate-800 space-y-6 print:p-0 print:shadow-none print:border-none">
-                                {/* Official Header */}
+
                                 <div className="text-center space-y-1 border-b-2 border-slate-900 pb-4">
                                     <div className="flex items-center justify-center gap-3">
                                         <img src="/images/logo.png" alt="Provincial Seal" className="w-12 h-12 object-contain" />
@@ -1211,7 +1167,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                                     </div>
                                 </div>
 
-                                {/* Summary Statistics */}
                                 <div className={`grid gap-3 text-center text-xs ${isAdmin ? 'grid-cols-3' : 'grid-cols-2'}`}>
                                     <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
                                         <div className="text-[10px] font-bold text-slate-500 uppercase">
@@ -1240,7 +1195,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                                     )}
                                 </div>
 
-                                {/* Table of Sources */}
                                 <table className="w-full text-left text-xs border border-slate-300">
                                     <thead className="bg-slate-100 font-bold text-slate-700 border-b border-slate-300">
                                         <tr>
@@ -1270,7 +1224,6 @@ export const FundSourcesManagement = ({ user: propUser }) => {
                                     </tbody>
                                 </table>
 
-                                {/* Official Signatures Section */}
                                 <div className="grid grid-cols-2 gap-8 pt-8 border-t border-slate-200 text-xs">
                                     <div className="space-y-8">
                                         <div className="text-[11px] font-bold text-slate-600">Prepared by:</div>

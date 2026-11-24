@@ -3,13 +3,14 @@ import * as XLSX from 'xlsx';
 import { StatusBadge, formatCurrency, formatDate } from '../../components/UI/StatusBadge';
 import { PaginationControl } from '../../components/UI/PaginationControl';
 import { signatoryService, userService, officeService, ppmpService } from '../../services/api';
-import { isAwaitingReceive, getSupplementalKindInfo } from '../../utils/workflowHelpers';
+import { isAwaitingReceive, getSupplementalKindInfo, isInfrastructurePpmp, getPpmpProjectTypeLabel } from '../../utils/workflowHelpers';
 import { getStandardFiscalYears } from '../../utils/fiscalYears';
 import { showConfirm } from '../../utils/modalAlert';
 import { AdminSidebar } from '../../components/Dashboard/AdminSidebar';
 import { AdminVisualAnalytics } from '../../components/Dashboard/AdminVisualAnalytics';
 import { AdminReportsView } from '../../components/Dashboard/AdminReportsView';
 import { AdminActivityLog } from '../../components/Dashboard/AdminActivityLog';
+import { SuperAdminSecurityLogsView } from '../../components/Dashboard/SuperAdminSecurityLogsView';
 import { FundSourcesManagement } from '../../components/Dashboard/FundSourcesManagement';
 import { ProcurementModesManagement } from '../../components/Dashboard/ProcurementModesManagement';
 import { ProcurementConditionsManagement } from '../../components/Dashboard/ProcurementConditionsManagement';
@@ -23,10 +24,13 @@ import { PortalSystemsManagement } from '../../components/Dashboard/PortalSystem
 import { OppmoTeamManagement } from '../../components/Dashboard/OppmoTeamManagement';
 import { isDeveloperModeActive } from '../../utils/devToolsGuard';
 import { AdminDashboard } from './AdminDashboard';
+import { MonitoringAuthorizeViewersPanel } from '../../components/Dashboard/MonitoringAuthorizeViewersPanel';
+import { EndUserVisualAnalytics } from '../../components/Dashboard/EndUserVisualAnalytics';
 import { CreateUserModal } from '../../components/Dashboard/CreateUserModal';
 import { UserSignatureModal } from '../../components/Dashboard/UserSignatureModal';
 import { UserSystemAccessModal } from '../../components/Dashboard/UserSystemAccessModal';
 import { UserActionDropdown } from '../../components/Dashboard/UserActionDropdown';
+import { UserRolesModal, getUserRolesList } from '../../components/Dashboard/UserRolesModal';
 import { canUserAccessSystem } from '../../components/UI/UnauthorizedSystemAccessView';
 import { ExpandableText, ExpandableFundBadge } from '../../components/UI/ExpandableCell';
 import {
@@ -73,6 +77,8 @@ import {
     UserPlus,
     Layers,
     Landmark,
+    Package,
+    HardHat,
 } from 'lucide-react';
 
 export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) => {
@@ -80,13 +86,10 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
     const recentPpmps = data?.recent_ppmps || [];
     const analytics = data?.analytics || null;
 
-    // Admin Sidebar active navigation tab ('overview', 'analytics', 'reports', 'offices', 'users', 'signatories', 'settings')
     const [adminSection, setAdminSection] = useState('overview');
 
-    // Reviewer active navigation tab for Budget Officer & PACCO Reviewer ('queue' | 'fund_sources')
     const [reviewerView, setReviewerView] = useState('queue');
 
-    // Live Developer Mode status
     const [devModeActive, setDevModeActive] = useState(() => isDeveloperModeActive());
     useEffect(() => {
         const handleDevModeChange = (e) => {
@@ -118,7 +121,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
         };
     }, [onReload]);
 
-    // Signatories state for Admin view
     const [signatoriesList, setSignatoriesList] = useState(data?.signatories || []);
     const [isSignatoryModalOpen, setIsSignatoryModalOpen] = useState(false);
     const [editingSignatory, setEditingSignatory] = useState(null);
@@ -133,10 +135,9 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
     const [signatoryPage, setSignatoryPage] = useState(1);
     const [signatoryPerPage, setSignatoryPerPage] = useState(5);
 
-    // User management state for Admin view
     const [usersList, setUsersList] = useState(data?.users || []);
     const [userSearch, setUserSearch] = useState('');
-    const [userTab, setUserTab] = useState('all'); // 'all', 'pending', 'active'
+    const [userTab, setUserTab] = useState('all');
     const [userPage, setUserPage] = useState(1);
     const [userPerPage, setUserPerPage] = useState(5);
     const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -151,8 +152,8 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
     const [signaturePreviewUser, setSignaturePreviewUser] = useState(null);
     const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
     const [selectedUserForSystems, setSelectedUserForSystems] = useState(null);
+    const [roleModalUser, setRoleModalUser] = useState(null);
 
-    // Office management & CSV/Excel Import state for Admin view
     const [officesList, setOfficesList] = useState(data?.offices || []);
     const [officeSearch, setOfficeSearch] = useState('');
     const [officePage, setOfficePage] = useState(1);
@@ -169,7 +170,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
     const [savingOffice, setSavingOffice] = useState(false);
     const [officeError, setOfficeError] = useState('');
 
-    // Import modal state
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [importData, setImportData] = useState([]);
     const [importFileName, setImportFileName] = useState('');
@@ -178,7 +178,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
     const [importing, setImporting] = useState(false);
     const fileInputRef = useRef(null);
 
-    // Document receiving & opening state
     const [receivingUuids, setReceivingUuids] = useState({});
     const [openingUuids, setOpeningUuids] = useState({});
 
@@ -192,14 +191,21 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
         }
     };
 
-    // Search and filter state for PPMP table
-    const [ppmpTab, setPpmpTab] = useState('all');
-    const [inReviewSubFilter, setInReviewSubFilter] = useState(''); // '', 'BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'TWG_REVIEW'
-    const [returnedSubFilter, setReturnedSubFilter] = useState(''); // '', 'HEAD_RETURNED', 'TWG_RETURNED', 'BUDGET_OFFICER_RETURNED', 'PACCO_RETURNED', 'OPPMO_RETURNED'
+    const defaultPpmpTab = user?.role === 'twg' ? 'TWG_REVIEW' : 'all';
+    const [ppmpTab, setPpmpTab] = useState(defaultPpmpTab);
+
+    useEffect(() => {
+        setPpmpTab(user?.role === 'twg' ? 'TWG_REVIEW' : 'all');
+    }, [user?.role]);
+    const [inReviewSubFilter, setInReviewSubFilter] = useState('');
+    const [returnedSubFilter, setReturnedSubFilter] = useState('');
     const [ppmpSearch, setPpmpSearch] = useState('');
     const [ppmpYearFilter, setPpmpYearFilter] = useState('');
+    const [ppmpCategoryTab, setPpmpCategoryTab] = useState('goods_consulting');
     const [ppmpPage, setPpmpPage] = useState(1);
-    const [ppmpPerPage, setPpmpPerPage] = useState(5); // 5 or 10 entries
+    const [ppmpPerPage, setPpmpPerPage] = useState(5);
+    const [ppmpInfraPage, setPpmpInfraPage] = useState(1);
+    const [ppmpInfraPerPage, setPpmpInfraPerPage] = useState(5);
 
     const isSuspendedStatus = (status) => {
         if (!status) return false;
@@ -217,28 +223,31 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
         return getStandardFiscalYears([ppmpYearFilter, ...recentPpmps.map(p => p.fiscal_year)]);
     }, [recentPpmps, ppmpYearFilter]);
 
-    // Memoize status counts to prevent laggy recalculations on non-related state changes
+    const categoryScopedPpmps = useMemo(() => {
+        const isInfra = ppmpCategoryTab === 'infrastructure';
+        return recentPpmps.filter((p) => (isInfra ? isInfrastructurePpmp(p) : !isInfrastructurePpmp(p)));
+    }, [recentPpmps, ppmpCategoryTab]);
+
     const statusCounts = useMemo(() => ({
-        all: recentPpmps.length,
-        HEAD_PENDING: recentPpmps.filter(p => p.status === 'HEAD_PENDING').length,
-        HEAD_APPROVED: recentPpmps.filter(p => p.status === 'HEAD_APPROVED' || p.status === 'READY_FOR_REVIEW').length,
-        BUDGET_OFFICER_REVIEW: recentPpmps.filter(p => p.status === 'BUDGET_OFFICER_REVIEW').length,
-        PACCO_REVIEW: recentPpmps.filter(p => p.status === 'PACCO_REVIEW').length,
-        OPPMO_REVIEW: recentPpmps.filter(p => p.status === 'OPPMO_REVIEW').length,
-        TWG_REVIEW: recentPpmps.filter(p => p.status === 'TWG_REVIEW').length,
-        IN_REVIEW: recentPpmps.filter(p => isInReviewStatus(p.status)).length,
-        READY_TO_PRINT: recentPpmps.filter(p => p.status === 'READY_TO_PRINT').length,
-        RETURNED: recentPpmps.filter(p => isSuspendedStatus(p.status)).length,
-        DRAFT: recentPpmps.filter(p => p.status === 'DRAFT').length,
-        PENDING_AMENDMENTS: recentPpmps.filter(p => p.amendment_status === 'PENDING_APPROVAL').length,
-    }), [recentPpmps]);
+        all: categoryScopedPpmps.length,
+        HEAD_PENDING: categoryScopedPpmps.filter(p => p.status === 'HEAD_PENDING').length,
+        HEAD_APPROVED: categoryScopedPpmps.filter(p => p.status === 'HEAD_APPROVED' || p.status === 'READY_FOR_REVIEW').length,
+        BUDGET_OFFICER_REVIEW: categoryScopedPpmps.filter(p => p.status === 'BUDGET_OFFICER_REVIEW').length,
+        PACCO_REVIEW: categoryScopedPpmps.filter(p => p.status === 'PACCO_REVIEW').length,
+        OPPMO_REVIEW: categoryScopedPpmps.filter(p => p.status === 'OPPMO_REVIEW').length,
+        TWG_REVIEW: categoryScopedPpmps.filter(p => p.status === 'TWG_REVIEW').length,
+        IN_REVIEW: categoryScopedPpmps.filter(p => isInReviewStatus(p.status)).length,
+        READY_TO_PRINT: categoryScopedPpmps.filter(p => p.status === 'READY_TO_PRINT').length,
+        RETURNED: categoryScopedPpmps.filter(p => isSuspendedStatus(p.status)).length,
+        DRAFT: categoryScopedPpmps.filter(p => p.status === 'DRAFT').length,
+        PENDING_AMENDMENTS: categoryScopedPpmps.filter(p => p.amendment_status === 'PENDING_APPROVAL').length,
+    }), [categoryScopedPpmps]);
 
     const counts = statusCounts;
 
-    // Memoize filtered PPMPs list for high-performance rendering
     const filteredRecentPpmps = useMemo(() => {
         return recentPpmps.filter((ppmp) => {
-            // 1. Status Tab filter
+
             if (ppmpTab !== 'all') {
                 if (ppmpTab === 'RETURNED') {
                     if (!isSuspendedStatus(ppmp.status)) return false;
@@ -266,12 +275,10 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 }
             }
 
-            // 2. Fiscal Year filter
             if (ppmpYearFilter && String(ppmp.fiscal_year) !== String(ppmpYearFilter)) {
                 return false;
             }
 
-            // 3. Search query filter
             if (ppmpSearch.trim()) {
                 const query = ppmpSearch.trim().toLowerCase();
                 const trackingNo = (ppmp.tracking_number || '').toLowerCase();
@@ -599,7 +606,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
         }
     };
 
-    // CSV & Excel File Parsing
     const handleFileUpload = (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -622,7 +628,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     return;
                 }
 
-                // Header mapping
                 const headers = data[0].map(h => String(h || '').trim().toLowerCase().replace(/\s+/g, '_'));
                 const abbrIdx = headers.findIndex(h => h.includes('abbreviation') || h === 'code' || h === 'abbr');
                 const nameIdx = headers.findIndex(h => h.includes('office') || h === 'name' || h === 'office_name');
@@ -706,12 +711,10 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
         document.body.removeChild(link);
     };
 
-    // ─── COMPUTED HELPERS (used by both admin and non-admin) ──────────────────
     const pendingUsersCount = usersList.filter(u => !u.is_active && u.approval_status !== 'rejected').length;
     const activeUsersCount = usersList.filter(u => u.is_active && u.approval_status !== 'rejected').length;
     const rejectedUsersCount = usersList.filter(u => u.approval_status === 'rejected').length;
 
-    // ─── ADMIN EARLY RETURN (Dedicated Dashboard: Users, Amendments, System Logs, PPMP List) ───
     if (user?.role === 'admin') {
         return (
             <AdminDashboard
@@ -724,9 +727,8 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
         );
     }
 
-    // ─── SUPER ADMIN EARLY RETURN (Full Executive Analytics, Reports, Offices, Signatories) ───
     if (user?.role === 'super_admin') {
-        // Shared: Signatories panel JSX (Full APP + PPMP management)
+
         const SignatoriesPanel = (
             <SignatoriesManagement
                 initialSignatories={data?.signatories}
@@ -734,16 +736,26 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
             />
         );
 
-        // Shared: Users panel JSX (rendered inline in the admin layout)
         const renderAdminContent = () => {
             if (adminSection === 'analytics') {
-                return <AdminVisualAnalytics analytics={analytics} metrics={metrics} recentPpmps={recentPpmps} onSelectPpmp={onSelectPpmp} />;
+                return <AdminVisualAnalytics analytics={analytics} endUserAnalytics={data?.end_user_analytics} metrics={metrics} recentPpmps={recentPpmps} onSelectPpmp={onSelectPpmp} />;
             }
-            if (adminSection === 'reports') {
-                return <AdminReportsView data={data} user={user} />;
+            if (adminSection === 'reports' || adminSection === 'ready_to_print_bulk') {
+                return (
+                    <AdminReportsView
+                        recentPpmps={recentPpmps}
+                        offices={officesList}
+                        onSelectPpmp={onSelectPpmp}
+                        user={user}
+                        data={data}
+                    />
+                );
             }
             if (adminSection === 'signatories') {
                 return <div className="space-y-6">{SignatoriesPanel}</div>;
+            }
+            if (adminSection === 'security_threats') {
+                return <SuperAdminSecurityLogsView />;
             }
             if (adminSection === 'logs') {
                 return <AdminActivityLog />;
@@ -778,7 +790,10 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
             if (adminSection === 'database_backup') {
                 return <DatabaseBackupManagement />;
             }
-            // For 'overview', 'offices', 'users' — we render the full scrollable content below
+            if (adminSection === 'monitoring_viewers') {
+                return <MonitoringAuthorizeViewersPanel />;
+            }
+
             return null;
         };
 
@@ -786,7 +801,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
 
         return (
             <div className="flex gap-6 items-start">
-                {/* Sidebar */}
+
                 <AdminSidebar
                     activeSection={adminSection}
                     onSelectSection={setAdminSection}
@@ -794,9 +809,8 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     pendingUsersCount={pendingUsersCount}
                 />
 
-                {/* Main Content */}
                 <div className="flex-1 min-w-0 space-y-6">
-                    {/* Admin Header */}
+
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
                         <div>
                             <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
@@ -811,8 +825,8 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 type="button"
                                 onClick={() => setAdminSection('settings')}
                                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition border cursor-pointer ${
-                                    devModeActive 
-                                        ? 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100' 
+                                    devModeActive
+                                        ? 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100'
                                         : 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
                                 }`}
                                 title="Click to manage Developer Mode / DevTools Security"
@@ -827,12 +841,11 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                         </div>
                     </div>
 
-                    {/* Routed Section Content */}
                     {adminContent ? (
                         adminContent
                     ) : (
                         <div className="space-y-6">
-                            {/* Overview Section: KPI Metrics */}
+
                             {(adminSection === 'overview') && (
                                 <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
                                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3">
@@ -880,19 +893,14 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 </div>
                             )}
 
-                            {/* System Security & Developer Mode Governance */}
                             {adminSection === 'overview' && <SystemSettingsManagement />}
 
-                            {/* AFK & Inactivity Auto-Logout Security Management */}
                             {adminSection === 'overview' && <AfkLogoutManagement />}
 
-                            {/* Database Backup & Disaster Recovery */}
                             {adminSection === 'overview' && <DatabaseBackupManagement />}
 
-                            {/* Signatories — shown in overview too */}
                             {adminSection === 'overview' && SignatoriesPanel}
 
-                            {/* Users Management */}
                             {(adminSection === 'overview' || adminSection === 'users') && (
                                 <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                                     <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -933,7 +941,41 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                             <button type="button" onClick={() => setUserActionFeedback({ type: '', text: '' })} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
                                         </div>
                                     )}
-                                    {/* User Tabs */}
+                                    {(() => {
+                                        const pendingPnpkiUsers = usersList.filter(
+                                            (usr) => usr.pnpki_signature?.renewal_status === 'pending' && usr.pnpki_signature?.pending_expiration_date
+                                        );
+                                        if (pendingPnpkiUsers.length === 0) return null;
+                                        return (
+                                            <div className="mx-5 mt-4 p-3.5 rounded-xl bg-amber-50 border border-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                <div className="flex items-start gap-2.5">
+                                                    <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5 animate-pulse" />
+                                                    <div>
+                                                        <div className="text-xs font-extrabold text-amber-950">
+                                                            {pendingPnpkiUsers.length} PNPKI E-Signature Renewal Request{pendingPnpkiUsers.length > 1 ? 's' : ''} Awaiting Super Admin Approval
+                                                        </div>
+                                                        <div className="text-[11px] text-amber-800 mt-0.5">
+                                                            Review the new expiration date and Proof of Registration PDF before approving.
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    {pendingPnpkiUsers.map((usr) => (
+                                                        <button
+                                                            key={usr.id}
+                                                            type="button"
+                                                            onClick={() => setSignaturePreviewUser(usr)}
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold transition cursor-pointer shadow-2xs"
+                                                        >
+                                                            <PenTool className="w-3 h-3" />
+                                                            <span>Review {usr.name}</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+
                                     <div className="px-5 pt-3 pb-0 flex items-center gap-2 border-b border-slate-100">
                                         {[
                                             { key: 'all', label: 'All Users' },
@@ -999,28 +1041,36 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                                 </td>
                                                                 <td className="p-3">
                                                                     <div className="flex flex-col items-start gap-1">
-                                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                                                                            u.role === 'super_admin' ? 'bg-rose-100 text-rose-800 border border-rose-300 font-bold' :
-                                                                            u.role === 'admin' ? 'bg-blue-100 text-blue-800 font-bold' :
-                                                                            u.role === 'budget_officer' ? 'bg-indigo-100 text-indigo-800' :
-                                                                            u.role === 'oppmo' ? 'bg-purple-100 text-purple-800' :
-                                                                            u.role === 'twg' ? 'bg-amber-100 text-amber-800' :
-                                                                            u.role === 'pacco' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
-                                                                            u.role === 'head' ? 'bg-blue-100 text-blue-800' :
-                                                                            u.role === 'authorized_staff' ? 'bg-teal-100 text-teal-800 border border-teal-300' :
-                                                                            'bg-slate-100 text-slate-700'
-                                                                        }`}>
-                                                                            {u.role === 'super_admin' ? 'Super Administrator' :
-                                                                             u.role === 'admin' ? 'Administrator' :
-                                                                             u.role === 'budget_officer' ? 'Budget Officer' :
-                                                                             u.role === 'oppmo' ? 'OPPMO' :
-                                                                             u.role === 'twg' ? 'TWG' :
-                                                                             u.role === 'pacco' ? 'PACCO Reviewer' :
-                                                                             u.role === 'head' ? 'Head of Office' :
-                                                                             u.role === 'authorized_staff' ? 'Authorize Staff' :
-                                                                             'End User'}
-                                                                        </span>
-                                                                        {/* Uploaded Documents & Specimen Signature for User */}
+                                                                        <div className="flex flex-wrap gap-1 max-w-[200px]">
+                                                                            {getUserRolesList(u).map((roleKey) => (
+                                                                                <span
+                                                                                    key={roleKey}
+                                                                                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                                                                                        roleKey === 'super_admin' ? 'bg-rose-100 text-rose-800 border border-rose-300 font-bold' :
+                                                                                        roleKey === 'admin' ? 'bg-blue-100 text-blue-800 font-bold' :
+                                                                                        roleKey === 'budget_officer' ? 'bg-indigo-100 text-indigo-800' :
+                                                                                        roleKey === 'oppmo' ? 'bg-purple-100 text-purple-800' :
+                                                                                        roleKey === 'twg' ? 'bg-amber-100 text-amber-800' :
+                                                                                        roleKey === 'pacco' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                                                                                        roleKey === 'head' ? 'bg-blue-100 text-blue-800' :
+                                                                                        roleKey === 'authorized_staff' ? 'bg-teal-100 text-teal-800 border border-teal-300' :
+                                                                                        'bg-slate-100 text-slate-700'
+                                                                                    }`}
+                                                                                >
+                                                                                    {roleKey === 'super_admin' ? 'Super Administrator' :
+                                                                                     roleKey === 'admin' ? 'Administrator' :
+                                                                                     roleKey === 'budget_officer' ? 'Budget Officer' :
+                                                                                     roleKey === 'oppmo' ? 'OPPMO' :
+                                                                                     roleKey === 'twg' ? 'TWG' :
+                                                                                     roleKey === 'pacco' ? 'PACCO Reviewer' :
+                                                                                     roleKey === 'head' ? 'Head of Office' :
+                                                                                     roleKey === 'authorized_staff' ? 'Authorize Staff' :
+                                                                                     roleKey === 'monitor' ? 'Monitor' :
+                                                                                     'End User'}
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+
                                                                         <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                                                                             {u.authorization_letter_path && (
                                                                                 <a
@@ -1042,14 +1092,60 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                                                         ? 'text-indigo-700 hover:text-indigo-900 underline underline-offset-2 hover:bg-indigo-50 font-semibold'
                                                                                         : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'
                                                                                 }`}
-                                                                                title={u.signature_path ? 'View Official Signature' : 'Upload or Draw Specimen Signature'}
+                                                                                title={u.signature_path ? 'View / Manage Official Signature' : 'Upload or Draw Specimen Signature'}
                                                                             >
                                                                                 <PenTool className="w-3 h-3 text-indigo-600 shrink-0" />
-                                                                                <span>{u.signature_path ? 'Signature' : 'Signature'}</span>
+                                                                                <span>
+                                                                                    {u.signature_path
+                                                                                        ? u.pnpki_signature?.signature_type === 'pnpki'
+                                                                                            ? 'PNPKI E-Sig'
+                                                                                            : 'Optional Sig'
+                                                                                        : 'No Signature (Add)'}
+                                                                                </span>
                                                                             </button>
+                                                                            {u.pnpki_signature?.signature_type === 'pnpki' && (
+                                                                                <>
+                                                                                    {u.pnpki_signature?.expiration_date && (
+                                                                                        <span
+                                                                                            className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-bold border ${
+                                                                                                u.pnpki_signature?.is_expired
+                                                                                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                                                                                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                                            }`}
+                                                                                            title={`PNPKI Expiration Date: ${u.pnpki_signature.expiration_date}`}
+                                                                                        >
+                                                                                            {u.pnpki_signature?.is_expired
+                                                                                                ? `Expired (${u.pnpki_signature.expiration_date})`
+                                                                                                : `Exp: ${u.pnpki_signature.expiration_date}`}
+                                                                                        </span>
+                                                                                    )}
+                                                                                    {u.pnpki_signature?.proof_pdf_url && (
+                                                                                        <a
+                                                                                            href={u.pnpki_signature.proof_pdf_url}
+                                                                                            target="_blank"
+                                                                                            rel="noopener noreferrer"
+                                                                                            className="inline-flex items-center gap-1 text-[10px] text-emerald-700 hover:text-emerald-900 font-semibold underline underline-offset-2 hover:bg-emerald-50 px-1 py-0.5 rounded transition"
+                                                                                            title="View PNPKI Proof of Registration PDF"
+                                                                                        >
+                                                                                            <FileText className="w-3 h-3 text-emerald-600 shrink-0" />
+                                                                                            <span>PNPKI PDF</span>
+                                                                                        </a>
+                                                                                    )}
+                                                                                </>
+                                                                            )}
+                                                                            {u.pnpki_signature?.renewal_status === 'pending' && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => setSignaturePreviewUser(u)}
+                                                                                    className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9.5px] font-extrabold bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 animate-pulse cursor-pointer"
+                                                                                    title={`Pending PNPKI Renewal (New Exp: ${u.pnpki_signature.pending_expiration_date}) — Click to Review & Approve`}
+                                                                                >
+                                                                                    <Clock className="w-2.5 h-2.5 text-amber-700 shrink-0" />
+                                                                                    <span>Renewal Pending Approval</span>
+                                                                                </button>
+                                                                            )}
                                                                         </div>
 
-                                                                        {/* Authorized Systems Badges */}
                                                                         <div className="flex items-center gap-1 flex-wrap mt-1">
                                                                             {u.role === 'super_admin' || u.role === 'admin' ? (
                                                                                 <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-purple-100 text-purple-800 text-[9.5px] font-bold border border-purple-200">
@@ -1110,8 +1206,10 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                                         isPending={isPending}
                                                                         isRejected={isRejected}
                                                                         onToggleStatus={() => handleToggleUserStatus(u)}
+                                                                        onChangeRole={() => setRoleModalUser(u)}
                                                                         onResetPassword={() => openPasswordModal(u)}
                                                                         onManageSystems={() => setSelectedUserForSystems(u)}
+                                                                        onManageSignature={() => setSignaturePreviewUser(u)}
                                                                         onApprove={() => handleApproveUser(u)}
                                                                         onReject={() => openRejectModal(u)}
                                                                         onDelete={() => handleDeleteUser(u)}
@@ -1162,7 +1260,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 </div>
                             )}
 
-                            {/* Offices Management */}
                             {(adminSection === 'overview' || adminSection === 'offices') && (
                                 <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                                     <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1282,9 +1379,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     )}
                 </div>
 
-                {/* ── Modals (shared between admin layout and normal layout) ── */}
-
-                {/* Signatory Modal */}
                 {isSignatoryModalOpen && (
                     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setIsSignatoryModalOpen(false)}>
                         <div className="bg-white rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
@@ -1330,7 +1424,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     </div>
                 )}
 
-                {/* Password Modal */}
                 {isPasswordModalOpen && selectedUserForPassword && (
                     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setIsPasswordModalOpen(false)}>
                         <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
@@ -1373,7 +1466,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     </div>
                 )}
 
-                {/* Office Modal */}
                 {isOfficeModalOpen && (
                     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setIsOfficeModalOpen(false)}>
                         <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg" onClick={e => e.stopPropagation()}>
@@ -1420,7 +1512,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     </div>
                 )}
 
-                {/* Import Modal */}
                 {isImportModalOpen && (
                     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setIsImportModalOpen(false)}>
                         <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -1487,7 +1578,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                         </div>
                     </div>
                 )}
-                {/* Reject User Confirmation Modal */}
+
                 {isRejectModalOpen && selectedUserForReject && (
                     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={closeRejectModal}>
                         <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -1547,11 +1638,11 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     </div>
                 )}
 
-                {/* Signature Preview & Update Modal */}
                 <UserSignatureModal
                     user={signaturePreviewUser}
                     isOpen={Boolean(signaturePreviewUser)}
                     onClose={() => setSignaturePreviewUser(null)}
+                    currentUserRole={user?.role}
                     onUpdated={(updatedUser) => {
                         setUsersList(prev => prev.map(u => u.id === updatedUser.id ? { ...u, ...updatedUser } : u));
                         setSignaturePreviewUser(null);
@@ -1559,7 +1650,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     }}
                 />
 
-                {/* Create User Modal */}
                 <CreateUserModal
                     isOpen={isCreateUserModalOpen}
                     onClose={() => setIsCreateUserModalOpen(false)}
@@ -1571,7 +1661,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     }}
                 />
 
-                {/* Manage User System Access Modal (Face-to-Face Request) */}
                 <UserSystemAccessModal
                     isOpen={Boolean(selectedUserForSystems)}
                     targetUser={selectedUserForSystems}
@@ -1590,7 +1679,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
 
     return (
         <div className="space-y-6">
-            {/* Header Greeting */}
+
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-xl border border-slate-200 shadow-xs">
                 <div>
                     <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
@@ -1647,14 +1736,13 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 )}
             </div>
 
-            {/* If Budget Officer or PACCO Reviewer is in 'fund_sources' view */}
             {(user?.role === 'budget_officer' || user?.role === 'pacco') && reviewerView === 'fund_sources' ? (
                 <div className="space-y-6">
                     <FundSourcesManagement user={user} />
                 </div>
             ) : (
                 <>
-                    {/* Role-tailored banner card for quick access on review queue */}
+
                     {(user?.role === 'budget_officer' || user?.role === 'pacco') && (
                         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 rounded-2xl p-4 sm:p-5 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm border border-slate-800">
                             <div className="flex items-start sm:items-center gap-3.5">
@@ -1687,7 +1775,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                         </div>
                     )}
 
-            {/* Metrics Cards Grid tailored to role */}
             <div className={`grid gap-3 sm:gap-4 ${
                 user?.role === 'twg'
                     ? 'grid-cols-2 md:grid-cols-4'
@@ -1970,15 +2057,14 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 )}
             </div>
 
-            {/* End-User PIMS Procurement Publishing Reminders */}
-            {user?.role === 'end_user' && canUserAccessSystem(user, '/pims') && (
+            {user?.role === 'end_user' && (
                 <PimsPublishReminderCard
                     ppmps={recentPpmps}
+                    hasPimsAccess={canUserAccessSystem(user, '/pims')}
                     onOpenPpmp={(uuid) => handleOpenDetails(uuid)}
                 />
             )}
 
-            {/* Admin Management Section for Official Signatories */}
             {user?.role === 'admin' && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                     <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2090,7 +2176,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                         </table>
                     </div>
 
-                    {/* Signatories Pagination Footer */}
                     {signatoriesList.length > 0 && (() => {
                         const totalItems = signatoriesList.length;
                         const totalPages = Math.ceil(totalItems / signatoryPerPage) || 1;
@@ -2117,7 +2202,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 </div>
             )}
 
-            {/* Admin Management Section for System Users & Password Management */}
             {user?.role === 'admin' && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                     <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2131,7 +2215,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             </span>
                         </div>
 
-                        {/* Search & Add User */}
                         <div className="flex items-center gap-2.5 flex-wrap">
                             <div className="relative w-full sm:w-64">
                                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -2158,7 +2241,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                         </div>
                     </div>
 
-                    {/* User Action Feedback Banner */}
                     {userActionFeedback.text && (
                         <div className={`px-5 py-3 text-xs flex items-center justify-between border-b ${userActionFeedback.type === 'error'
                             ? 'bg-rose-50 border-rose-200 text-rose-700 font-medium'
@@ -2175,7 +2257,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                         </div>
                     )}
 
-                    {/* Tab Switchers */}
                     <div className="flex border-b border-slate-200 px-5 pt-3 bg-slate-50/50 gap-2 flex-wrap">
                         {(() => {
                             const pendingCount = usersList.filter(u => !u.is_active && u.approval_status !== 'rejected').length;
@@ -2281,11 +2362,11 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 {(() => {
                                     const filteredUsers = usersList
                                         .filter((u) => {
-                                            // Tab filter
+
                                             if (userTab === 'pending') return !u.is_active && u.approval_status !== 'rejected';
                                             if (userTab === 'active') return u.is_active && u.approval_status !== 'rejected';
                                             if (userTab === 'rejected') return u.approval_status === 'rejected';
-                                            return true; // 'all'
+                                            return true;
                                         })
                                         .filter((u) => {
                                             if (!userSearch) return true;
@@ -2341,27 +2422,36 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                 </td>
                                                 <td className="p-3">
                                                     <div className="flex flex-col items-start gap-1">
-                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${u.role === 'admin' ? 'bg-red-100 text-red-800' :
-                                                            u.role === 'budget_officer' ? 'bg-indigo-100 text-indigo-800' :
-                                                                u.role === 'oppmo' ? 'bg-purple-100 text-purple-800' :
-                                                                    u.role === 'twg' ? 'bg-cyan-100 text-cyan-800' :
-                                                                        u.role === 'pacco' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
-                                                                            u.role === 'head' ? 'bg-amber-100 text-amber-800' :
-                                                                                u.role === 'authorized_staff' ? 'bg-teal-100 text-teal-800 border border-teal-300' :
-                                                                                    'bg-blue-100 text-blue-800'
-                                                            }`}>
-                                                            {u.role === 'admin' ? 'Administrator' :
-                                                                u.role === 'budget_officer' ? 'Budget Officer' :
-                                                                    u.role === 'oppmo' ? 'OPPMO / Secretariat' :
-                                                                        u.role === 'twg' ? 'BAC-TWG Evaluator' :
-                                                                            u.role === 'pacco' ? 'PACCO Reviewer' :
-                                                                                u.role === 'head' ? 'Department Head' :
-                                                                                    u.role === 'authorized_staff' ? 'Authorize Staff' :
-                                                                                        'End User'}
-                                                        </span>
-                                                        {/* Uploaded Documents & Signature */}
+                                                        <div className="flex flex-wrap gap-1 max-w-[200px]">
+                                                            {getUserRolesList(u).map((roleKey) => (
+                                                                <span
+                                                                    key={roleKey}
+                                                                    className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${roleKey === 'admin' ? 'bg-red-100 text-red-800' :
+                                                                        roleKey === 'super_admin' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
+                                                                        roleKey === 'budget_officer' ? 'bg-indigo-100 text-indigo-800' :
+                                                                            roleKey === 'oppmo' ? 'bg-purple-100 text-purple-800' :
+                                                                                roleKey === 'twg' ? 'bg-cyan-100 text-cyan-800' :
+                                                                                    roleKey === 'pacco' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                                                                                        roleKey === 'head' ? 'bg-amber-100 text-amber-800' :
+                                                                                            roleKey === 'authorized_staff' ? 'bg-teal-100 text-teal-800 border border-teal-300' :
+                                                                                                'bg-blue-100 text-blue-800'
+                                                                        }`}
+                                                                >
+                                                                    {roleKey === 'super_admin' ? 'Super Administrator' :
+                                                                        roleKey === 'admin' ? 'Administrator' :
+                                                                        roleKey === 'budget_officer' ? 'Budget Officer' :
+                                                                            roleKey === 'oppmo' ? 'OPPMO / Secretariat' :
+                                                                                roleKey === 'twg' ? 'BAC-TWG Evaluator' :
+                                                                                    roleKey === 'pacco' ? 'PACCO Reviewer' :
+                                                                                        roleKey === 'head' ? 'Department Head' :
+                                                                                            roleKey === 'authorized_staff' ? 'Authorize Staff' :
+                                                                                                'End User'}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+
                                                         <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                                                            {u.role === 'authorized_staff' && (
+                                                            {getUserRolesList(u).includes('authorized_staff') && (
                                                                 u.authorization_letter_path ? (
                                                                     <a
                                                                         href={`/api/users/${u.id}/authorization-letter`}
@@ -2430,6 +2520,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                         isPending={isPending}
                                                         isRejected={isRejected}
                                                         onToggleStatus={() => handleToggleUserStatus(u)}
+                                                        onChangeRole={() => setRoleModalUser(u)}
                                                         onResetPassword={() => openPasswordModal(u)}
                                                         onManageSystems={() => setSelectedUserForSystems(u)}
                                                         onApprove={() => handleApproveUser(u)}
@@ -2447,7 +2538,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                         </table>
                     </div>
 
-                    {/* Users Pagination Footer */}
                     {(() => {
                         const filteredUsers = usersList
                             .filter((u) => {
@@ -2496,7 +2586,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 </div>
             )}
 
-            {/* Admin Management Section for Offices (Add Office & Import in CSV / Excel) */}
             {user?.role === 'admin' && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                     <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2511,7 +2600,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                         </div>
 
                         <div className="flex items-center gap-2 flex-wrap">
-                            {/* Search Office */}
+
                             <div className="relative w-full sm:w-56">
                                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                 <input
@@ -2526,7 +2615,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 />
                             </div>
 
-                            {/* Batch Import Button */}
                             <button
                                 type="button"
                                 onClick={() => {
@@ -2542,7 +2630,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 Import CSV / Excel
                             </button>
 
-                            {/* Add Office Button */}
                             <button
                                 type="button"
                                 onClick={() => openOfficeModal()}
@@ -2642,7 +2729,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                         </table>
                     </div>
 
-                    {/* Offices Pagination Footer */}
                     {(() => {
                         const filteredOffices = officesList
                             .filter((off) => {
@@ -2682,7 +2768,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 </div>
             )}
 
-            {/* Action Required: Suspended PPMPs Banner for End User */}
             {user?.role === 'end_user' && counts.RETURNED > 0 && (
                 <div className="bg-gradient-to-r from-rose-50 via-red-50 to-amber-50 border-2 border-rose-300 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm animate-in fade-in">
                     <div className="flex items-start sm:items-center gap-3.5">
@@ -2718,7 +2803,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 </div>
             )}
 
-            {/* Recent PPMPs Table */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                 <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                     <div>
@@ -2736,16 +2820,14 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     </button>
                 </div>
 
-                {/* Status Tabs Bar */}
                 {(() => {
                     const counts = statusCounts;
 
-                    // Role-specific tabs tailored to job responsibilities
                     const role = user?.role;
                     let tabs = [];
 
                     if (role === 'end_user') {
-                        // End User lifecycle: All, Drafts, Pending Head, Head Endorsed, In Review, Returned / Remarks, Ready to Print
+
                         tabs = [
                             {
                                 key: 'all',
@@ -2819,7 +2901,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             },
                         ];
                     } else if (role === 'head' || role === 'authorized_staff') {
-                        // Office Head: All Office PPMPs, Pending Endorsement (actionable), Endorsed / Cleared, Returned with Remarks
+
                         tabs = [
                             {
                                 key: 'all',
@@ -2844,7 +2926,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'ENDORSED_APPROVED',
                                 label: 'Endorsed / Cleared',
-                                count: recentPpmps.filter(p => !['DRAFT', 'HEAD_PENDING', 'HEAD_RETURNED'].includes(p.status)).length,
+                                count: categoryScopedPpmps.filter(p => !['DRAFT', 'HEAD_PENDING', 'HEAD_RETURNED'].includes(p.status)).length,
                                 activeClass: 'bg-blue-600 text-white border-blue-600 shadow-sm',
                                 inactiveClass: 'bg-blue-50/70 text-blue-900 border-blue-200 hover:bg-blue-100',
                                 activeBadge: 'bg-blue-800 text-blue-100',
@@ -2854,7 +2936,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'HEAD_RETURNED',
                                 label: 'Returned to Staff',
-                                count: recentPpmps.filter(p => p.status === 'HEAD_RETURNED').length,
+                                count: categoryScopedPpmps.filter(p => p.status === 'HEAD_RETURNED').length,
                                 activeClass: 'bg-rose-600 text-white border-rose-600 shadow-sm',
                                 inactiveClass: 'bg-rose-50/70 text-rose-900 border-rose-200 hover:bg-rose-100',
                                 activeBadge: 'bg-rose-800 text-rose-100',
@@ -2863,7 +2945,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             },
                         ];
                     } else if (role === 'budget_officer') {
-                        // Budget Officer: All, Pending Review (actionable), Certified / Forwarded to OPPMO, Returned with Remarks
+
                         tabs = [
                             {
                                 key: 'all',
@@ -2888,7 +2970,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'BUDGET_APPROVED',
                                 label: 'Reviewed / Forwarded',
-                                count: recentPpmps.filter(p => ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(p.status)).length,
+                                count: categoryScopedPpmps.filter(p => ['OPPMO_REVIEW', 'OPPMO_RETURNED', 'TWG_REVIEW', 'TWG_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(p.status)).length,
                                 activeClass: 'bg-emerald-600 text-white border-emerald-600 shadow-sm',
                                 inactiveClass: 'bg-emerald-50/70 text-emerald-900 border-emerald-200 hover:bg-emerald-100',
                                 activeBadge: 'bg-emerald-800 text-emerald-100',
@@ -2898,7 +2980,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'BUDGET_OFFICER_RETURNED',
                                 label: 'Returned with Remarks',
-                                count: recentPpmps.filter(p => p.status === 'BUDGET_OFFICER_RETURNED').length,
+                                count: categoryScopedPpmps.filter(p => p.status === 'BUDGET_OFFICER_RETURNED').length,
                                 activeClass: 'bg-rose-600 text-white border-rose-600 shadow-sm',
                                 inactiveClass: 'bg-rose-50/70 text-rose-900 border-rose-200 hover:bg-rose-100',
                                 activeBadge: 'bg-rose-800 text-rose-100',
@@ -2907,7 +2989,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             },
                         ];
                     } else if (role === 'oppmo') {
-                        // OPPMO: All, Pending OPPMO Review (actionable), Approved to TWG, Returned with Remarks
+
                         tabs = [
                             {
                                 key: 'all',
@@ -2932,7 +3014,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'OPPMO_APPROVED',
                                 label: 'Cleared / Ready to Print',
-                                count: recentPpmps.filter(p => p.status === 'READY_TO_PRINT').length,
+                                count: categoryScopedPpmps.filter(p => p.status === 'READY_TO_PRINT').length,
                                 activeClass: 'bg-emerald-600 text-white border-emerald-600 shadow-sm',
                                 inactiveClass: 'bg-emerald-50/70 text-emerald-900 border-emerald-200 hover:bg-emerald-100',
                                 activeBadge: 'bg-emerald-800 text-emerald-100',
@@ -2942,7 +3024,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'OPPMO_RETURNED',
                                 label: 'Returned with Remarks',
-                                count: recentPpmps.filter(p => p.status === 'OPPMO_RETURNED').length,
+                                count: categoryScopedPpmps.filter(p => p.status === 'OPPMO_RETURNED').length,
                                 activeClass: 'bg-rose-600 text-white border-rose-600 shadow-sm',
                                 inactiveClass: 'bg-rose-50/70 text-rose-900 border-rose-200 hover:bg-rose-100',
                                 activeBadge: 'bg-rose-800 text-rose-100',
@@ -2951,18 +3033,8 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             },
                         ];
                     } else if (role === 'twg') {
-                        // TWG: All, Pending TWG Review (actionable), Forwarded to Office Head, Ready to Print (Completed), Returned with Remarks
+
                         tabs = [
-                            {
-                                key: 'all',
-                                label: 'All TWG Queue',
-                                count: counts.all,
-                                activeClass: 'bg-slate-900 text-white border-slate-900 shadow-sm',
-                                inactiveClass: 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100',
-                                activeBadge: 'bg-slate-800 text-slate-200',
-                                inactiveBadge: 'bg-slate-100 text-slate-700 border border-slate-200',
-                                dot: 'bg-slate-500',
-                            },
                             {
                                 key: 'TWG_REVIEW',
                                 label: 'Pending BAC-TWG Review',
@@ -2976,7 +3048,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'TWG_APPROVED',
                                 label: 'Approved & Forwarded',
-                                count: recentPpmps.filter(p => ['BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(p.status) && (p.twg_approved_at || p.signatures?.some(s => s.role === 'twg'))).length,
+                                count: categoryScopedPpmps.filter(p => ['BUDGET_OFFICER_REVIEW', 'BUDGET_OFFICER_RETURNED', 'PACCO_REVIEW', 'PACCO_RETURNED', 'OPPMO_REVIEW', 'OPPMO_RETURNED', 'HEAD_PENDING', 'HEAD_RETURNED', 'READY_TO_PRINT'].includes(p.status) && (p.twg_approved_at || p.signatures?.some(s => s.role === 'twg'))).length,
                                 activeClass: 'bg-amber-600 text-white border-amber-600 shadow-sm',
                                 inactiveClass: 'bg-amber-50/70 text-amber-900 border-amber-200 hover:bg-amber-100',
                                 activeBadge: 'bg-amber-800 text-amber-100',
@@ -2996,16 +3068,26 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'TWG_RETURNED',
                                 label: 'Returned with Remarks',
-                                count: recentPpmps.filter(p => p.status === 'TWG_RETURNED').length,
+                                count: categoryScopedPpmps.filter(p => p.status === 'TWG_RETURNED').length,
                                 activeClass: 'bg-rose-600 text-white border-rose-600 shadow-sm',
                                 inactiveClass: 'bg-rose-50/70 text-rose-900 border-rose-200 hover:bg-rose-100',
                                 activeBadge: 'bg-rose-800 text-rose-100',
                                 inactiveBadge: 'bg-rose-100 text-rose-800 border border-rose-300',
                                 dot: 'bg-rose-500',
                             },
+                            {
+                                key: 'all',
+                                label: 'All TWG Queue',
+                                count: counts.all,
+                                activeClass: 'bg-slate-900 text-white border-slate-900 shadow-sm',
+                                inactiveClass: 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100',
+                                activeBadge: 'bg-slate-800 text-slate-200',
+                                inactiveBadge: 'bg-slate-100 text-slate-700 border border-slate-200',
+                                dot: 'bg-slate-500',
+                            },
                         ];
                     } else if (role === 'pacco') {
-                        // PACCO Reviewer: All Review Queue, Under Review, Cleared / Ready to Print, Returned with Remarks
+
                         tabs = [
                             {
                                 key: 'all',
@@ -3049,7 +3131,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             },
                         ];
                     } else {
-                        // Admin: Complete global breakdown
+
                         tabs = [
                             {
                                 key: 'all',
@@ -3187,7 +3269,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     );
                 })()}
 
-                {/* PPMP Search & Filter Controls */}
                 <div className="px-5 py-3 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5 flex-1 min-w-[280px] max-w-lg">
                         <div className="relative w-full">
@@ -3219,7 +3300,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                        {/* Fiscal Year Filter */}
+
                         <select
                             value={ppmpYearFilter}
                             onChange={(e) => {
@@ -3235,8 +3316,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             ))}
                         </select>
 
-                        {/* Reset Filters button when active */}
-                        {(ppmpSearch || ppmpYearFilter || inReviewSubFilter || returnedSubFilter || ppmpTab !== 'all') && (
+                        {(ppmpSearch || ppmpYearFilter || inReviewSubFilter || returnedSubFilter || ppmpTab !== defaultPpmpTab) && (
                             <button
                                 type="button"
                                 onClick={() => {
@@ -3244,7 +3324,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                     setPpmpYearFilter('');
                                     setInReviewSubFilter('');
                                     setReturnedSubFilter('');
-                                    setPpmpTab('all');
+                                    setPpmpTab(defaultPpmpTab);
                                     setPpmpPage(1);
                                 }}
                                 className="text-xs py-2 px-3 font-semibold text-slate-600 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-lg transition flex items-center gap-1.5"
@@ -3257,7 +3337,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     </div>
                 </div>
 
-                {/* Sub-stage filter bar when viewing "In Review" tab */}
                 {ppmpTab === 'IN_REVIEW' && (
                     <div className="px-5 py-2.5 bg-indigo-50/50 border-b border-indigo-100 flex flex-wrap items-center gap-2">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-900 mr-1 flex items-center gap-1">
@@ -3275,7 +3354,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'TWG_REVIEW',
                                 label: 'BAC-TWG Review',
-                                count: recentPpmps.filter(p => p.status === 'TWG_REVIEW').length,
+                                count: categoryScopedPpmps.filter(p => p.status === 'TWG_REVIEW').length,
                                 activeClass: 'bg-cyan-600 text-white shadow-xs',
                                 inactiveClass: 'bg-white text-cyan-900 border border-cyan-200 hover:bg-cyan-100/60',
                                 dot: 'bg-cyan-500',
@@ -3283,7 +3362,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'BUDGET_OFFICER_REVIEW',
                                 label: 'Budget Officer Review',
-                                count: recentPpmps.filter(p => p.status === 'BUDGET_OFFICER_REVIEW').length,
+                                count: categoryScopedPpmps.filter(p => p.status === 'BUDGET_OFFICER_REVIEW').length,
                                 activeClass: 'bg-indigo-600 text-white shadow-xs',
                                 inactiveClass: 'bg-white text-indigo-900 border border-indigo-200 hover:bg-indigo-100/60',
                                 dot: 'bg-indigo-500',
@@ -3291,7 +3370,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'PACCO_REVIEW',
                                 label: 'PACCO Review',
-                                count: recentPpmps.filter(p => p.status === 'PACCO_REVIEW').length,
+                                count: categoryScopedPpmps.filter(p => p.status === 'PACCO_REVIEW').length,
                                 activeClass: 'bg-teal-600 text-white shadow-xs',
                                 inactiveClass: 'bg-white text-teal-900 border border-teal-200 hover:bg-teal-100/60',
                                 dot: 'bg-teal-500',
@@ -3299,7 +3378,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'OPPMO_REVIEW',
                                 label: 'OPPMO Review',
-                                count: recentPpmps.filter(p => p.status === 'OPPMO_REVIEW').length,
+                                count: categoryScopedPpmps.filter(p => p.status === 'OPPMO_REVIEW').length,
                                 activeClass: 'bg-purple-600 text-white shadow-xs',
                                 inactiveClass: 'bg-white text-purple-900 border border-purple-200 hover:bg-purple-100/60',
                                 dot: 'bg-purple-500',
@@ -3331,7 +3410,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     </div>
                 )}
 
-                {/* Sub-stage filter bar when viewing "Returned for Remarks" tab */}
                 {ppmpTab === 'RETURNED' && (
                     <div className="px-5 py-2.5 bg-rose-50/50 border-b border-rose-100 flex flex-wrap items-center gap-2">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-rose-900 mr-1 flex items-center gap-1">
@@ -3349,7 +3427,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'HEAD_RETURNED',
                                 label: 'Office Head',
-                                count: recentPpmps.filter(p => p.status === 'HEAD_RETURNED').length,
+                                count: categoryScopedPpmps.filter(p => p.status === 'HEAD_RETURNED').length,
                                 activeClass: 'bg-amber-600 text-white shadow-xs',
                                 inactiveClass: 'bg-white text-amber-900 border border-amber-200 hover:bg-amber-100/60',
                                 dot: 'bg-amber-500',
@@ -3357,7 +3435,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'TWG_RETURNED',
                                 label: 'BAC-TWG',
-                                count: recentPpmps.filter(p => p.status === 'TWG_RETURNED').length,
+                                count: categoryScopedPpmps.filter(p => p.status === 'TWG_RETURNED').length,
                                 activeClass: 'bg-cyan-600 text-white shadow-xs',
                                 inactiveClass: 'bg-white text-cyan-900 border border-cyan-200 hover:bg-cyan-100/60',
                                 dot: 'bg-cyan-500',
@@ -3365,7 +3443,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'BUDGET_OFFICER_RETURNED',
                                 label: 'Budget Officer',
-                                count: recentPpmps.filter(p => p.status === 'BUDGET_OFFICER_RETURNED').length,
+                                count: categoryScopedPpmps.filter(p => p.status === 'BUDGET_OFFICER_RETURNED').length,
                                 activeClass: 'bg-indigo-600 text-white shadow-xs',
                                 inactiveClass: 'bg-white text-indigo-900 border border-indigo-200 hover:bg-indigo-100/60',
                                 dot: 'bg-indigo-500',
@@ -3373,7 +3451,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'PACCO_RETURNED',
                                 label: 'PACCO Reviewer',
-                                count: recentPpmps.filter(p => p.status === 'PACCO_RETURNED').length,
+                                count: categoryScopedPpmps.filter(p => p.status === 'PACCO_RETURNED').length,
                                 activeClass: 'bg-teal-600 text-white shadow-xs',
                                 inactiveClass: 'bg-white text-teal-900 border border-teal-200 hover:bg-teal-100/60',
                                 dot: 'bg-teal-500',
@@ -3381,7 +3459,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {
                                 key: 'OPPMO_RETURNED',
                                 label: 'OPPMO Reviewer',
-                                count: recentPpmps.filter(p => p.status === 'OPPMO_RETURNED').length,
+                                count: categoryScopedPpmps.filter(p => p.status === 'OPPMO_RETURNED').length,
                                 activeClass: 'bg-purple-600 text-white shadow-xs',
                                 inactiveClass: 'bg-white text-purple-900 border border-purple-200 hover:bg-purple-100/60',
                                 dot: 'bg-purple-500',
@@ -3413,196 +3491,261 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     </div>
                 )}
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-50 text-slate-700 uppercase font-semibold border-b border-slate-200">
-                            <tr>
-                                <th className="p-3">Tracker No.</th>
-                                <th className="p-3">Project Title</th>
-                                <th className="p-3">Fiscal Year</th>
-                                <th className="p-3">Source of Funds</th>
-                                <th className="p-3">Total Budget</th>
-                                <th className="p-3">Workflow Status</th>
-                                <th className="p-3">Last Updated</th>
-                                <th className="p-3 text-right">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {(() => {
-                                const filtered = filteredRecentPpmps;
-
-                                if (filtered.length === 0) {
-                                    return (
-                                        <tr>
-                                            <td colSpan={8} className="p-8 text-center text-slate-400 italic">
-                                                {ppmpSearch || ppmpYearFilter
-                                                    ? 'No PPMP records match your search and filter criteria.'
-                                                    : 'No PPMP records found for this status tab.'}
-                                            </td>
-                                        </tr>
-                                    );
-                                }
-
-                                const totalPages = Math.ceil(filtered.length / ppmpPerPage) || 1;
-                                const safePage = Math.min(ppmpPage, totalPages);
-                                const startIndex = (safePage - 1) * ppmpPerPage;
-                                const paginated = filtered.slice(startIndex, startIndex + ppmpPerPage);
-
-                                return paginated.map((ppmp) => {
-                                    const suppInfo = getSupplementalKindInfo(ppmp);
-                                    return (
-                                    <tr key={ppmp.id} className="hover:bg-slate-50 transition">
-                                        <td className="p-3">
-                                            <div className="font-mono font-bold text-blue-900">
-                                                {ppmp.tracking_number || ppmp.ppmp_number}
-                                            </div>
-                                            {ppmp.ppmp_number !== undefined && ppmp.ppmp_number !== null && (
-                                                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                                    <span className="font-mono text-[11px] text-slate-600 font-semibold" title="PPMP Number">
-                                                        PPMP No. {ppmp.ppmp_number}
-                                                    </span>
-                                                    {!ppmp.parent_id ? (
-                                                        <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold tracking-tight uppercase border bg-blue-100 text-blue-800 border-blue-300">
-                                                            Annual
-                                                        </span>
-                                                    ) : (
-                                                        <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold tracking-tight uppercase border ${
-                                                            ppmp.amendment_type === 'AMENDMENT'
-                                                                ? 'bg-purple-100 text-purple-800 border-purple-300'
-                                                                : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                                        }`} title={suppInfo.specify ? `Purpose: ${suppInfo.specify}` : ''}>
-                                                            {ppmp.amendment_type === 'AMENDMENT'
-                                                                ? 'Amended'
-                                                                : `Supplemental (${suppInfo.label || 'Continuation'})`}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="p-3 font-medium text-slate-800 max-w-sm">
-                                            <ExpandableText text={ppmp.title} maxLength={50} textClassName="font-semibold text-slate-900" />
-                                            {(() => {
-                                                const schedule = getPpmpStartOfActivity(ppmp);
-                                                if (!schedule) return null;
-                                                const rem = getPimsReminderInfo(schedule);
-                                                if (!rem) return null;
-                                                return (
-                                                    <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-                                                        <span
-                                                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                                                rem.isUrgent
-                                                                    ? 'bg-rose-100 text-rose-800 border border-rose-300 animate-pulse'
-                                                                    : 'bg-amber-50 text-amber-900 border border-amber-200'
-                                                            }`}
-                                                            title={rem.message}
-                                                        >
-                                                            {rem.isUrgent ? <AlertTriangle className="w-2.5 h-2.5 text-rose-600" /> : <Clock className="w-2.5 h-2.5 text-amber-600" />}
-                                                            PIMS: Start {schedule.summaryLabel} {rem.isNearEnd && '(Near End of Month)'}
-                                                        </span>
-                                                    </div>
-                                                );
-                                            })()}
-                                        </td>
-                                        <td className="p-3 text-slate-600 whitespace-nowrap">
-                                            CY {ppmp.fiscal_year} ({ppmp.plan_type})
-                                        </td>
-                                        <td className="p-3 text-slate-700">
-                                            <ExpandableFundBadge fund={ppmp.source_of_fund || ppmp.items?.find(i => i.source_of_fund)?.source_of_fund || 'General Fund'} />
-                                        </td>
-                                        <td className="p-3 font-mono font-bold text-slate-900">
-                                            {formatCurrency(ppmp.total_budget)}
-                                        </td>
-                                        <td className="p-3">
-                                            <div className="flex flex-col items-start gap-1">
-                                                <StatusBadge status={ppmp.status} />
-                                                {ppmp.amendment_status === 'PENDING_APPROVAL' && (
-                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse" title={suppInfo.specify ? `Specify: ${suppInfo.specify}` : ''}>
-                                                        Req. {(ppmp.requested_amendment_type || ppmp.amendment_type) === 'SUPPLEMENTAL'
-                                                            ? `Supplemental (${suppInfo.purpose === 'OTHER' ? (suppInfo.specify ? `Other: ${suppInfo.specify}` : 'Other') : 'Continuation'})`
-                                                            : 'Amendment'}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="p-3 text-slate-500 text-[11px]">
-                                            {formatDate(ppmp.updated_at)}
-                                        </td>
-                                        <td className="p-3 text-right">
-                                            <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                                                {isAwaitingReceive(ppmp, user) ? (
-                                                    <button
-                                                        onClick={() => handleReceive(ppmp.uuid)}
-                                                        disabled={receivingUuids[ppmp.uuid]}
-                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded transition text-xs shadow-xs disabled:opacity-50 cursor-pointer"
-                                                        title="Click to acknowledge receipt of this document before viewing details"
-                                                    >
-                                                        {receivingUuids[ppmp.uuid] ? (
-                                                            <>
-                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                                <span>Receiving...</span>
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <Inbox className="w-3.5 h-3.5" />
-                                                                <span>Receive</span>
-                                                            </>
-                                                        )}
-                                                    </button>
-                                                ) : (
-                                                    <button
-                                                        onClick={() => handleOpenDetails(ppmp.uuid)}
-                                                        disabled={openingUuids[ppmp.uuid]}
-                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded transition text-xs shadow-xs cursor-pointer disabled:opacity-75"
-                                                    >
-                                                        {openingUuids[ppmp.uuid] ? (
-                                                            <>
-                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                                <span>Opening...</span>
-                                                            </>
-                                                        ) : (
-                                                            <>
-                                                                <Eye className="w-3.5 h-3.5" />
-                                                                <span>Open Details</span>
-                                                            </>
-                                                        )}
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    );
-                                });
-                            })()}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Pagination Controls & Entries Per Page */}
                 {(() => {
-                    const filtered = filteredRecentPpmps;
-                    const totalItems = filtered.length;
-                    if (totalItems === 0) return null;
+                    const goodsFiltered = filteredRecentPpmps.filter((p) => !isInfrastructurePpmp(p));
+                    const infraFiltered = filteredRecentPpmps.filter((p) => isInfrastructurePpmp(p));
+                    const isInfraTab = ppmpCategoryTab === 'infrastructure';
+                    const activeItems = isInfraTab ? infraFiltered : goodsFiltered;
+                    const activeCurrentPage = isInfraTab ? ppmpInfraPage : ppmpPage;
+                    const activeOnPageChange = isInfraTab ? setPpmpInfraPage : setPpmpPage;
+                    const activePerPage = isInfraTab ? ppmpInfraPerPage : ppmpPerPage;
+                    const activeOnPerPageChange = isInfraTab ? setPpmpInfraPerPage : setPpmpPerPage;
+                    const activeEmptyLabel = isInfraTab ? 'Infrastructure PPMP' : 'Goods & Consulting Services PPMP';
 
-                    const totalPages = Math.ceil(totalItems / ppmpPerPage) || 1;
-                    const safePage = Math.min(ppmpPage, totalPages);
-                    const startIndex = (safePage - 1) * ppmpPerPage;
-                    const endIndex = safePage * ppmpPerPage;
+                    const totalItems = activeItems.length;
+                    const totalPages = Math.ceil(totalItems / activePerPage) || 1;
+                    const safePage = Math.min(activeCurrentPage, totalPages);
+                    const startIndex = (safePage - 1) * activePerPage;
+                    const endIndex = Math.min(safePage * activePerPage, totalItems);
+                    const paginated = activeItems.slice(startIndex, startIndex + activePerPage);
 
                     return (
-                        <div className="px-5 py-3 border-t border-slate-200 bg-slate-50/70">
-                            <PaginationControl
-                                currentPage={safePage}
-                                totalPages={totalPages}
-                                onPageChange={setPpmpPage}
-                                perPage={ppmpPerPage}
-                                onPerPageChange={(val) => {
-                                    setPpmpPerPage(val);
-                                    setPpmpPage(1);
-                                }}
-                                totalEntries={totalItems}
-                                startIndex={startIndex}
-                                endIndex={endIndex}
-                            />
+                        <div>
+                            <div className="px-5 pt-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPpmpCategoryTab('goods_consulting')}
+                                        className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide border-b-2 transition cursor-pointer ${
+                                            ppmpCategoryTab === 'goods_consulting'
+                                                ? 'border-blue-600 text-blue-700 bg-white rounded-t-lg shadow-2xs'
+                                                : 'border-transparent text-slate-500 hover:text-slate-800'
+                                        }`}
+                                    >
+                                        <Package className="w-3.5 h-3.5" />
+                                        Goods &amp; Consulting Services PPMPs
+                                        <span
+                                            className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                                                ppmpCategoryTab === 'goods_consulting'
+                                                    ? 'bg-blue-100 text-blue-800'
+                                                    : 'bg-slate-200 text-slate-600'
+                                            }`}
+                                        >
+                                            {goodsFiltered.length}
+                                        </span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setPpmpCategoryTab('infrastructure')}
+                                        className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide border-b-2 transition cursor-pointer ${
+                                            ppmpCategoryTab === 'infrastructure'
+                                                ? 'border-amber-600 text-amber-800 bg-white rounded-t-lg shadow-2xs'
+                                                : 'border-transparent text-slate-500 hover:text-slate-800'
+                                        }`}
+                                    >
+                                        <HardHat className="w-3.5 h-3.5" />
+                                        Infrastructure PPMPs
+                                        <span
+                                            className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                                                ppmpCategoryTab === 'infrastructure'
+                                                    ? 'bg-amber-100 text-amber-800'
+                                                    : 'bg-slate-200 text-slate-600'
+                                            }`}
+                                        >
+                                            {infraFiltered.length}
+                                        </span>
+                                    </button>
+                                </div>
+
+                                <span className="text-[11px] text-slate-400 italic pb-1.5">
+                                    {isInfraTab
+                                        ? 'Civil works, construction, rehabilitation, improvement, and infrastructure projects'
+                                        : 'Supplies, materials, equipment, general support services, and consulting services'}
+                                </span>
+                            </div>
+
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs">
+                                    <thead className="bg-slate-50 text-slate-700 uppercase font-semibold border-b border-slate-200">
+                                        <tr>
+                                            <th className="p-3">Tracker No.</th>
+                                            <th className="p-3">Project Title</th>
+                                            <th className="p-3">Fiscal Year</th>
+                                            <th className="p-3">Source of Funds</th>
+                                            <th className="p-3">Total Budget</th>
+                                            <th className="p-3">Workflow Status</th>
+                                            <th className="p-3">Last Updated</th>
+                                            <th className="p-3 text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {paginated.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={8} className="p-7 text-center text-slate-400 italic">
+                                                    {ppmpSearch || ppmpYearFilter
+                                                        ? `No ${activeEmptyLabel} records match your search and filter criteria.`
+                                                        : `No ${activeEmptyLabel} records found for this status tab.`}
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            paginated.map((ppmp) => {
+                                                const suppInfo = getSupplementalKindInfo(ppmp);
+                                                const projectTypeLabel = getPpmpProjectTypeLabel(ppmp);
+                                                const isInfra = projectTypeLabel === 'Infrastructure';
+                                                return (
+                                                    <tr key={ppmp.id} className="hover:bg-slate-50 transition">
+                                                        <td className="p-3">
+                                                            <div className="font-mono font-bold text-blue-900">
+                                                                {ppmp.tracking_number || ppmp.ppmp_number}
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                                                {ppmp.ppmp_number !== undefined && ppmp.ppmp_number !== null && (
+                                                                    <span className="font-mono text-[11px] text-slate-600 font-semibold" title="PPMP Number">
+                                                                        PPMP No. {ppmp.ppmp_number}
+                                                                    </span>
+                                                                )}
+                                                                {!ppmp.parent_id ? (
+                                                                    <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold tracking-tight uppercase border bg-blue-100 text-blue-800 border-blue-300">
+                                                                        Annual
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-bold tracking-tight uppercase border ${
+                                                                        ppmp.amendment_type === 'AMENDMENT'
+                                                                            ? 'bg-purple-100 text-purple-800 border-purple-300'
+                                                                            : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                                                    }`} title={suppInfo.specify ? `Purpose: ${suppInfo.specify}` : ''}>
+                                                                        {ppmp.amendment_type === 'AMENDMENT'
+                                                                            ? 'Amended'
+                                                                            : `Supplemental (${suppInfo.label || 'Continuation'})`}
+                                                                    </span>
+                                                                )}
+                                                                <span
+                                                                    className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-bold tracking-tight uppercase border ${
+                                                                        isInfra
+                                                                            ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                                                            : 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                                                                    }`}
+                                                                >
+                                                                    {projectTypeLabel}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-3 font-medium text-slate-800 max-w-sm">
+                                                            <ExpandableText text={ppmp.title} maxLength={50} textClassName="font-semibold text-slate-900" />
+                                                            {(() => {
+                                                                const schedule = getPpmpStartOfActivity(ppmp);
+                                                                if (!schedule) return null;
+                                                                const rem = getPimsReminderInfo(schedule);
+                                                                if (!rem) return null;
+                                                                return (
+                                                                    <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                                                        <span
+                                                                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                                                                rem.isUrgent
+                                                                                    ? 'bg-rose-100 text-rose-800 border border-rose-300 animate-pulse'
+                                                                                    : 'bg-amber-50 text-amber-900 border border-amber-200'
+                                                                            }`}
+                                                                            title={rem.message}
+                                                                        >
+                                                                            {rem.isUrgent ? <AlertTriangle className="w-2.5 h-2.5 text-rose-600" /> : <Clock className="w-2.5 h-2.5 text-amber-600" />}
+                                                                            PIMS: Start {schedule.summaryLabel} {rem.isNearEnd && '(Near End of Month)'}
+                                                                        </span>
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                        </td>
+                                                        <td className="p-3 text-slate-600 whitespace-nowrap">
+                                                            CY {ppmp.fiscal_year} ({ppmp.plan_type})
+                                                        </td>
+                                                        <td className="p-3 text-slate-700">
+                                                            <ExpandableFundBadge fund={ppmp.source_of_fund || ppmp.items?.find(i => i.source_of_fund)?.source_of_fund || 'General Fund'} />
+                                                        </td>
+                                                        <td className="p-3 font-mono font-bold text-slate-900">
+                                                            {formatCurrency(ppmp.total_budget)}
+                                                        </td>
+                                                        <td className="p-3">
+                                                            <div className="flex flex-col items-start gap-1">
+                                                                <StatusBadge status={ppmp.status} />
+                                                                {ppmp.amendment_status === 'PENDING_APPROVAL' && (
+                                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse" title={suppInfo.specify ? `Specify: ${suppInfo.specify}` : ''}>
+                                                                        Req. {(ppmp.requested_amendment_type || ppmp.amendment_type) === 'SUPPLEMENTAL'
+                                                                            ? `Supplemental (${suppInfo.purpose === 'OTHER' ? (suppInfo.specify ? `Other: ${suppInfo.specify}` : 'Other') : 'Continuation'})`
+                                                                            : 'Amendment'}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-3 text-slate-500 text-[11px]">
+                                                            {formatDate(ppmp.updated_at)}
+                                                        </td>
+                                                        <td className="p-3 text-right">
+                                                            <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                                                {isAwaitingReceive(ppmp, user) ? (
+                                                                    <button
+                                                                        onClick={() => handleReceive(ppmp.uuid)}
+                                                                        disabled={receivingUuids[ppmp.uuid]}
+                                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded transition text-xs shadow-xs disabled:opacity-50 cursor-pointer"
+                                                                        title="Click to acknowledge receipt of this document before viewing details"
+                                                                    >
+                                                                        {receivingUuids[ppmp.uuid] ? (
+                                                                            <>
+                                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                                <span>Receiving...</span>
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                <Inbox className="w-3.5 h-3.5" />
+                                                                                <span>Receive</span>
+                                                                            </>
+                                                                        )}
+                                                                    </button>
+                                                                ) : (
+                                                                    <button
+                                                                        onClick={() => handleOpenDetails(ppmp.uuid)}
+                                                                        disabled={openingUuids[ppmp.uuid]}
+                                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded transition text-xs shadow-xs cursor-pointer disabled:opacity-75"
+                                                                    >
+                                                                        {openingUuids[ppmp.uuid] ? (
+                                                                            <>
+                                                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                                <span>Opening...</span>
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                <Eye className="w-3.5 h-3.5" />
+                                                                                <span>Open Details</span>
+                                                                            </>
+                                                                        )}
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {totalItems > 0 && (
+                                <div className="px-5 py-3 border-t border-slate-200 bg-slate-50/70">
+                                    <PaginationControl
+                                        currentPage={safePage}
+                                        totalPages={totalPages}
+                                        onPageChange={activeOnPageChange}
+                                        perPage={activePerPage}
+                                        onPerPageChange={(val) => {
+                                            activeOnPerPageChange(val);
+                                            activeOnPageChange(1);
+                                        }}
+                                        totalEntries={totalItems}
+                                        startIndex={startIndex}
+                                        endIndex={endIndex}
+                                    />
+                                </div>
+                            )}
                         </div>
                     );
                 })()}
@@ -3610,7 +3753,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 </>
             )}
 
-            {/* Modal for Add / Edit Signatory */}
             {isSignatoryModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
                     <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
@@ -3728,7 +3870,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 </div>
             )}
 
-            {/* Modal for Changing User Password */}
             {isPasswordModalOpen && selectedUserForPassword && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
                     <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
@@ -3828,7 +3969,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 </div>
             )}
 
-            {/* Modal for Add / Edit Office */}
             {isOfficeModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
                     <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
@@ -3944,7 +4084,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 </div>
             )}
 
-            {/* Modal for CSV / Excel Batch Import */}
             {isImportModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
                     <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
@@ -3963,7 +4102,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                         </div>
 
                         <div className="p-6 space-y-5">
-                            {/* Template Download & Format Guide */}
+
                             <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                 <div>
                                     <div className="text-xs font-bold text-slate-800 uppercase tracking-wide">
@@ -3983,7 +4122,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 </button>
                             </div>
 
-                            {/* File Upload Area */}
                             <div>
                                 <input
                                     type="file"
@@ -4027,7 +4165,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 </div>
                             )}
 
-                            {/* Data Preview Table */}
                             {importData.length > 0 && (
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between text-xs font-bold text-slate-800 uppercase">
@@ -4062,7 +4199,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 </div>
                             )}
 
-                            {/* Actions */}
                             <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2">
                                 <button
                                     type="button"
@@ -4085,7 +4221,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                     </div>
                 </div>
             )}
-            {/* Reject User Confirmation Modal */}
+
             {isRejectModalOpen && selectedUserForReject && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4" onClick={closeRejectModal}>
                     <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
@@ -4149,7 +4285,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 </div>
             )}
 
-            {/* Signature Preview & Update Modal for Admin View */}
             <UserSignatureModal
                 user={signaturePreviewUser}
                 isOpen={Boolean(signaturePreviewUser)}
@@ -4161,7 +4296,16 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 }}
             />
 
-            {/* Create User Modal for Admin View */}
+            <UserRolesModal
+                user={roleModalUser}
+                currentUserRole={user?.role}
+                onClose={() => setRoleModalUser(null)}
+                onSaved={(updatedUser, msg) => {
+                    setUsersList(prev => prev.map(u => u.id === updatedUser.id ? { ...u, ...updatedUser } : u));
+                    setUserActionFeedback({ type: 'success', text: msg || `Roles for ${updatedUser.name} updated successfully.` });
+                }}
+            />
+
             <CreateUserModal
                 isOpen={isCreateUserModalOpen}
                 onClose={() => setIsCreateUserModalOpen(false)}

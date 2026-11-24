@@ -22,7 +22,7 @@ export const PurchaseRequestReviewModal = ({
     onSuccess,
 }) => {
     const pr = purchaseRequest || {};
-    const [action, setAction] = useState('approve'); // 'approve' | 'return'
+    const [action, setAction] = useState('approve');
     const [remarks, setRemarks] = useState('');
     const [returnToStage, setReturnToStage] = useState('end_user');
     const [assignedPrNumber, setAssignedPrNumber] = useState(pr.pr_number || '');
@@ -89,7 +89,7 @@ export const PurchaseRequestReviewModal = ({
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-                {/* Header */}
+
                 <div className="px-6 py-4 bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-300">
@@ -113,9 +113,8 @@ export const PurchaseRequestReviewModal = ({
                     </button>
                 </div>
 
-                {/* Body */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-5">
-                    {/* PR Snapshot */}
+
                     <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
                         <div className="min-w-0 flex-1 pr-4">
                             <div className="font-bold text-slate-900 truncate text-sm">{pr.purpose}</div>
@@ -127,7 +126,6 @@ export const PurchaseRequestReviewModal = ({
                         </div>
                     </div>
 
-                    {/* Routing History Timeline */}
                     {routes.length > 0 && (
                         <div className="space-y-2">
                             <div className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
@@ -156,7 +154,6 @@ export const PurchaseRequestReviewModal = ({
                         </div>
                     )}
 
-                    {/* Review Form */}
                     <form onSubmit={handleSubmit} className="space-y-4">
                         {error && (
                             <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-start gap-2">
@@ -165,7 +162,6 @@ export const PurchaseRequestReviewModal = ({
                             </div>
                         )}
 
-                        {/* Action Selection */}
                         <div>
                             <label className="block text-xs font-bold text-slate-800 mb-2">Select Action</label>
                             <div className="grid grid-cols-2 gap-3">
@@ -207,7 +203,6 @@ export const PurchaseRequestReviewModal = ({
                             </div>
                         </div>
 
-                        {/* Return Stage Options */}
                         {action === 'return' && (
                             <div>
                                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
@@ -225,7 +220,6 @@ export const PurchaseRequestReviewModal = ({
                             </div>
                         )}
 
-                        {/* Assign PR Number during PR Control stage */}
                         {pr.current_stage === 'pr_control' && action === 'approve' && (
                             <div>
                                 <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1.5">
@@ -243,7 +237,6 @@ export const PurchaseRequestReviewModal = ({
                             </div>
                         )}
 
-                        {/* Remarks / Comments */}
                         <div>
                             <label className="block text-[11px] font-bold text-slate-700 mb-1">
                                 Review Remarks / Comments {action === 'return' && <span className="text-rose-500">*</span>}
@@ -258,7 +251,6 @@ export const PurchaseRequestReviewModal = ({
                             />
                         </div>
 
-                        {/* Submit */}
                         <div className="pt-2 flex items-center justify-end gap-2">
                             <button
                                 type="button"
@@ -294,4 +286,3 @@ export const PurchaseRequestReviewModal = ({
         </div>
     );
 };
-

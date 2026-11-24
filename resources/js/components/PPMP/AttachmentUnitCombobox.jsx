@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Search, ChevronDown, Plus, X, Tag, Check, Sparkles } from 'lucide-react';
 
 export const DEFAULT_PROCUREMENT_UNITS = [
-    // General Counting
+
     { value: 'pcs', label: 'Piece (pcs)', category: 'Counting', example: 'General supplies, pens, chairs' },
     { value: 'unit', label: 'Unit', category: 'Counting', example: 'Equipment, computers, appliances' },
     { value: 'set', label: 'Set', category: 'Counting', example: 'Tool set, furniture set, uniform set' },
@@ -15,7 +15,6 @@ export const DEFAULT_PROCUREMENT_UNITS = [
     { value: 'case', label: 'Case', category: 'Packaging', example: 'Beverages, canned goods, containers' },
     { value: 'bundle', label: 'Bundle', category: 'Packaging', example: 'Documents, brooms, wooden sticks' },
 
-    // Paper & Office Supplies
     { value: 'ream', label: 'Ream', category: 'Office Supplies', example: 'Bond paper, copy paper, mimeographing' },
     { value: 'roll', label: 'Roll', category: 'Office Supplies', example: 'Tape, thermal paper, ribbon, vinyl' },
     { value: 'pad', label: 'Pad', category: 'Office Supplies', example: 'Note pad, memo pad, sticky notes' },
@@ -25,7 +24,6 @@ export const DEFAULT_PROCUREMENT_UNITS = [
     { value: 'tube', label: 'Tube', category: 'Office Supplies', example: 'Adhesive, ink, sealant, silicone' },
     { value: 'cartridge', label: 'Cartridge', category: 'Office Supplies', example: 'Printer ink, toner cartridge' },
 
-    // Volume & Liquids
     { value: 'liter', label: 'Liter (L)', category: 'Volume / Liquid', example: 'Disinfectant, alcohol, fuel, oil' },
     { value: 'gallon', label: 'Gallon (gal)', category: 'Volume / Liquid', example: 'Paint, cleaning agent, water' },
     { value: 'bottle', label: 'Bottle (btl)', category: 'Volume / Liquid', example: 'Medicine, chemical solution, reagent' },
@@ -36,27 +34,23 @@ export const DEFAULT_PROCUREMENT_UNITS = [
     { value: 'ampoule', label: 'Ampoule', category: 'Medical', example: 'Liquid medications' },
     { value: 'jar', label: 'Jar', category: 'Medical / Food', example: 'Ointment, preserves, paste' },
 
-    // Weight & Mass
     { value: 'kg', label: 'Kilogram (kg)', category: 'Weight', example: 'Rice, meat, chemicals, fertilizer' },
     { value: 'gram', label: 'Gram (g)', category: 'Weight', example: 'Laboratory reagents, spices' },
     { value: 'bag', label: 'Bag', category: 'Weight / Bulk', example: 'Cement, fertilizer, seeds' },
     { value: 'sack', label: 'Sack', category: 'Weight / Bulk', example: 'Rice, grains, animal feed' },
     { value: 'MT', label: 'Metric Ton (MT)', category: 'Weight / Bulk', example: 'Aggregates, road materials' },
 
-    // Length & Area
     { value: 'meter', label: 'Meter (m)', category: 'Measurement', example: 'Fabric, electric wire, cable, rope' },
     { value: 'linear meter', label: 'Linear Meter (l.m.)', category: 'Measurement', example: 'Piping, gutters, roofing sheets' },
     { value: 'yard', label: 'Yard (yd)', category: 'Measurement', example: 'Cloth, textile, canvas' },
     { value: 'sq.m.', label: 'Square Meter (sq.m.)', category: 'Measurement', example: 'Tarpaulin, carpet, glass' },
     { value: 'cu.m.', label: 'Cubic Meter (cu.m.)', category: 'Measurement', example: 'Sand, gravel, boulders, soil' },
 
-    // Catering & Events
     { value: 'pax', label: 'Pax (Person)', category: 'Catering / Events', example: 'Catering, seminar package, training' },
     { value: 'meal', label: 'Meal', category: 'Catering / Events', example: 'Breakfast, lunch, dinner, snacks' },
     { value: 'serving', label: 'Serving', category: 'Catering / Events', example: 'Buffet serving, dish portion' },
     { value: 'plate', label: 'Plate', category: 'Catering / Events', example: 'Plated meal package' },
 
-    // Hardware & Construction
     { value: 'bar', label: 'Bar', category: 'Construction', example: 'Deformed rebar, flat bar, angle bar' },
     { value: 'length', label: 'Length', category: 'Construction', example: 'PVC pipe, steel conduit, G.I. pipe' },
     { value: 'board', label: 'Board (bd.ft.)', category: 'Construction', example: 'Lumber, plywood, gypsum board' },
@@ -84,7 +78,6 @@ export const AttachmentUnitCombobox = ({
     const menuRef = useRef(null);
     const searchInputRef = useRef(null);
 
-    // Calculate fixed portal menu coordinates relative to viewport
     const updatePosition = useCallback(() => {
         if (!triggerRef.current) return;
         const rect = triggerRef.current.getBoundingClientRect();
@@ -108,7 +101,6 @@ export const AttachmentUnitCombobox = ({
         });
     }, []);
 
-    // Load custom units from localStorage
     useEffect(() => {
         try {
             const saved = localStorage.getItem(STORAGE_KEY);
@@ -123,7 +115,6 @@ export const AttachmentUnitCombobox = ({
         }
     }, []);
 
-    // Listen to custom units updates across multiple comboboxes
     useEffect(() => {
         const handleCustomUnitsUpdated = (e) => {
             if (e.detail?.customUnits && Array.isArray(e.detail.customUnits)) {
@@ -134,7 +125,6 @@ export const AttachmentUnitCombobox = ({
         return () => window.removeEventListener('attachment-units:updated', handleCustomUnitsUpdated);
     }, []);
 
-    // Update position on window scroll, container scroll, or resize
     useEffect(() => {
         if (!isOpen) return;
 
@@ -155,7 +145,6 @@ export const AttachmentUnitCombobox = ({
         };
     }, [isOpen, updatePosition]);
 
-    // Handle outside clicks
     useEffect(() => {
         if (!isOpen) return;
 
@@ -184,12 +173,10 @@ export const AttachmentUnitCombobox = ({
         };
     }, [isOpen]);
 
-    // Save a custom unit
     const handleSaveCustomUnit = (unitName) => {
         const cleanName = (unitName || '').trim();
         if (!cleanName) return;
 
-        // Check if already in standard units
         const existsInDefault = DEFAULT_PROCUREMENT_UNITS.some(
             u => u.value.toLowerCase() === cleanName.toLowerCase() || u.label.toLowerCase() === cleanName.toLowerCase()
         );
@@ -220,7 +207,6 @@ export const AttachmentUnitCombobox = ({
         setIsOpen(false);
     };
 
-    // Remove a saved custom unit
     const handleRemoveCustomUnit = (unitValue, e) => {
         e.stopPropagation();
         const updated = customUnits.filter(u => u.value !== unitValue);
@@ -233,12 +219,10 @@ export const AttachmentUnitCombobox = ({
         }
     };
 
-    // Combined all available units
     const allUnits = useMemo(() => {
         return [...customUnits, ...DEFAULT_PROCUREMENT_UNITS];
     }, [customUnits]);
 
-    // Filter units based on search
     const filteredUnits = useMemo(() => {
         const term = searchTerm.trim().toLowerCase();
         if (!term) return allUnits;
@@ -317,7 +301,6 @@ export const AttachmentUnitCombobox = ({
                 </div>
             </div>
 
-            {/* Portal Dropdown Menu: Attached directly to document.body to prevent table overflow clipping and z-index issues */}
             {isOpen && !disabled && coords && createPortal(
                 <div
                     ref={menuRef}
@@ -332,7 +315,7 @@ export const AttachmentUnitCombobox = ({
                     }}
                     className="bg-white border border-slate-300 rounded-xl shadow-2xl overflow-hidden flex flex-col text-xs animate-in fade-in zoom-in-95 duration-100 text-left"
                 >
-                    {/* Search filter input */}
+
                     <div className="p-2 border-b border-slate-100 bg-slate-50 flex items-center gap-1.5 shrink-0">
                         <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <input
@@ -355,7 +338,6 @@ export const AttachmentUnitCombobox = ({
                         )}
                     </div>
 
-                    {/* Quick Action: Use/Add Custom Unit if typed */}
                     {searchTerm.trim() && !isExactMatch && (
                         <div className="p-1.5 bg-blue-50/80 border-b border-blue-100 shrink-0">
                             <button
@@ -371,7 +353,6 @@ export const AttachmentUnitCombobox = ({
                         </div>
                     )}
 
-                    {/* Units Scrollable List */}
                     <div className="overflow-y-auto divide-y divide-slate-100 flex-1">
                         {filteredUnits.length === 0 ? (
                             <div className="p-4 text-center text-slate-400">
@@ -403,8 +384,8 @@ export const AttachmentUnitCombobox = ({
                                         <div className="min-w-0 flex-1">
                                             <div className="flex items-center gap-1.5 flex-wrap">
                                                 <span className={`font-mono text-xs font-bold px-1.5 py-0.2 rounded border ${
-                                                    u.isCustom 
-                                                        ? 'bg-amber-50 text-amber-800 border-amber-200' 
+                                                    u.isCustom
+                                                        ? 'bg-amber-50 text-amber-800 border-amber-200'
                                                         : 'bg-slate-100 text-slate-800 border-slate-200'
                                                 }`}>
                                                     {u.value}
@@ -444,7 +425,6 @@ export const AttachmentUnitCombobox = ({
                         )}
                     </div>
 
-                    {/* Footer: Add Customize Unit Button / Input */}
                     <div className="p-2 bg-slate-50 border-t border-slate-100 shrink-0">
                         {showAddCustomInput ? (
                             <div className="flex items-center gap-1">

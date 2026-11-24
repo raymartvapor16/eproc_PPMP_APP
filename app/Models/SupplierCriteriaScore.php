@@ -18,20 +18,13 @@ class SupplierCriteriaScore extends Model
         'remarks',
     ];
 
-    /**
-     * Each score belongs to an evaluation
-     */
     public function evaluation()
     {
         return $this->belongsTo(SupplierEvaluation::class, 'evaluation_id');
     }
 
-    /**
-     * Each score belongs to a criteria
-     */
     public function criteria()
     {
         return $this->belongsTo(SupplierEvaluationCriteria::class, 'criteria_id');
     }
 }
-

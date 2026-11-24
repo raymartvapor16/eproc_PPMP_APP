@@ -14,19 +14,22 @@ import {
 } from 'lucide-react';
 import { StatusBadge, formatCurrency, formatDate } from '../UI/StatusBadge';
 import { getStandardFiscalYears } from '../../utils/fiscalYears';
+import { AdminBulkPrintExportView } from './AdminBulkPrintExportView';
 
-export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
+export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp, user, data }) => {
+    const resolvedPpmps = recentPpmps || data?.recent_ppmps || [];
+    const resolvedOffices = offices || data?.offices || [];
+    const [activeReportSubTab, setActiveReportSubTab] = useState('bulk_print');
     const [selectedYear, setSelectedYear] = useState('');
     const [selectedOffice, setSelectedOffice] = useState('');
     const [selectedStatus, setSelectedStatus] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
 
     const reportYearOptions = useMemo(() => {
-        return getStandardFiscalYears([selectedYear, ...(recentPpmps || []).map((p) => p.fiscal_year)]);
-    }, [recentPpmps, selectedYear]);
+        return getStandardFiscalYears([selectedYear, ...resolvedPpmps.map((p) => p.fiscal_year)]);
+    }, [resolvedPpmps, selectedYear]);
 
-    // Filter PPMPs according to report criteria
-    const filteredReports = (recentPpmps || []).filter((ppmp) => {
+    const filteredReports = resolvedPpmps.filter((ppmp) => {
         if (selectedYear && String(ppmp.fiscal_year) !== String(selectedYear)) {
             return false;
         }
@@ -50,11 +53,9 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
         return true;
     });
 
-    // Summary calculations
     const totalFilteredBudget = filteredReports.reduce((sum, p) => sum + parseFloat(p.total_budget || 0), 0);
     const readyToPrintCount = filteredReports.filter((p) => p.status === 'READY_TO_PRINT').length;
 
-    // Export to Excel / CSV
     const exportToExcel = () => {
         const rows = filteredReports.map((p, idx) => ({
             'No.': idx + 1,
@@ -91,8 +92,41 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
     };
 
     return (
-        <div className="space-y-6">
-            {/* Header / Report Configuration Banner */}
+        <div className="space-y-5">
+
+            <div className="bg-white p-1.5 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-2">
+                <button
+                    type="button"
+                    onClick={() => setActiveReportSubTab('bulk_print')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider transition cursor-pointer ${
+                        activeReportSubTab === 'bulk_print'
+                            ? 'bg-emerald-600 text-white shadow-sm'
+                            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    }`}
+                >
+                    <Printer className="w-4 h-4" />
+                    <span>Bulk Print &amp; PDF (Ready to Print PPMP &amp; APP)</span>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => setActiveReportSubTab('consolidated')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider transition cursor-pointer ${
+                        activeReportSubTab === 'consolidated'
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    }`}
+                >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    <span>Consolidated Reports &amp; Excel (.XLSX)</span>
+                </button>
+            </div>
+
+            {activeReportSubTab === 'bulk_print' ? (
+                <AdminBulkPrintExportView user={user} onSelectPpmp={onSelectPpmp} />
+            ) : (
+            <div className="space-y-6">
+
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h2 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2">
@@ -126,7 +160,6 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
                 </div>
             </div>
 
-            {/* Filter Bar */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
                 <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
                     <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
@@ -146,7 +179,7 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {/* Search query */}
+
                     <div>
                         <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
                             Search Document
@@ -163,7 +196,6 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
                         </div>
                     </div>
 
-                    {/* Fiscal Year */}
                     <div>
                         <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
                             Fiscal Year
@@ -180,7 +212,6 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
                         </select>
                     </div>
 
-                    {/* Office / Department */}
                     <div>
                         <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
                             Implementing Office
@@ -191,7 +222,7 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
                             className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none text-slate-800"
                         >
                             <option value="">All Implementing Offices</option>
-                            {(offices || []).map((off) => (
+                            {resolvedOffices.map((off) => (
                                 <option key={off.id} value={off.id}>
                                     {off.code} - {off.name}
                                 </option>
@@ -199,7 +230,6 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
                         </select>
                     </div>
 
-                    {/* Status */}
                     <div>
                         <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
                             Document Status
@@ -222,7 +252,6 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
                 </div>
             </div>
 
-            {/* Filtered Metrics Summary */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
                     <div className="text-[11px] font-bold text-slate-500 uppercase">
@@ -255,7 +284,6 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
                 </div>
             </div>
 
-            {/* Data Table */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
                 <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
@@ -368,6 +396,8 @@ export const AdminReportsView = ({ recentPpmps, offices, onSelectPpmp }) => {
                     </table>
                 </div>
             </div>
+            </div>
+            )}
         </div>
     );
 };

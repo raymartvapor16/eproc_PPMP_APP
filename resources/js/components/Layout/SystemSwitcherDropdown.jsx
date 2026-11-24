@@ -75,10 +75,11 @@ export const SYSTEM_OPTIONS = [
 
 export const SystemSwitcherDropdown = ({
     user,
-    currentSystem = 'ppmp', // 'ppmp' | 'monitoring' | 'pims' | 'supplierevaluation'
+    currentSystem = 'ppmp',
     onNavigate,
     className = '',
-    align = 'right', // 'right' | 'left'
+    align = 'right',
+    fullWidth = false,
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [portalSystems, setPortalSystems] = useState(() =>
@@ -103,14 +104,11 @@ export const SystemSwitcherDropdown = ({
         return () => window.removeEventListener('portal-systems:updated', fetchCatalog);
     }, []);
 
-    // Filter systems the current user is authorized to access
     const accessibleSystems = SYSTEM_OPTIONS.filter((sys) => canUserAccessSystem(user, sys.path));
 
-    // Identify active system meta
     const activeMeta = SYSTEM_OPTIONS.find((s) => s.id === currentSystem) || SYSTEM_OPTIONS[0];
     const ActiveIcon = activeMeta.icon;
 
-    // Close dropdown on outside click or escape
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -149,12 +147,12 @@ export const SystemSwitcherDropdown = ({
     };
 
     return (
-        <div className={`relative inline-block text-left z-50 overflow-visible ${className}`} ref={dropdownRef}>
-            {/* Trigger Button */}
+        <div className={`relative ${fullWidth ? 'block w-full' : 'inline-block'} text-left z-50 overflow-visible ${className}`} ref={dropdownRef}>
+
             <button
                 type="button"
                 onClick={() => setIsOpen(!isOpen)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer border shadow-xs ${
+                className={`${fullWidth ? 'w-full justify-between' : ''} flex items-center gap-2 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-bold transition-all duration-200 cursor-pointer border shadow-xs ${
                     isOpen
                         ? 'bg-slate-800 text-white border-slate-600 shadow-md ring-2 ring-blue-500/30'
                         : 'bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border-slate-700/80 hover:border-slate-600'
@@ -164,11 +162,11 @@ export const SystemSwitcherDropdown = ({
                 <div className="flex items-center gap-1.5">
                     <ActiveIcon className={`w-3.5 h-3.5 ${activeMeta.iconColor}`} />
                     <span className="hidden md:inline font-bold">Go to System</span>
-                    <span className="md:hidden font-bold">Systems</span>
+                    <span className="md:hidden font-bold">Switch System</span>
                 </div>
 
                 {accessibleSystems.length > 1 && (
-                    <span className="hidden sm:inline-flex px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                    <span className="inline-flex px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
                         {accessibleSystems.length}
                     </span>
                 )}
@@ -180,15 +178,18 @@ export const SystemSwitcherDropdown = ({
                 />
             </button>
 
-            {/* Dropdown Menu */}
             {isOpen && (
                 <div
-                    className={`absolute ${
-                        align === 'right' ? 'right-0' : 'left-0'
-                    } top-full mt-2 w-80 sm:w-96 rounded-2xl bg-slate-900/98 backdrop-blur-2xl border border-slate-700/80 shadow-2xl shadow-black/80 z-[100] overflow-hidden divide-y divide-slate-800/80 animate-in fade-in zoom-in-95 duration-150`}
+                    className={`${
+                        fullWidth
+                            ? 'relative mt-2 w-full'
+                            : `fixed left-3 right-3 top-16 sm:absolute sm:top-full sm:mt-2 sm:w-96 ${
+                                align === 'right' ? 'sm:left-auto sm:right-0' : 'sm:right-auto sm:left-0'
+                            }`
+                    } rounded-2xl bg-slate-900/98 backdrop-blur-2xl border border-slate-700/80 shadow-2xl shadow-black/80 z-[100] overflow-hidden divide-y divide-slate-800/80 animate-in fade-in zoom-in-95 duration-150`}
                     style={{ zIndex: 9999 }}
                 >
-                    {/* Header */}
+
                     <div className="px-4 py-3 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 flex items-center justify-between">
                         <div>
                             <div className="text-[10px] font-extrabold uppercase tracking-widest text-amber-400 flex items-center gap-1.5">
@@ -204,7 +205,6 @@ export const SystemSwitcherDropdown = ({
                         </span>
                     </div>
 
-                    {/* Systems List */}
                     <div className="p-2 space-y-1 max-h-[360px] overflow-y-auto">
                         {accessibleSystems.map((sys) => {
                             const isCurrent = sys.id === currentSystem;
@@ -224,7 +224,7 @@ export const SystemSwitcherDropdown = ({
                                             : 'hover:bg-slate-800/60 border border-transparent hover:border-slate-700/50'
                                     }`}
                                 >
-                                    {/* System Icon */}
+
                                     <div
                                         className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border transition-transform duration-200 group-hover:scale-105 shadow-inner ${
                                             !isSysActive
@@ -241,7 +241,6 @@ export const SystemSwitcherDropdown = ({
                                         <IconComponent className="w-4 h-4 stroke-[2]" />
                                     </div>
 
-                                    {/* System Details */}
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between gap-1">
                                             <span
@@ -280,7 +279,6 @@ export const SystemSwitcherDropdown = ({
                         })}
                     </div>
 
-                    {/* Footer: Portal Home */}
                     <div className="p-2 bg-slate-950/60">
                         <button
                             type="button"
@@ -299,4 +297,3 @@ export const SystemSwitcherDropdown = ({
         </div>
     );
 };
-

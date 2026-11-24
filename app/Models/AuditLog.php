@@ -32,16 +32,13 @@ class AuditLog extends Model
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    /**
-     * Returns a human-readable description of the action.
-     */
     public function humanDescription(): string
     {
         $actor = $this->user?->name ?? 'System';
         $entity = $this->entity_type === 'ppmps' ? 'PPMP #' . ($this->entity_id ?? '') : ($this->entity_type ?? 'record');
 
         $map = [
-            // Auth
+
             'USER_LOGIN'               => "{$actor} logged in",
             'USER_LOGOUT'              => "{$actor} logged out",
             'USER_LOGIN_FAILED'        => "Failed login attempt",
@@ -49,19 +46,16 @@ class AuditLog extends Model
             'USER_REGISTERED_PENDING'  => "{$actor} registered (pending approval)",
             'USER_PROFILE_UPDATED'     => "{$actor} updated their profile",
 
-            // User Management
             'USER_APPROVED'            => "Admin approved user account",
             'USER_REJECTED'            => "Admin rejected user account",
             'USER_DEACTIVATED'         => "Admin deactivated user account",
             'USER_ACTIVATED'           => "Admin activated user account",
             'USER_PASSWORD_RESET'      => "Admin reset password for a user",
 
-            // PPMP Lifecycle
             'PPMP_CREATED'             => "{$actor} created a new PPMP",
             'PPMP_UPDATED'             => "{$actor} updated {$entity}",
             'PPMP_CANCELLED'           => "{$actor} cancelled {$entity}",
 
-            // Workflow
             'WORKFLOW_SUBMIT_TO_HEAD'    => "{$actor} submitted {$entity} to Office Head",
             'WORKFLOW_HEAD_APPROVED'     => "{$actor} (Head) approved {$entity}",
             'WORKFLOW_HEAD_RETURNED'     => "{$actor} (Head) returned {$entity} with remarks",
@@ -78,12 +72,10 @@ class AuditLog extends Model
             'WORKFLOW_TWG_RETURNED'      => "{$actor} (TWG) returned {$entity}",
             'WORKFLOW_DOCUMENT_RECEIVED' => "{$actor} received document for {$entity}",
 
-            // Amendments
             'AMENDMENT_REQUESTED'        => "{$actor} requested amendment for {$entity}",
             'AMENDMENT_APPROVED'         => "Admin approved amendment request for {$entity}",
             'AMENDMENT_REJECTED'         => "Admin rejected amendment request for {$entity}",
 
-            // Admin
             'SIGNATORY_CREATED'          => "Admin created a new official signatory",
             'SIGNATORY_UPDATED'          => "Admin updated an official signatory",
             'SIGNATORY_DELETED'          => "Admin deleted an official signatory",
@@ -109,10 +101,6 @@ class AuditLog extends Model
         return $map[$this->action] ?? ucwords(str_replace('_', ' ', strtolower($this->action)));
     }
 
-    /**
-     * Returns a UI category string for color-coding.
-     * Values: 'auth', 'workflow', 'admin', 'ppmp', 'user'
-     */
     public function category(): string
     {
         $action = $this->action ?? '';

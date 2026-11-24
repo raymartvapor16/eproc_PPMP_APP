@@ -50,6 +50,62 @@ const DEFAULT_PROCUREMENT_MODES = [
     'Scientific, Scholarly or Artistic Work, Exclusive Technology and Media Services',
 ];
 
+export const MAX_COMMENT_WORDS = 1000;
+
+const MARKET_SCOPING_PRESETS_BY_PARAM = {
+    project_cost_estimate: [
+        'Cost estimate aligns with current market prices based on recent supplier quotations and canvass sheets.',
+        'Updated ABC / estimated budget to reflect prevailing market rates.',
+        'No adjustment needed; current budgetary allocation is realistic and sufficient.',
+    ],
+    project_design_specification: [
+        'Multiple qualified suppliers/contractors in the market can meet the proposed technical and financial requirements.',
+        'Specifications refined to ensure open competition and avoid restrictive brand requirements.',
+    ],
+    technical_criteria: [
+        'Market fully supports the proposed technical criteria and quality standards.',
+        'Technical criteria aligned with readily available industry-standard specifications.',
+    ],
+    delivery_lead_time: [
+        'Proposed delivery lead time is feasible based on supplier availability and logistics.',
+        'Adjusted delivery schedule to accommodate standard supplier fulfillment lead times.',
+    ],
+    storage_warehousing: [
+        'PGSO Warehouse / End-User storage facility can accommodate the items under required handling conditions.',
+        'Staggered delivery / direct on-site delivery recommended to minimize storage constraints.',
+        'Not applicable for this procurement project.',
+    ],
+    identified_risks: [
+        'Minimal market risk identified; sufficient local and regional suppliers are available.',
+        'Price volatility noted; monitor prevailing market rates and include standard price contingency clauses.',
+        'Limited supplier pool; early procurement activity and wide posting on PhilGEPS recommended.',
+    ],
+};
+
+export const countWords = (text) => {
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return 0;
+    return trimmed.split(/\s+/).filter(Boolean).length;
+};
+
+export const clampToMaxWords = (text, maxWords = MAX_COMMENT_WORDS) => {
+    const raw = String(text ?? '');
+    const tokens = raw.match(/\S+|\s+/g);
+    if (!tokens) return raw;
+    let wordCount = 0;
+    let result = '';
+    for (const token of tokens) {
+        if (/\S/.test(token)) {
+            if (wordCount >= maxWords) {
+                break;
+            }
+            wordCount += 1;
+        }
+        result += token;
+    }
+    return result;
+};
+
 export const CellCommentPopover = ({
     anchorEl = null,
     itemNo,
@@ -75,7 +131,6 @@ export const CellCommentPopover = ({
     const [activeComplyId, setActiveComplyId] = useState(null);
     const [loadingAction, setLoadingAction] = useState(false);
 
-    // Direct cell editing in modal state
     const [editedValue, setEditedValue] = useState(
         cellValue !== null && cellValue !== undefined ? String(cellValue) : ''
     );
@@ -85,7 +140,6 @@ export const CellCommentPopover = ({
     const fk = String(fieldKey || '').toLowerCase();
     const fl = String(fieldLabel || '').toLowerCase();
 
-    // Determine field control types based on PPMP edit rules
     const isModeOfProcurement =
         fk === 'procurement_mode' ||
         (fk.includes('mode') && !fk.includes('payment')) ||
@@ -168,7 +222,31 @@ export const CellCommentPopover = ({
         fk === 'fiscal_year' ||
         fl.includes('fiscal year');
 
-    // Load active procurement modes for mode dropdown
+    const isMarketScopingActivityCheck =
+        (fk.startsWith('ms_activity_') && !fk.endsWith('_custom_text') && !fk.endsWith('_documentation')) ||
+        (fl.includes('market scoping activity') && !fl.includes('documentation') && !fk.endsWith('_custom_text'));
+
+    const isMarketScopingResultConsidered =
+        (fk.startsWith('ms_result_') && fk.endsWith('_considered')) ||
+        (fl.includes('market scoping') && fl.includes('considered?'));
+
+    const isMarketScopingResultRecommendation =
+        (fk.startsWith('ms_result_') && fk.endsWith('_recommendations')) ||
+        (fl.includes('market scoping') && fl.includes('(recommendations)'));
+
+    const isMarketScopingPeriod =
+        fk === 'ms_scoping_period' ||
+        fl.includes('period of market scoping');
+
+    const isMarketScopingExpectedDelivery =
+        fk === 'ms_expected_delivery' ||
+        (fl.includes('market scoping') && fl.includes('expected date of delivery'));
+
+    const msParamCode = useMemo(() => {
+        const m = fk.match(/^ms_result_([a-z_]+)_(considered|recommendations)$/);
+        return m ? m[1] : null;
+    }, [fk]);
+
     useEffect(() => {
         let isMounted = true;
         if (isModeOfProcurement) {
@@ -328,7 +406,6 @@ export const CellCommentPopover = ({
         setEditedValue(payload);
     };
 
-    // Sync editedValue if cellValue changes from external update
     useEffect(() => {
         if (isProgramAndAccountCode) {
             const parsed = parseProgAndAcct(cellValue);
@@ -350,12 +427,15 @@ export const CellCommentPopover = ({
         } else if (isPreProcConference) {
             const isYes = cellValue === true || cellValue === 'YES' || cellValue === '1';
             setEditedValue(isYes ? 'YES' : 'NO');
+        } else if (isMarketScopingActivityCheck) {
+            const norm = String(cellValue ?? '').trim().toUpperCase();
+            const isChecked = ['CHECKED', 'YES', '1', 'TRUE', '✓'].includes(norm) || cellValue === true;
+            setEditedValue(isChecked ? 'Checked' : 'Unchecked');
         } else {
             setEditedValue(cellValue !== null && cellValue !== undefined ? String(cellValue) : '');
         }
-    }, [cellValue, isPreProcConference, isProgramAndAccountCode, isOtherTermsAndDelivery, contextData]);
+    }, [cellValue, isPreProcConference, isMarketScopingActivityCheck, isProgramAndAccountCode, isOtherTermsAndDelivery, contextData]);
 
-    // Close on Escape or click outside
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.key === 'Escape') onClose();
@@ -367,13 +447,26 @@ export const CellCommentPopover = ({
         };
     }, [onClose]);
 
+    const commentWordCount = useMemo(() => countWords(newComment), [newComment]);
+    const isOverWordLimit = commentWordCount > MAX_COMMENT_WORDS;
+
+    const handleCommentChange = (e) => {
+        const val = e.target.value;
+        if (countWords(val) > MAX_COMMENT_WORDS) {
+            setNewComment(clampToMaxWords(val, MAX_COMMENT_WORDS));
+        } else {
+            setNewComment(val);
+        }
+    };
+
     const handlePostComment = async (e) => {
         e.preventDefault();
-        if (!newComment.trim() || loadingAction) return;
+        const trimmed = newComment.trim();
+        if (!trimmed || loadingAction || countWords(trimmed) > MAX_COMMENT_WORDS) return;
 
         setLoadingAction(true);
         try {
-            await onAddComment(newComment.trim());
+            await onAddComment(clampToMaxWords(trimmed, MAX_COMMENT_WORDS));
             setNewComment('');
         } finally {
             setLoadingAction(false);
@@ -384,7 +477,8 @@ export const CellCommentPopover = ({
         if (loadingAction) return;
         setLoadingAction(true);
         try {
-            const note = customNote !== null ? customNote : (complianceNotes[commentId] || '');
+            const rawNote = customNote !== null ? customNote : (complianceNotes[commentId] || '');
+            const note = clampToMaxWords(rawNote, MAX_COMMENT_WORDS);
             await onComplyComment(commentId, note);
             setActiveComplyId(null);
         } finally {
@@ -420,44 +514,49 @@ export const CellCommentPopover = ({
         }
     };
 
-    // Apply direct cell edit from modal
     const handleApplyEdit = async (markComplied = false) => {
+        if (loadingAction) return;
+
         let finalVal = editedValue;
         if (isPreProcConference) {
             finalVal = (editedValue === 'YES' || editedValue === true || editedValue === '1') ? 'YES' : 'NO';
+        } else if (isMarketScopingActivityCheck) {
+            const norm = String(editedValue ?? '').trim().toUpperCase();
+            finalVal = (['CHECKED', 'YES', '1', 'TRUE', '✓'].includes(norm) || editedValue === true) ? 'Checked' : 'Unchecked';
         }
 
-        if (onUpdateCellValue) {
-            try {
-                await onUpdateCellValue(finalVal);
-                setEditSuccess(true);
-                setTimeout(() => setEditSuccess(false), 2500);
-            } catch (err) {
-                console.error('Failed to update cell value:', err);
+        setLoadingAction(true);
+        try {
+            let cellAlreadyUpdated = false;
+            if (onUpdateCellValue) {
+                try {
+                    await onUpdateCellValue(finalVal);
+                    cellAlreadyUpdated = true;
+                    setEditSuccess(true);
+                    setTimeout(() => setEditSuccess(false), 2500);
+                } catch (err) {
+                    console.error('Failed to update cell value:', err);
+                    return;
+                }
             }
-        }
 
-        if (markComplied && pendingComments.length > 0 && onComplyComment) {
-            setLoadingAction(true);
-            try {
+            if (markComplied && pendingComments.length > 0 && onComplyComment) {
                 for (const c of pendingComments) {
                     await onComplyComment(
                         c.id,
                         `Complied and updated cell value to: "${finalVal}"`,
-                        finalVal
+                        cellAlreadyUpdated ? null : finalVal
                     );
                 }
-            } finally {
-                setLoadingAction(false);
             }
+        } finally {
+            setLoadingAction(false);
         }
     };
 
     const pendingComments = comments.filter((c) => c.status === 'pending');
     const compliedComments = comments.filter((c) => c.status === 'complied');
 
-    // Filter matching change logs for this cell / field from ppmp_change_logs table
-    // Filter matching change logs for this cell / field from ppmp_change_logs table
     const matchingChangeLogs = React.useMemo(() => {
         if (!Array.isArray(changeLogs) || changeLogs.length === 0) return [];
         return changeLogs.filter((log) => {
@@ -467,14 +566,11 @@ export const CellCommentPopover = ({
             const fk = String(fieldKey || '').toLowerCase().trim();
             const actionStr = String(log.action || '').toLowerCase().trim();
 
-            // Direct exact match with fieldLabel or fieldKey
-            // ONLY if not an item-specific cell or attachment-row-specific cell (to prevent generic labels from clashing)
             if (!itemNo && !fk.startsWith('att_r') && (fn === fl || fn === fk)) {
                 return true;
             }
 
-            // 1. PPMP Item fields matching (e.g. itemNo = 1)
-            if (itemNo !== null && itemNo !== undefined) {
+            if (!fk.startsWith('att_') && itemNo !== null && itemNo !== undefined) {
                 const itemPrefix = `item #${itemNo}`;
                 const itemPrefixAlt = `item ${itemNo}`;
                 const hasItemPrefix =
@@ -483,10 +579,8 @@ export const CellCommentPopover = ({
                     actionStr.includes(itemPrefix) ||
                     actionStr.includes(itemPrefixAlt);
 
-                // If the log does NOT reference this item number, it cannot be a match for this item cell
                 if (!hasItemPrefix) return false;
 
-                // Match specific subfield of this item:
                 if (fk === 'description' || fk.includes('desc')) {
                     return (fn.includes('description') || fn.includes('desc') || fn === 'description') && !fn.includes('attachment') && !fn.includes('row #');
                 }
@@ -524,17 +618,22 @@ export const CellCommentPopover = ({
                     return fn.includes('remarks') || fn.includes('notes');
                 }
 
-                // If no specific item subfield matched, DO NOT fall through to true
                 return false;
             }
 
-            // 2. Attachment list rows matching: e.g. "att_r1_description", "att_r1_unit", "att_r2_qty"
             const attRowMatch = fk.match(/^att_r(\d+)_(.+)$/);
             if (attRowMatch) {
                 const rowNum = attRowMatch[1];
                 const subField = attRowMatch[2].toLowerCase();
                 const rowPrefix = `row #${rowNum}`;
                 const rowPrefixAlt = `row ${rowNum}`;
+
+                if (itemNo !== null && itemNo !== undefined) {
+                    const specItemMatch = fn.match(/(?:detailed specifications|attachment list)\s*#(\d+)/);
+                    if (specItemMatch && Number(specItemMatch[1]) !== Number(itemNo)) {
+                        return false;
+                    }
+                }
 
                 if (fn.includes(rowPrefix) || fn.includes(rowPrefixAlt)) {
                     if (subField.includes('desc')) {
@@ -559,7 +658,6 @@ export const CellCommentPopover = ({
                 return false;
             }
 
-            // 3. Attachment header fields matching
             if (fk.startsWith('att_')) {
                 if (fk.includes('terms') || fk.includes('other')) {
                     return fn.includes('terms') || fn.includes('other terms') || fn.includes('warranty');
@@ -591,7 +689,6 @@ export const CellCommentPopover = ({
                 return false;
             }
 
-            // 4. Program name / Account code matching (Category / Program Name & Account Code)
             if (fk === 'program_name' || fk === 'account_code') {
                 return (
                     (fn.includes('program name') || fn.includes('program_name') || fn.includes('account code') || fn.includes('account_code') || fn.includes('category')) &&
@@ -599,7 +696,6 @@ export const CellCommentPopover = ({
                 );
             }
 
-            // 5. Implementing unit matching
             if (fk === 'implementing_unit') {
                 return (
                     (fn.includes('implementing unit') || fn.includes('implementing_unit') || fn.includes('end-user')) &&
@@ -607,7 +703,6 @@ export const CellCommentPopover = ({
                 );
             }
 
-            // 6. Standard PPMP header fields
             if (fk === 'total_budget') {
                 return (fn.includes('total budget') || fn === 'total_budget') && !fn.includes('item #') && !fn.includes('row #');
             }
@@ -640,13 +735,11 @@ export const CellCommentPopover = ({
         });
     }, [changeLogs, fieldKey, fieldLabel, itemNo]);
 
-    // Resolve old / original data for compliance record purposes
     const commentWithOldValue = comments.find(
         (c) => c.cell_value && String(c.cell_value).trim() !== ''
     );
     const commentRecordedValue = commentWithOldValue ? String(commentWithOldValue.cell_value).trim() : null;
 
-    // From matching change logs (filtered specifically for this exact cell)
     const latestChangeLog = matchingChangeLogs.length > 0 ? matchingChangeLogs[matchingChangeLogs.length - 1] : null;
     const changeLogOldValue =
         latestChangeLog &&
@@ -673,11 +766,11 @@ export const CellCommentPopover = ({
     );
 
     const renderDynamicCellInput = () => {
-        // 0. Combined Category / Program Name & Account Code (Both editable)
+
         if (isProgramAndAccountCode) {
             return (
                 <div className="bg-white p-3.5 border-2 border-blue-200 rounded-xl space-y-3 shadow-xs">
-                    {/* Program Name Combobox */}
+
                     <div className="space-y-1">
                         <div className="flex items-center justify-between">
                             <label className="text-[11px] font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
@@ -701,7 +794,6 @@ export const CellCommentPopover = ({
                         />
                     </div>
 
-                    {/* Account Code Combobox */}
                     <div className="space-y-1 pt-2 border-t border-slate-100">
                         <div className="flex items-center justify-between">
                             <label className="text-[11px] font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
@@ -725,7 +817,6 @@ export const CellCommentPopover = ({
                         />
                     </div>
 
-                    {/* Formatted Cell Preview */}
                     <div className="text-[11px] bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-slate-700">
                         <span className="font-semibold text-slate-500 block text-[10px] uppercase tracking-wider mb-0.5">
                             Formatted Cell Result:
@@ -741,7 +832,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 0a. Program Name Search Dropdown Option
         if (isProgramName) {
             return (
                 <div className="bg-white p-2 border border-blue-300 rounded-xl shadow-2xs">
@@ -754,7 +844,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 0b. Account Code / Category Search Dropdown Option
         if (isAccountCode) {
             return (
                 <div className="bg-white p-2 border border-blue-300 rounded-xl shadow-2xs">
@@ -767,7 +856,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 0c. Combined Other Terms & Delivery Info (Other Terms / Green Specs, Place of Delivery, Payment Method, Delivery Period)
         if (isOtherTermsAndDelivery) {
             const hasStandardPlace = BASE_PLACES_OF_DELIVERY.includes(selectedPlaceOfDelivery);
             const hasStandardPayment = BASE_PAYMENT_METHODS.includes(selectedPaymentMethod);
@@ -775,7 +863,7 @@ export const CellCommentPopover = ({
 
             return (
                 <div className="bg-white p-3.5 border-2 border-blue-200 rounded-xl space-y-3.5 shadow-xs text-left">
-                    {/* Other Terms / Green Specs */}
+
                     <div className="space-y-1">
                         <label className="text-[11px] font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
                             <FileText className="w-3.5 h-3.5 text-blue-600" />
@@ -791,7 +879,7 @@ export const CellCommentPopover = ({
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
-                        {/* Place of Delivery */}
+
                         <div className="space-y-1">
                             <label className="text-[11px] font-bold text-slate-800 uppercase tracking-wide">
                                 Place of Delivery
@@ -825,7 +913,6 @@ export const CellCommentPopover = ({
                             )}
                         </div>
 
-                        {/* Payment Method */}
                         <div className="space-y-1">
                             <label className="text-[11px] font-bold text-slate-800 uppercase tracking-wide">
                                 Payment Method
@@ -862,7 +949,6 @@ export const CellCommentPopover = ({
                         </div>
                     </div>
 
-                    {/* Delivery Period */}
                     <div className="space-y-1 pt-2 border-t border-slate-100">
                         <label className="text-[11px] font-bold text-slate-800 uppercase tracking-wide">
                             Delivery Period
@@ -898,7 +984,6 @@ export const CellCommentPopover = ({
                         )}
                     </div>
 
-                    {/* Formatted Cell Result Preview */}
                     <div className="text-[11px] bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-slate-700">
                         <span className="font-semibold text-slate-500 block text-[10px] uppercase tracking-wider mb-1">
                             Formatted Cell Result Preview:
@@ -927,7 +1012,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 1. Recommended Mode of Procurement Dropdown
         if (isModeOfProcurement) {
             const hasCurrent = modesList.some((m) => m.name === editedValue);
             return (
@@ -953,7 +1037,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 2. Pre-Procurement Conference Checkbox & YES/NO Buttons
         if (isPreProcConference) {
             const isYes = editedValue === 'YES' || editedValue === true || editedValue === '1';
             return (
@@ -998,7 +1081,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 3. Type of Project Dropdown
         if (isProjectType) {
             return (
                 <div className="relative">
@@ -1016,7 +1098,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 4. Plan Type Radio Selection (INDICATIVE / FINAL)
         if (isPlanType) {
             const isFinal = String(editedValue).toUpperCase() === 'FINAL';
             return (
@@ -1055,7 +1136,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 5. Unit Dropdown Combobox (Searchable unit list for attachment rows)
         if (isUnitField) {
             return (
                 <div className="bg-white p-2.5 border border-blue-300 rounded-xl shadow-2xs">
@@ -1068,7 +1148,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 6. Date / Month Range Picker
         if (isDateField) {
             return (
                 <div className="bg-white p-3.5 border border-blue-300 rounded-xl shadow-2xs flex flex-col items-center">
@@ -1081,7 +1160,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 7. Attached Supporting Documents Dropdown
         if (isSupportingDocs) {
             return (
                 <div className="bg-white p-2.5 border border-blue-300 rounded-xl shadow-2xs">
@@ -1094,7 +1172,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 8. Delivery Period Dropdown & Text
         if (isDeliveryPeriod) {
             return (
                 <div className="space-y-2">
@@ -1129,7 +1206,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 9. Place of Delivery Dropdown & Text
         if (isPlaceOfDelivery) {
             return (
                 <div className="space-y-2">
@@ -1164,7 +1240,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 10. Payment Method Dropdown & Text
         if (isPaymentMethod) {
             return (
                 <div className="space-y-2">
@@ -1199,7 +1274,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 11. Currency / Estimated Budget / Cost Fields
         if (isCurrencyField) {
             return (
                 <div className="relative">
@@ -1219,7 +1293,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 12. Quantity Field (Attachment rows)
         if (isQtyField) {
             return (
                 <div className="relative">
@@ -1239,7 +1312,6 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 13. Fiscal Year Field
         if (isFiscalYear) {
             return (
                 <div className="relative">
@@ -1259,7 +1331,228 @@ export const CellCommentPopover = ({
             );
         }
 
-        // 14. Default Textarea for Multi-line Text, Descriptions, Remarks, etc.
+        if (isMarketScopingActivityCheck) {
+            const norm = String(editedValue ?? '').trim().toUpperCase();
+            const isChecked = ['CHECKED', 'YES', '1', 'TRUE', '✓'].includes(norm) || editedValue === true;
+            const activityTitle = String(fieldLabel || fieldKey || '').replace(/^Market Scoping Activity\s*•\s*/i, '');
+            return (
+                <div className="bg-white p-3.5 border-2 border-blue-200 rounded-xl space-y-3 shadow-xs">
+                    <label className="flex items-start gap-3 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => setEditedValue(e.target.checked ? 'Checked' : 'Unchecked')}
+                            className="w-5 h-5 mt-0.5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer shrink-0"
+                        />
+                        <div className="space-y-0.5">
+                            <span className="text-xs sm:text-sm font-bold text-slate-800 block leading-snug">
+                                {activityTitle || 'Conducted this Market Scoping Activity'}
+                            </span>
+                            <span className="text-[11px] text-slate-500 block">
+                                Toggle whether this market scoping activity was conducted (Check ✓).
+                            </span>
+                        </div>
+                    </label>
+                    <div className="flex items-center gap-2 pt-2.5 border-t border-slate-100 flex-wrap">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase mr-1">Status:</span>
+                        <button
+                            type="button"
+                            onClick={() => setEditedValue('Checked')}
+                            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-black rounded-lg transition cursor-pointer ${
+                                isChecked
+                                    ? 'bg-emerald-600 text-white border border-emerald-700 shadow-xs ring-2 ring-emerald-300'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+                            }`}
+                        >
+                            <span>✓</span>
+                            <span>Checked (Conducted)</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setEditedValue('Unchecked')}
+                            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-black rounded-lg transition cursor-pointer ${
+                                !isChecked
+                                    ? 'bg-slate-800 text-white border border-slate-900 shadow-xs ring-2 ring-slate-300'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+                            }`}
+                        >
+                            <span>☐</span>
+                            <span>Unchecked (Not Conducted)</span>
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        if (isMarketScopingResultConsidered) {
+            const currentConsidered = ['Yes', 'No', 'Not Applicable'].find(
+                (opt) => opt.toLowerCase() === String(editedValue || '').trim().toLowerCase()
+            ) || '';
+            return (
+                <div className="bg-white p-3.5 border-2 border-blue-200 rounded-xl space-y-3 shadow-xs">
+                    <div className="relative">
+                        <select
+                            value={currentConsidered}
+                            onChange={(e) => setEditedValue(e.target.value)}
+                            className="w-full text-xs sm:text-sm p-3 border border-blue-300 rounded-xl bg-white text-slate-900 font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-2xs cursor-pointer appearance-none pr-10"
+                        >
+                            <option value="">-- Select Considered Status (Yes / No / Not Applicable) --</option>
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                            <option value="Not Applicable">Not Applicable</option>
+                        </select>
+                        <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase">Quick Pick:</span>
+                        {['Yes', 'No', 'Not Applicable'].map((opt) => (
+                            <button
+                                key={opt}
+                                type="button"
+                                onClick={() => setEditedValue(opt)}
+                                className={`px-3 py-1.5 text-xs font-black rounded-lg transition cursor-pointer ${
+                                    currentConsidered === opt
+                                        ? 'bg-blue-600 text-white border border-blue-700 shadow-xs ring-2 ring-blue-300'
+                                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+                                }`}
+                            >
+                                {opt}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        if (isMarketScopingResultRecommendation) {
+            const presets = (msParamCode && MARKET_SCOPING_PRESETS_BY_PARAM[msParamCode]) || [];
+            return (
+                <div className="bg-white p-3.5 border-2 border-blue-200 rounded-xl space-y-2.5 shadow-xs">
+                    {presets.length > 0 && (
+                        <div>
+                            <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">
+                                Quick-Select Standard Recommendation (Optional):
+                            </label>
+                            <div className="relative">
+                                <select
+                                    value=""
+                                    onChange={(e) => {
+                                        if (e.target.value) setEditedValue(e.target.value);
+                                    }}
+                                    className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-slate-50 text-slate-800 font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer appearance-none pr-8"
+                                >
+                                    <option value="">-- Choose a standard recommendation template --</option>
+                                    {presets.map((preset, idx) => (
+                                        <option key={idx} value={preset}>
+                                            {preset}
+                                        </option>
+                                    ))}
+                                </select>
+                                <ChevronDown className="w-4 h-4 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            </div>
+                        </div>
+                    )}
+                    <textarea
+                        rows={3}
+                        value={editedValue}
+                        onChange={(e) => setEditedValue(e.target.value)}
+                        placeholder="Enter recommendation based on market scoping..."
+                        className="w-full text-xs sm:text-sm p-3 border border-blue-300 rounded-xl bg-white text-slate-900 font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-2xs leading-relaxed resize-y"
+                    />
+                </div>
+            );
+        }
+
+        if (isMarketScopingPeriod || isMarketScopingExpectedDelivery) {
+            const parseToMonthInput = (mmYyyy) => {
+                const s = String(mmYyyy || '').trim();
+                if (/^\d{4}-\d{2}$/.test(s)) return s;
+                const m = s.match(/^(\d{2})\/(\d{4})$/);
+                return m ? `${m[2]}-${m[1]}` : '';
+            };
+            const formatFromMonthInput = (yyyyMm) => {
+                const s = String(yyyyMm || '').trim();
+                const m = s.match(/^(\d{4})-(\d{2})$/);
+                return m ? `${m[2]}/${m[1]}` : s;
+            };
+
+            if (isMarketScopingPeriod) {
+                const raw = String(editedValue || '').trim();
+                const m = raw.match(/from\s+([^\s]+)\s+to\s+([^\s]+)/i);
+                const parts = m ? [m[1], m[2]] : raw.split(/\s+(?:to|-)\s+/i);
+                const curFrom = (parts[0] || '').replace(/^from\s+/i, '').replace(/_/g, '').trim();
+                const curTo = (parts[1] || curFrom || '').replace(/_/g, '').trim();
+
+                const updatePeriod = (nextFrom, nextTo) => {
+                    const f = nextFrom || '____';
+                    const t = nextTo || nextFrom || '____';
+                    setEditedValue(`From ${f} To ${t}`);
+                };
+
+                return (
+                    <div className="bg-white p-3.5 border-2 border-blue-200 rounded-xl space-y-3 shadow-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                                    From (mm/yyyy):
+                                </label>
+                                <input
+                                    type="month"
+                                    value={parseToMonthInput(curFrom)}
+                                    onChange={(e) => updatePeriod(formatFromMonthInput(e.target.value), curTo)}
+                                    className="w-full text-xs p-2.5 border border-blue-300 rounded-xl bg-white text-slate-900 font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                                    To (mm/yyyy):
+                                </label>
+                                <input
+                                    type="month"
+                                    value={parseToMonthInput(curTo)}
+                                    onChange={(e) => updatePeriod(curFrom, formatFromMonthInput(e.target.value))}
+                                    className="w-full text-xs p-2.5 border border-blue-300 rounded-xl bg-white text-slate-900 font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                />
+                            </div>
+                        </div>
+                        <div className="text-[11px] text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 font-bold">
+                            Formatted Period: <span className="text-blue-900">{editedValue || '—'}</span>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="bg-white p-3.5 border-2 border-blue-200 rounded-xl space-y-2.5 shadow-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                        <div>
+                            <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                                Pick Month &amp; Year:
+                            </label>
+                            <input
+                                type="month"
+                                value={parseToMonthInput(editedValue)}
+                                onChange={(e) => setEditedValue(formatFromMonthInput(e.target.value))}
+                                className="w-full text-xs p-2.5 border border-blue-300 rounded-xl bg-white text-slate-900 font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
+                                Or Type Delivery Schedule (mm/yyyy):
+                            </label>
+                            <input
+                                type="text"
+                                value={editedValue}
+                                onChange={(e) => setEditedValue(e.target.value)}
+                                placeholder="e.g. 11/2026 or 11/2026 - 12/2026"
+                                className="w-full text-xs p-2.5 border border-slate-300 rounded-xl bg-white text-slate-900 font-bold focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                            />
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         return (
             <textarea
                 rows={String(editedValue || '').includes('\n') || (editedValue && editedValue.length > 50) ? 3 : 2}
@@ -1306,13 +1599,13 @@ export const CellCommentPopover = ({
             className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[99998] flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-150"
             onClick={onClose}
         >
-            {/* Modal Dialog Container */}
+
             <div
                 ref={modalRef}
                 className="relative w-full max-w-2xl lg:max-w-3xl bg-white rounded-2xl shadow-2xl border border-slate-300 z-[99999] my-auto flex flex-col overflow-hidden max-h-[90vh] animate-in zoom-in-95 duration-150 text-left"
                 onClick={(e) => e.stopPropagation()}
             >
-                {/* Header with Dark Theme & Review Accent */}
+
                 <div className="bg-slate-900 text-white px-4 sm:px-6 py-3.5 sm:py-4 flex items-center justify-between border-b border-slate-800 shrink-0 gap-3">
                     <div className="flex items-center gap-3 min-w-0">
                         <div
@@ -1355,9 +1648,8 @@ export const CellCommentPopover = ({
                     </button>
                 </div>
 
-                {/* Modal Body: Expands naturally for few comments, smooth scroll when many comments */}
                 <div className="overflow-y-auto flex-1 p-4 sm:p-6 space-y-4">
-                    {/* Target Cell Record History (Preserving Old Data & Showing Updated Data) */}
+
                     {(() => {
                         if (!resolvedOldValue && !currentValStr) return null;
 
@@ -1375,7 +1667,7 @@ export const CellCommentPopover = ({
                                     </div>
 
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        {/* Old Data Box */}
+
                                         <div className="bg-amber-50/70 border border-amber-300 rounded-xl p-3 flex flex-col gap-1.5">
                                             <div className="flex items-center justify-between">
                                                 <span className="font-extrabold text-amber-900 uppercase text-[11px] tracking-wider flex items-center gap-1.5">
@@ -1391,7 +1683,6 @@ export const CellCommentPopover = ({
                                             </div>
                                         </div>
 
-                                        {/* Current Complied / Updated Data Box */}
                                         <div className="bg-emerald-50/70 border border-emerald-300 rounded-xl p-3 flex flex-col gap-1.5">
                                             <div className="flex items-center justify-between">
                                                 <span className="font-extrabold text-emerald-900 uppercase text-[11px] tracking-wider flex items-center gap-1.5">
@@ -1408,7 +1699,6 @@ export const CellCommentPopover = ({
                                         </div>
                                     </div>
 
-                                    {/* Tracked Change Log from ppmp_change_logs */}
                                     {matchingChangeLogs.length > 0 && (
                                         <div className="bg-white rounded-xl p-3 border border-slate-200 shadow-2xs">
                                             <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-slate-100">
@@ -1506,9 +1796,8 @@ export const CellCommentPopover = ({
                         );
                     })()}
 
-                    {/* Unified Merged Card: Reviewer Findings & Suspension Remarks with In-Modal Cell Editing directly below */}
                     <div className="bg-white rounded-2xl border-2 border-slate-200 overflow-hidden shadow-xs">
-                        {/* Card Header: Reviewer Findings & Suspension Remarks */}
+
                         <div className="bg-slate-100/90 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
                             <span className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
                                 <MessageSquare className="w-3.5 h-3.5 text-red-600" />
@@ -1519,7 +1808,6 @@ export const CellCommentPopover = ({
                             </span>
                         </div>
 
-                        {/* Comments Thread */}
                         <div className="p-4 space-y-3">
                             {comments.length === 0 ? (
                                 <div className="p-5 text-center text-xs sm:text-sm text-slate-400 italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
@@ -1529,10 +1817,9 @@ export const CellCommentPopover = ({
                             ) : (
                                 comments.map((c) => {
                                     const isPending = c.status === 'pending';
-                                    const isAuthor =
+                                    const canDeleteComment =
                                         currentUser &&
-                                        (c.reviewer_id === currentUser.id ||
-                                            ['admin', 'super_admin'].includes(currentUser.role));
+                                        ['admin', 'super_admin'].includes(currentUser.role);
 
                                     return (
                                         <div
@@ -1568,7 +1855,7 @@ export const CellCommentPopover = ({
                                                     >
                                                         {isPending ? 'Action Required' : 'Complied ✓'}
                                                     </span>
-                                                    {isAuthor && (
+                                                    {canDeleteComment && (
                                                         <button
                                                             type="button"
                                                             onClick={() => handleDelete(c.id)}
@@ -1590,7 +1877,6 @@ export const CellCommentPopover = ({
                                                 <span>{formatDate(c.created_at)}</span>
                                             </div>
 
-                                            {/* Compliance Status Details */}
                                             {!isPending && (
                                                 <div className="mt-2.5 pt-2 border-t border-emerald-200/80 bg-white/80 p-2.5 rounded-lg text-xs text-emerald-900 space-y-1 ml-9">
                                                     <div className="flex items-center gap-1.5 font-bold text-emerald-800">
@@ -1621,14 +1907,12 @@ export const CellCommentPopover = ({
                                                 </div>
                                             )}
 
-
                                         </div>
                                     );
                                 })
                             )}
                         </div>
 
-                        {/* All Complied Banner (Shown when all remarks on this cell have been complied with) */}
                         {comments.length > 0 && pendingComments.length === 0 && (
                             <div className="bg-emerald-50 border-t border-emerald-200 p-3.5 flex items-center justify-between gap-2 text-emerald-900">
                                 <div className="flex items-center gap-2">
@@ -1643,7 +1927,6 @@ export const CellCommentPopover = ({
                             </div>
                         )}
 
-                        {/* Edit Cell Section: Merged directly BELOW Reviewer Findings & Suspension Remarks */}
                         {(onUpdateCellValue || canComply) && pendingComments.length > 0 && (
                             <div className="border-t-2 border-blue-200 bg-gradient-to-br from-blue-50/90 via-indigo-50/50 to-slate-50 p-4 sm:p-5 space-y-3">
                                 <div className="flex items-center justify-between">
@@ -1710,23 +1993,35 @@ export const CellCommentPopover = ({
                     </div>
                 </div>
 
-                {/* Reviewer Add Comment Footer */}
                 {canComment && (
                     <form onSubmit={handlePostComment} className="p-3 sm:p-4 bg-slate-50 border-t border-slate-200 shrink-0">
-                        <label className="block text-[11px] font-bold uppercase text-slate-700 mb-1.5">
-                            Add Reviewer Comment / Suspension Remark:
-                        </label>
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <label className="block text-[11px] font-bold uppercase text-slate-700">
+                                Add Reviewer Comment / Suspension Remark:
+                            </label>
+                            <span
+                                className={`text-[10px] font-bold tabular-nums px-2 py-0.5 rounded-full border ${
+                                    commentWordCount >= MAX_COMMENT_WORDS
+                                        ? 'bg-rose-100 text-rose-700 border-rose-300'
+                                        : commentWordCount >= 900
+                                            ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                                }`}
+                            >
+                                {commentWordCount.toLocaleString()} / {MAX_COMMENT_WORDS.toLocaleString()} words
+                            </span>
+                        </div>
                         <div className="relative">
                             <textarea
                                 rows={2}
                                 value={newComment}
-                                onChange={(e) => setNewComment(e.target.value)}
-                                placeholder="Type finding or correction needed for this cell..."
+                                onChange={handleCommentChange}
+                                placeholder="Type finding or correction needed for this cell (max 1,000 words)..."
                                 className="w-full text-xs sm:text-sm p-3 pr-12 border border-slate-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:outline-none resize-none bg-white leading-tight shadow-inner"
                             />
                             <button
                                 type="submit"
-                                disabled={!newComment.trim() || loadingAction}
+                                disabled={!newComment.trim() || loadingAction || isOverWordLimit}
                                 className="absolute right-2.5 bottom-3.5 p-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition disabled:opacity-30 disabled:cursor-not-allowed shadow-xs cursor-pointer"
                                 title="Post comment to cell"
                             >
@@ -1737,16 +2032,22 @@ export const CellCommentPopover = ({
                                 )}
                             </button>
                         </div>
-                        <p className="text-[10px] text-slate-500 mt-1.5">
-                            💡 Cell comments automatically form the suspension remarks for the End User to comply with.
-                        </p>
+                        <div className="flex items-center justify-between gap-2 mt-1.5">
+                            <p className="text-[10px] text-slate-500">
+                                💡 Cell comments automatically form the suspension remarks for the End User to comply with (max 1,000 words).
+                            </p>
+                            {commentWordCount >= MAX_COMMENT_WORDS && (
+                                <span className="text-[10px] font-bold text-rose-600 shrink-0">
+                                    Maximum 1,000-word limit reached
+                                </span>
+                            )}
+                        </div>
                     </form>
                 )}
             </div>
         </div>
     );
 
-    // Mount directly into document.body using React Portal so it is immune to parent table overflow, transforms, or z-index clipping
     if (typeof document !== 'undefined') {
         return createPortal(modalContent, document.body);
     }

@@ -18,7 +18,7 @@ import { showConfirm } from '../../utils/modalAlert';
 import { SignatureControllerManagement } from './SignatureControllerManagement';
 
 const SIGNATORY_TYPE_CONFIG = {
-    // PPMP Signatories
+
     budget_requirement: {
         label: 'Reviewed as to Budgetary Requirement (PBO)',
         shortLabel: 'Budgetary Requirement (PBO)',
@@ -52,7 +52,6 @@ const SIGNATORY_TYPE_CONFIG = {
         color: 'bg-emerald-100 text-emerald-800 border-emerald-200',
     },
 
-    // APP Signatories
     app_prepared_by: {
         label: 'APP: Prepared by',
         shortLabel: 'APP Prepared by',
@@ -91,14 +90,13 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
     const [signatoriesList, setSignatoriesList] = useState(initialSignatories || []);
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState('');
-    const [scopeFilter, setScopeFilter] = useState('ALL'); // 'ALL' | 'PPMP' | 'APP'
+    const [scopeFilter, setScopeFilter] = useState('ALL');
     const [page, setPage] = useState(1);
     const [perPage, setPerPage] = useState(10);
 
-    // Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingSignatory, setEditingSignatory] = useState(null);
-    const [selectedDocScope, setSelectedDocScope] = useState('APP'); // 'PPMP' | 'APP'
+    const [selectedDocScope, setSelectedDocScope] = useState('APP');
     const [formData, setFormData] = useState({
         signatory_type: 'app_prepared_by',
         name: '',
@@ -130,7 +128,6 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
         }
     }, [initialSignatories]);
 
-    // Counts
     const counts = useMemo(() => {
         const ppmpCount = signatoriesList.filter(
             (s) => (SIGNATORY_TYPE_CONFIG[s.signatory_type]?.scope || 'PPMP') === 'PPMP'
@@ -141,7 +138,6 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
         return { all: signatoriesList.length, ppmp: ppmpCount, app: appCount };
     }, [signatoriesList]);
 
-    // Filtered list
     const filteredList = useMemo(() => {
         return signatoriesList.filter((sig) => {
             const config = SIGNATORY_TYPE_CONFIG[sig.signatory_type];
@@ -291,11 +287,11 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
 
     return (
         <div className="space-y-6">
-            {/* Signature Insertion Controller */}
+
             <SignatureControllerManagement />
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-                {/* Header */}
+
                 <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-slate-50 via-white to-slate-50">
                 <div>
                     <h2 className="text-base font-bold text-slate-900 uppercase tracking-wide flex items-center gap-2">
@@ -328,7 +324,6 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
                 </div>
             </div>
 
-            {/* Success Banner */}
             {successMessage && (
                 <div className="mx-6 mt-4 p-3 bg-emerald-50 border border-emerald-300 rounded-lg text-emerald-800 text-xs font-semibold flex items-center justify-between animate-in fade-in">
                     <div className="flex items-center gap-2">
@@ -341,9 +336,8 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
                 </div>
             )}
 
-            {/* Filter Tabs & Search Bar */}
             <div className="p-4 bg-slate-50/70 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                {/* Scope Filters */}
+
                 <div className="flex items-center gap-1.5 bg-slate-200/70 p-1 rounded-lg">
                     <button
                         type="button"
@@ -392,7 +386,6 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
                     </button>
                 </div>
 
-                {/* Search Input */}
                 <div className="relative w-full sm:w-72">
                     <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
@@ -413,7 +406,6 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
                 </div>
             </div>
 
-            {/* Table */}
             <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 text-slate-700 uppercase font-semibold border-b border-slate-200 tracking-wider text-[11px]">
@@ -452,7 +444,7 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
 
                                 return (
                                     <tr key={sig.id} className="hover:bg-slate-50/80 transition">
-                                        {/* Scope Badge */}
+
                                         <td className="p-3.5">
                                             <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${
                                                 isApp
@@ -464,24 +456,20 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
                                             </span>
                                         </td>
 
-                                        {/* Box / Role Label */}
                                         <td className="p-3.5">
                                             <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border ${config.color}`}>
                                                 {config.label}
                                             </span>
                                         </td>
 
-                                        {/* Official Name */}
                                         <td className="p-3.5 font-bold text-slate-900 text-[13px]">
                                             {sig.name}
                                         </td>
 
-                                        {/* Position */}
                                         <td className="p-3.5 text-slate-600 font-medium">
                                             {sig.position}
                                         </td>
 
-                                        {/* Status */}
                                         <td className="p-3.5">
                                             {sig.is_active ? (
                                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full font-bold text-[11px]">
@@ -501,7 +489,6 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
                                             )}
                                         </td>
 
-                                        {/* Actions */}
                                         <td className="p-3.5 text-right">
                                             <div className="flex items-center justify-end gap-1.5">
                                                 <button
@@ -530,7 +517,6 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
                 </table>
             </div>
 
-            {/* Pagination */}
             {filteredList.length > perPage && (
                 <div className="p-4 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
                     <div>
@@ -560,7 +546,6 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
                 </div>
             )}
 
-            {/* Modal for Add / Edit Signatory */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
                     <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
@@ -593,7 +578,7 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
                         )}
 
                         <form onSubmit={handleSave} className="space-y-4">
-                            {/* Document Scope Selection (PPMP vs APP) */}
+
                             <div>
                                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
                                     Document Scope
@@ -626,7 +611,6 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
                                 </div>
                             </div>
 
-                            {/* Signatory Box Type */}
                             <div>
                                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
                                     Signatory Box / Role
@@ -654,7 +638,6 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
                                 </select>
                             </div>
 
-                            {/* Full Official Name */}
                             <div>
                                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
                                     Official Full Name
@@ -668,7 +651,6 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
                                 />
                             </div>
 
-                            {/* Position / Designation */}
                             <div>
                                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">
                                     Position / Designation
@@ -682,7 +664,6 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
                                 />
                             </div>
 
-                            {/* Active Official Checkbox */}
                             <div className="pt-2">
                                 <label className="flex items-center gap-2 cursor-pointer select-none">
                                     <input
@@ -700,7 +681,6 @@ export const SignatoriesManagement = ({ initialSignatories = [], onReload = null
                                 </p>
                             </div>
 
-                            {/* Buttons */}
                             <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2">
                                 <button
                                     type="button"
