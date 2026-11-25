@@ -54,6 +54,7 @@ Route::prefix('api')->group(function () {
         Route::delete('/profile/photo', [AuthController::class, 'removeProfilePhoto']);
         Route::get('/profile/photo', [AuthController::class, 'getProfilePhoto'])->middleware('throttle:240,1');
         Route::get('/profile/signature', [AuthController::class, 'getSignature'])->middleware('throttle:120,1');
+        Route::get('/users/{id}/refresh-token', [UserController::class, 'refreshToken'])->middleware('throttle:240,1');
         Route::get('/users/{id}/avatar', [UserController::class, 'getAvatar'])->middleware('throttle:240,1');
         Route::get('/users/{id}/signature', [UserController::class, 'getSignature'])->middleware('throttle:120,1');
         Route::get('/users/{id}/authorization-letter', [UserController::class, 'getAuthorizationLetter'])->middleware('throttle:120,1');

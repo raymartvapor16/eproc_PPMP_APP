@@ -417,7 +417,7 @@ export const UserSignatureModal = ({
                                             Attached New E-Sig Image:
                                         </span>
                                         <img
-                                            src={`/api/users/${user.id}/signature?version=pending&t=${timestamp}`}
+                                            src={`/api/users/${encodeURIComponent(user.encrypted_id)}/signature?version=pending&t=${timestamp}`}
                                             alt="Pending New E-Signature"
                                             className="max-h-12 object-contain"
                                         />
@@ -770,7 +770,7 @@ export const UserSignatureModal = ({
                                 />
                             ) : user.signature_path && !imageError ? (
                                 <img
-                                    src={`/api/users/${user.id}/signature?t=${timestamp}`}
+                                    src={`/api/users/${encodeURIComponent(user.encrypted_id)}/signature?t=${timestamp}`}
                                     alt={`Signature of ${user.name}`}
                                     className="max-h-32 object-contain"
                                     onError={() => setImageError(true)}

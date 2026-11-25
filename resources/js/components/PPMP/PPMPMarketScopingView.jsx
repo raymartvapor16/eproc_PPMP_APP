@@ -1186,7 +1186,7 @@ export const PPMPMarketScopingView = ({
                                         <>
                                             <div className={`h-8 flex items-center ${!isPreparedPnpki ? 'no-print print:hidden' : ''}`}>
                                                 <img
-                                                    src={`/api/users/${preparedSig.user.id}/signature`}
+                                                    src={`/api/users/${encodeURIComponent(preparedSig.user.encrypted_id)}/signature`}
                                                     alt="Prepared By Signature"
                                                     className="max-h-8 max-w-[120px] object-contain"
                                                 />
@@ -1218,7 +1218,7 @@ export const PPMPMarketScopingView = ({
                                         <>
                                             <div className={`h-8 flex items-center ${!isHeadPnpki ? 'no-print print:hidden' : ''}`}>
                                                 <img
-                                                    src={`/api/users/${submittedByUser.id}/signature`}
+                                                    src={`/api/users/${encodeURIComponent(submittedByUser.encrypted_id)}/signature`}
                                                     alt="Approved By Signature"
                                                     className="max-h-8 max-w-[120px] object-contain"
                                                 />

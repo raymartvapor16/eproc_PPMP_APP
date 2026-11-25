@@ -1123,7 +1123,7 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                             <>
                                                 <div className={`h-7 flex items-center justify-center ${!isAppPreparerPnpki ? 'no-print print:hidden' : ''}`}>
                                                     <img
-                                                        src={`/api/users/${appPreparerSig.user.id}/signature`}
+                                                        src={`/api/users/${encodeURIComponent(appPreparerSig.user.encrypted_id)}/signature`}
                                                         alt="APP Preparer Signature"
                                                         className="max-h-7 max-w-[110px] object-contain"
                                                     />
@@ -1151,7 +1151,7 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                             <>
                                                 <div className={`h-7 flex items-center justify-center ${!isOppmoHeadPnpki ? 'no-print print:hidden' : ''}`}>
                                                     <img
-                                                        src={`/api/users/${oppmoHeadSig.user.id}/signature`}
+                                                        src={`/api/users/${encodeURIComponent(oppmoHeadSig.user.encrypted_id)}/signature`}
                                                         alt="OPPMO Head Signature"
                                                         className="max-h-7 max-w-[110px] object-contain"
                                                     />
@@ -1167,7 +1167,7 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                             </div>
                                             {isAppSignatureEnabled && oppmoSig?.user?.signature_path && (
                                                 <img
-                                                    src={`/api/users/${oppmoSig.user.id}/signature`}
+                                                    src={`/api/users/${encodeURIComponent(oppmoSig.user.encrypted_id)}/signature`}
                                                     alt="Signature"
                                                     className={`h-6 max-w-[60px] object-contain absolute left-full ml-1.5 bottom-0 pointer-events-none ${!isOppmoPnpki ? 'no-print print:hidden' : ''}`}
                                                 />
@@ -1186,7 +1186,7 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                             <>
                                                 <div className={`h-7 flex items-center justify-center ${!isRecommendingHeadPnpki ? 'no-print print:hidden' : ''}`}>
                                                     <img
-                                                        src={`/api/users/${displayRecommendingHeadSig.user.id}/signature`}
+                                                        src={`/api/users/${encodeURIComponent(displayRecommendingHeadSig.user.encrypted_id)}/signature`}
                                                         alt="Recommending Head Signature"
                                                         className="max-h-7 max-w-[110px] object-contain"
                                                     />
@@ -1202,7 +1202,7 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                             </div>
                                             {isAppSignatureEnabled && budgetSig?.user?.signature_path && (
                                                 <img
-                                                    src={`/api/users/${budgetSig.user.id}/signature`}
+                                                    src={`/api/users/${encodeURIComponent(budgetSig.user.encrypted_id)}/signature`}
                                                     alt="Signature"
                                                     className={`h-6 max-w-[60px] object-contain absolute left-full ml-1.5 bottom-0 pointer-events-none ${!isBudgetPnpki ? 'no-print print:hidden' : ''}`}
                                                 />
@@ -1223,7 +1223,7 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                                             <>
                                                 <div className={`h-7 flex items-center justify-center ${!isGovernorPnpki ? 'no-print print:hidden' : ''}`}>
                                                     <img
-                                                        src={`/api/users/${governorSig.user.id}/signature`}
+                                                        src={`/api/users/${encodeURIComponent(governorSig.user.encrypted_id)}/signature`}
                                                         alt="Governor Signature"
                                                         className="max-h-7 max-w-[110px] object-contain"
                                                     />

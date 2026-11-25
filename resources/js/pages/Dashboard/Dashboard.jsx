@@ -1074,10 +1074,14 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                                         <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                                                                             {u.authorization_letter_path && (
                                                                                 <a
-                                                                                    href={`/api/users/${u.id}/authorization-letter`}
+                                                                                    href={`/api/users/${encodeURIComponent(u.encrypted_id)}/authorization-letter`}
                                                                                     target="_blank"
                                                                                     rel="noopener noreferrer"
-                                                                                    className="inline-flex items-center gap-1 text-[10px] text-teal-700 hover:text-teal-900 font-medium underline underline-offset-2 hover:bg-teal-50 px-1 py-0.5 rounded transition"
+                                                                                    onClick={(e) => {
+                                                                                        e.preventDefault();
+                                                                                        userService.openSecureUserFile(u.encrypted_id, 'authorization-letter');
+                                                                                    }}
+                                                                                    className="inline-flex items-center gap-1 text-[10px] text-teal-700 hover:text-teal-900 font-medium underline underline-offset-2 hover:bg-teal-50 px-1 py-0.5 rounded transition cursor-pointer"
                                                                                     title="View Authorization Letter PDF"
                                                                                 >
                                                                                     <FileText className="w-3 h-3 text-teal-600 shrink-0" />
@@ -2454,10 +2458,14 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                                             {getUserRolesList(u).includes('authorized_staff') && (
                                                                 u.authorization_letter_path ? (
                                                                     <a
-                                                                        href={`/api/users/${u.id}/authorization-letter`}
+                                                                        href={`/api/users/${encodeURIComponent(u.encrypted_id)}/authorization-letter`}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
-                                                                        className="inline-flex items-center gap-1 text-[10px] text-teal-700 hover:text-teal-900 font-medium underline underline-offset-2 hover:bg-teal-50 px-1 py-0.5 rounded transition"
+                                                                        onClick={(e) => {
+                                                                            e.preventDefault();
+                                                                            userService.openSecureUserFile(u.encrypted_id, 'authorization-letter');
+                                                                        }}
+                                                                        className="inline-flex items-center gap-1 text-[10px] text-teal-700 hover:text-teal-900 font-medium underline underline-offset-2 hover:bg-teal-50 px-1 py-0.5 rounded transition cursor-pointer"
                                                                         title="View Authorization Letter PDF"
                                                                     >
                                                                         <FileText className="w-3 h-3 text-teal-600 shrink-0" />

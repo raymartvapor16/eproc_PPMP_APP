@@ -1045,7 +1045,7 @@ export const PPMPAttachmentListView = ({
                                     <>
                                         <div className={`h-8 flex items-center justify-center ${!isPreparedPnpki ? 'no-print print:hidden' : ''}`}>
                                             <img
-                                                src={`/api/users/${preparedSig.user.id}/signature`}
+                                                src={`/api/users/${encodeURIComponent(preparedSig.user.encrypted_id)}/signature`}
                                                 alt="Signature"
                                                 className="max-h-8 max-w-[120px] object-contain"
                                             />
@@ -1100,7 +1100,7 @@ export const PPMPAttachmentListView = ({
                                 <>
                                     <div className={`h-8 flex items-center justify-center ${!isTwgPnpki ? 'no-print print:hidden' : ''}`}>
                                         <img
-                                            src={`/api/users/${twgSig.user.id}/signature`}
+                                            src={`/api/users/${encodeURIComponent(twgSig.user.encrypted_id)}/signature`}
                                             alt="Signature"
                                             className="max-h-8 max-w-[120px] object-contain"
                                         />

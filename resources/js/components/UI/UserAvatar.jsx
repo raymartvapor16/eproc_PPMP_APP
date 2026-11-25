@@ -17,8 +17,9 @@ export const UserAvatar = ({
 }) => {
     const [imageError, setImageError] = useState(false);
     const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+    const [freshAvatarUrl, setFreshAvatarUrl] = useState(null);
 
-    const targetId = user?.id || userId;
+    const targetToken = user?.encrypted_id || (typeof userId === 'string' && !/^\d+$/.test(userId) ? userId : null);
     const targetName = user?.name || name || 'User';
     const initial = targetName.charAt(0).toUpperCase() || 'U';
 
@@ -28,9 +29,10 @@ export const UserAvatar = ({
         user?.profile_photo_url
     );
 
-    const avatarUrl = (hasPhoto && !imageError)
-        ? (photoUrl || (targetId ? `${userService.getUserAvatarUrl(targetId)}${timestamp ? `?t=${timestamp}` : ''}` : null))
+    const baseAvatarUrl = (hasPhoto && !imageError)
+        ? (photoUrl || user?.profile_photo_url || (targetToken ? `${userService.getUserAvatarUrl(targetToken)}${timestamp ? `?t=${timestamp}` : ''}` : null))
         : null;
+    const avatarUrl = freshAvatarUrl || baseAvatarUrl;
 
     const sizeClasses = {
         xs: 'w-6 h-6 text-[10px]',
@@ -66,6 +68,15 @@ export const UserAvatar = ({
                         e.stopPropagation();
                         e.preventDefault();
                         setIsLightboxOpen(true);
+                        if (targetToken) {
+                            userService.refreshEncryptedUserToken(targetToken)
+                                .then((res) => {
+                                    if (res.data?.encrypted_id) {
+                                        setFreshAvatarUrl(userService.getUserAvatarUrl(res.data.encrypted_id));
+                                    }
+                                })
+                                .catch(() => {});
+                        }
                     }
                 }}
                 title={isClickable ? `Click to expand ${targetName}'s photo` : targetName}

@@ -139,7 +139,7 @@ class PnpkiSignature extends Model
     public function getProofPdfUrlAttribute(): ?string
     {
         if (!empty($this->proof_pdf_path) && $this->user_id) {
-            return "/api/users/{$this->user_id}/pnpki-proof";
+            return '/api/users/' . User::encryptId((int) $this->user_id) . '/pnpki-proof';
         }
 
         return null;
@@ -148,7 +148,7 @@ class PnpkiSignature extends Model
     public function getPreviousProofPdfUrlAttribute(): ?string
     {
         if (!empty($this->previous_proof_pdf_path) && $this->user_id) {
-            return "/api/users/{$this->user_id}/pnpki-proof?version=previous";
+            return '/api/users/' . User::encryptId((int) $this->user_id) . '/pnpki-proof?version=previous';
         }
 
         return null;
@@ -157,7 +157,7 @@ class PnpkiSignature extends Model
     public function getPendingProofPdfUrlAttribute(): ?string
     {
         if (!empty($this->pending_proof_pdf_path) && $this->user_id) {
-            return "/api/users/{$this->user_id}/pnpki-proof?version=pending";
+            return '/api/users/' . User::encryptId((int) $this->user_id) . '/pnpki-proof?version=pending';
         }
 
         return null;

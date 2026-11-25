@@ -380,7 +380,7 @@ export function EvaluationFormPrintModal({ evaluation, onClose }) {
                                 <div className="h-10 flex items-center justify-center">
                                     {preparedBy?.signed_by && (
                                         <img
-                                            src={`/api/users/${preparedBy.signed_by}/signature`}
+                                            src={`/api/users/${encodeURIComponent(preparedBy.signed_by_encrypted)}/signature`}
                                             alt="Prepared Signature"
                                             className="max-h-9 max-w-[120px] object-contain"
                                             onError={(e) => {
@@ -413,7 +413,7 @@ export function EvaluationFormPrintModal({ evaluation, onClose }) {
                                 <div className="h-10 flex items-center justify-center">
                                     {(headApproval?.signed_by || repApproval?.signed_by) && (
                                         <img
-                                            src={`/api/users/${headApproval?.signed_by || repApproval?.signed_by}/signature`}
+                                            src={`/api/users/${encodeURIComponent(headApproval?.signed_by_encrypted || repApproval?.signed_by_encrypted)}/signature`}
                                             alt="Head Signature"
                                             className="max-h-9 max-w-[120px] object-contain"
                                             onError={(e) => {
@@ -441,7 +441,7 @@ export function EvaluationFormPrintModal({ evaluation, onClose }) {
                                     <div className="h-10 flex items-center justify-center">
                                         {repApproval.signed_by && (
                                             <img
-                                                src={`/api/users/${repApproval.signed_by}/signature`}
+                                                src={`/api/users/${encodeURIComponent(repApproval.signed_by_encrypted)}/signature`}
                                                 alt="Representative Signature"
                                                 className="max-h-9 max-w-[120px] object-contain"
                                                 onError={(e) => {

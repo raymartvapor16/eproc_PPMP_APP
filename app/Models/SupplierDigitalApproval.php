@@ -24,7 +24,13 @@ class SupplierDigitalApproval extends Model
     protected $appends = [
         'image_url',
         'signature_url',
+        'signed_by_encrypted',
     ];
+
+    public function getSignedByEncryptedAttribute(): ?string
+    {
+        return $this->signed_by ? User::encryptId((int) $this->signed_by) : null;
+    }
 
     public function evaluation()
     {

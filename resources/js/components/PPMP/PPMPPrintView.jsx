@@ -390,7 +390,7 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                         <>
                                             <div className={`h-8 flex items-center justify-center ${!isPreparedPnpki ? 'no-print print:hidden' : ''}`}>
                                                 <img
-                                                    src={`/api/users/${preparedSig.user.id}/signature`}
+                                                    src={`/api/users/${encodeURIComponent(preparedSig.user.encrypted_id)}/signature`}
                                                     alt="Signature"
                                                     className="max-h-8 max-w-[120px] object-contain"
                                                 />
@@ -443,7 +443,7 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                                 <>
                                                     <div className={`h-8 flex items-center justify-center ${!isPaccoHeadPnpki ? 'no-print print:hidden' : ''}`}>
                                                         <img
-                                                            src={`/api/users/${paccoHeadSig.user.id}/signature`}
+                                                            src={`/api/users/${encodeURIComponent(paccoHeadSig.user.encrypted_id)}/signature`}
                                                             alt="PACCO Head Signature"
                                                             className="max-h-8 max-w-[120px] object-contain"
                                                         />
@@ -459,7 +459,7 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                                 </div>
                                                 {isSignatureEnabled && paccoSig?.user?.signature_path && (
                                                     <img
-                                                        src={`/api/users/${paccoSig.user.id}/signature`}
+                                                        src={`/api/users/${encodeURIComponent(paccoSig.user.encrypted_id)}/signature`}
                                                         alt="Initial Signature"
                                                         className={`h-7 max-w-[65px] object-contain absolute left-full ml-1.5 bottom-0 pointer-events-none ${!isPaccoPnpki ? 'no-print print:hidden' : ''}`}
                                                     />
@@ -480,7 +480,7 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                                 <>
                                                     <div className={`h-8 flex items-center justify-center ${!isBudgetHeadPnpki ? 'no-print print:hidden' : ''}`}>
                                                         <img
-                                                            src={`/api/users/${budgetHeadSig.user.id}/signature`}
+                                                            src={`/api/users/${encodeURIComponent(budgetHeadSig.user.encrypted_id)}/signature`}
                                                             alt="Budget Head Signature"
                                                             className="max-h-8 max-w-[120px] object-contain"
                                                         />
@@ -496,7 +496,7 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                                 </div>
                                                 {isSignatureEnabled && budgetSig?.user?.signature_path && (
                                                     <img
-                                                        src={`/api/users/${budgetSig.user.id}/signature`}
+                                                        src={`/api/users/${encodeURIComponent(budgetSig.user.encrypted_id)}/signature`}
                                                         alt="Initial Signature"
                                                         className={`h-7 max-w-[65px] object-contain absolute left-full ml-1.5 bottom-0 pointer-events-none ${!isBudgetPnpki ? 'no-print print:hidden' : ''}`}
                                                     />
@@ -521,7 +521,7 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                         <>
                                             <div className={`h-8 flex items-center justify-center ${!isOppmoHeadPnpki ? 'no-print print:hidden' : ''}`}>
                                                 <img
-                                                    src={`/api/users/${oppmoHeadSig.user.id}/signature`}
+                                                    src={`/api/users/${encodeURIComponent(oppmoHeadSig.user.encrypted_id)}/signature`}
                                                     alt="OPPMO Head Signature"
                                                     className="max-h-8 max-w-[120px] object-contain"
                                                 />
@@ -537,7 +537,7 @@ export const PPMPPrintView = ({ ppmp, onBack }) => {
                                         </div>
                                         {isSignatureEnabled && oppmoSig?.user?.signature_path && (
                                             <img
-                                                src={`/api/users/${oppmoSig.user.id}/signature`}
+                                                src={`/api/users/${encodeURIComponent(oppmoSig.user.encrypted_id)}/signature`}
                                                 alt="Initial Signature"
                                                 className={`h-7 max-w-[65px] object-contain absolute left-full ml-1.5 bottom-0 pointer-events-none ${!isOppmoPnpki ? 'no-print print:hidden' : ''}`}
                                             />

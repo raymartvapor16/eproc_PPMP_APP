@@ -747,10 +747,29 @@ class UserController extends Controller
         ]);
     }
 
-    public function getSignature(Request $request, int $id): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
+    public function refreshToken(Request $request, string $id): JsonResponse
     {
+        $resolvedId = User::decryptId($id);
+        if (!$resolvedId) {
+            return response()->json(['message' => 'Invalid or unencrypted user reference.'], 403);
+        }
+
+        $targetUser = User::findOrFail($resolvedId);
+
+        return response()->json([
+            'encrypted_id' => User::encryptId((int) $targetUser->id),
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, private');
+    }
+
+    public function getSignature(Request $request, string $id): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
+    {
+        $resolvedId = User::decryptId($id);
+        if (!$resolvedId) {
+            return response()->json(['message' => 'Invalid or unencrypted user reference.'], 403);
+        }
+
         $currentUser = $request->user();
-        $targetUser = User::findOrFail($id);
+        $targetUser = User::findOrFail($resolvedId);
 
         $isSelf = $currentUser->id === $targetUser->id;
         $isAdmin = $currentUser->isAdmin() || $currentUser->isPgso();
@@ -813,10 +832,15 @@ class UserController extends Controller
         ]);
     }
 
-    public function getAuthorizationLetter(Request $request, int $id): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
+    public function getAuthorizationLetter(Request $request, string $id): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
     {
+        $resolvedId = User::decryptId($id);
+        if (!$resolvedId) {
+            return response()->json(['message' => 'Invalid or unencrypted user reference.'], 403);
+        }
+
         $currentUser = $request->user();
-        $targetUser = User::findOrFail($id);
+        $targetUser = User::findOrFail($resolvedId);
 
         $isSelf = $currentUser->id === $targetUser->id;
         $isAdmin = $currentUser->isAdmin();
@@ -887,9 +911,14 @@ class UserController extends Controller
         ]);
     }
 
-    public function getAvatar(Request $request, int $id): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
+    public function getAvatar(Request $request, string $id): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
     {
-        $targetUser = User::findOrFail($id);
+        $resolvedId = User::decryptId($id);
+        if (!$resolvedId) {
+            return response()->json(['message' => 'Invalid or unencrypted user reference.'], 403);
+        }
+
+        $targetUser = User::findOrFail($resolvedId);
 
         if (!$targetUser->profile_photo_path || !Storage::disk('local')->exists($targetUser->profile_photo_path)) {
             return response()->json(['message' => 'No avatar found.'], 404);
@@ -908,10 +937,15 @@ class UserController extends Controller
         ]);
     }
 
-    public function getPnpkiProof(Request $request, int $id): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
+    public function getPnpkiProof(Request $request, string $id): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
     {
+        $resolvedId = User::decryptId($id);
+        if (!$resolvedId) {
+            return response()->json(['message' => 'Invalid or unencrypted user reference.'], 403);
+        }
+
         $currentUser = $request->user();
-        $targetUser = User::with('pnpkiSignature')->findOrFail($id);
+        $targetUser = User::with('pnpkiSignature')->findOrFail($resolvedId);
 
         if (!$currentUser) {
             return response()->json(['message' => 'Unauthorized.'], 401);
@@ -1125,7 +1159,7 @@ class UserController extends Controller
                         'expiration_date' => $entry['expiration_date'] ?? null,
                         'proof_original_name' => $entry['proof_original_name'] ?? null,
                         'archived_at' => $entry['archived_at'] ?? null,
-                        'proof_pdf_url' => $hasFile ? "/api/users/{$sig->user_id}/pnpki-proof?version=history&index={$idx}" : null,
+                        'proof_pdf_url' => $hasFile ? '/api/users/' . User::encryptId((int) $sig->user_id) . "/pnpki-proof?version=history&index={$idx}" : null,
                     ];
                 }
 
@@ -1134,6 +1168,7 @@ class UserController extends Controller
                     'user_id' => $sig->user_id,
                     'user' => [
                         'id' => $user->id,
+                        'encrypted_id' => User::encryptId((int) $user->id),
                         'name' => $user->name,
                         'email' => $user->email,
                         'designation' => $user->designation,

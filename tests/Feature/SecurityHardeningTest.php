@@ -212,14 +212,17 @@ class SecurityHardeningTest extends TestCase
             'is_active' => true,
         ]);
 
-        $res = $this->actingAs($this->endUserA)->get("/api/users/{$unrelatedUser->id}/signature");
+        $encId = User::encryptId($unrelatedUser->id);
+        $res = $this->actingAs($this->endUserA)->get("/api/users/{$encId}/signature");
         $res->assertStatus(403);
 
-        $selfRes = $this->actingAs($unrelatedUser)->get("/api/users/{$unrelatedUser->id}/signature");
+        $selfRes = $this->actingAs($unrelatedUser)->get("/api/users/{$encId}/signature");
         $selfRes->assertStatus(200);
 
-        $adminRes = $this->actingAs($this->adminUser)->get("/api/users/{$unrelatedUser->id}/signature");
+        $adminRes = $this->actingAs($this->adminUser)->get("/api/users/{$encId}/signature");
         $adminRes->assertStatus(200);
+
+        $this->actingAs($this->adminUser)->get("/api/users/{$unrelatedUser->id}/signature")->assertStatus(403);
     }
 
     public function test_registration_rejects_super_admin_role_escalation(): void
@@ -277,22 +280,38 @@ class SecurityHardeningTest extends TestCase
             'approval_status' => 'approved',
         ]);
 
-        $this->get("/api/users/{$target->id}/authorization-letter")->assertStatus(401);
-        $this->get("/api/users/{$target->id}/signature")->assertStatus(401);
-        $this->get("/api/users/{$target->id}/avatar")->assertStatus(401);
-        $this->get("/api/users/{$target->id}/pnpki-proof")->assertStatus(401);
+        $encTargetId = User::encryptId($target->id);
+        $this->get("/api/users/{$encTargetId}/authorization-letter")->assertStatus(401);
+        $this->get("/api/users/{$encTargetId}/signature")->assertStatus(401);
+        $this->get("/api/users/{$encTargetId}/avatar")->assertStatus(401);
+        $this->get("/api/users/{$encTargetId}/pnpki-proof")->assertStatus(401);
         $this->get('/api/profile/photo')->assertStatus(401);
         $this->get('/api/profile/signature')->assertStatus(401);
         $this->get('/api/supplier-evaluation/purchase-orders/1/pdf')->assertStatus(401);
         $this->get('/api/supplier-evaluation/pdfs/1/file')->assertStatus(401);
         $this->get('/api/super-admin/scheduled-backups/1/download')->assertStatus(401);
 
-        $this->actingAs($this->endUserA)
+        $this->actingAs($this->adminUser)
             ->get("/api/users/{$target->id}/authorization-letter")
             ->assertStatus(403);
 
+        $this->actingAs($this->endUserA)
+            ->get("/api/users/{$encTargetId}/authorization-letter")
+            ->assertStatus(403);
+
+        $refresh1 = $this->actingAs($this->adminUser)
+            ->getJson("/api/users/{$encTargetId}/refresh-token")
+            ->assertStatus(200)
+            ->json('encrypted_id');
+        $refresh2 = $this->actingAs($this->adminUser)
+            ->getJson("/api/users/{$encTargetId}/refresh-token")
+            ->assertStatus(200)
+            ->json('encrypted_id');
+        $this->assertNotSame($encTargetId, $refresh1);
+        $this->assertNotSame($refresh1, $refresh2);
+
         $ok = $this->actingAs($this->adminUser)
-            ->get("/api/users/{$target->id}/authorization-letter");
+            ->get("/api/users/{$refresh2}/authorization-letter");
         $ok->assertStatus(200);
         $this->assertStringContainsString('no-store', (string) $ok->headers->get('Cache-Control'));
 

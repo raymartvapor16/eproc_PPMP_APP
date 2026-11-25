@@ -39,16 +39,60 @@ class User extends Authenticatable
     protected $appends = [
         'profile_photo_url',
         'available_roles',
+        'encrypted_id',
     ];
 
     protected $with = [
         'pnpkiSignature',
     ];
 
+    public static function encryptId(int $id): string
+    {
+        $payload = json_encode([
+            'uid' => $id,
+            'n' => bin2hex(random_bytes(8)),
+            'ts' => time(),
+        ]);
+
+        return rtrim(strtr(\Illuminate\Support\Facades\Crypt::encryptString($payload), '+/', '-_'), '=');
+    }
+
+    public static function decryptId(string $encrypted): ?int
+    {
+        $encrypted = trim($encrypted);
+        if ($encrypted === '' || ctype_digit($encrypted)) {
+            return null;
+        }
+
+        try {
+            $b64 = strtr($encrypted, '-_', '+/');
+            $b64 .= str_repeat('=', (4 - strlen($b64) % 4) % 4);
+            $decrypted = \Illuminate\Support\Facades\Crypt::decryptString($b64);
+            $data = json_decode($decrypted, true);
+
+            if (is_array($data) && isset($data['uid']) && is_numeric($data['uid'])) {
+                return (int) $data['uid'];
+            }
+
+            if (ctype_digit($decrypted)) {
+                return (int) $decrypted;
+            }
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        return null;
+    }
+
+    public function getEncryptedIdAttribute(): string
+    {
+        return self::encryptId((int) $this->id);
+    }
+
     public function getProfilePhotoUrlAttribute(): ?string
     {
         if ($this->profile_photo_path && \Illuminate\Support\Facades\Storage::disk('local')->exists($this->profile_photo_path)) {
-            return "/api/users/{$this->id}/avatar";
+            return '/api/users/' . self::encryptId((int) $this->id) . '/avatar';
         }
         return null;
     }

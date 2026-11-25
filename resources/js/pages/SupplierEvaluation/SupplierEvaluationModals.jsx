@@ -489,7 +489,7 @@ export function EvaluateOrViewModal({
                                             <div className="h-16 flex items-center justify-center my-1">
                                                 {(preparedBy?.signed_by || (!isReadOnly && evaluation.status === 'pending' && user?.id)) && (
                                                     <img
-                                                        src={`/api/users/${preparedBy?.signed_by || user?.id}/signature`}
+                                                        src={`/api/users/${encodeURIComponent(preparedBy?.signed_by_encrypted || user?.encrypted_id)}/signature`}
                                                         alt="Signature"
                                                         className="max-h-14 object-contain"
                                                         onError={(e) => {
@@ -543,7 +543,7 @@ export function EvaluateOrViewModal({
                                             <div className="h-16 flex items-center justify-center my-1">
                                                 {(headApproval?.signed_by || repApproval?.signed_by) && (
                                                     <img
-                                                        src={`/api/users/${headApproval?.signed_by || repApproval?.signed_by}/signature`}
+                                                        src={`/api/users/${encodeURIComponent(headApproval?.signed_by_encrypted || repApproval?.signed_by_encrypted)}/signature`}
                                                         alt="Head Signature"
                                                         className="max-h-14 object-contain"
                                                         onError={(e) => {
@@ -604,7 +604,7 @@ export function EvaluateOrViewModal({
                                                 <div className="h-16 flex items-center justify-center my-1">
                                                     {repApproval.signed_by && (
                                                         <img
-                                                            src={`/api/users/${repApproval.signed_by}/signature`}
+                                                            src={`/api/users/${encodeURIComponent(repApproval.signed_by_encrypted)}/signature`}
                                                             alt="Rep Signature"
                                                             className="max-h-14 object-contain"
                                                             onError={(e) => {

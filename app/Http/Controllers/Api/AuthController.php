@@ -1019,7 +1019,7 @@ class AuthController extends Controller
             return response()->json([
                 'message' => 'Profile photo uploaded successfully.',
                 'user' => $user->fresh(['office']),
-                'profile_photo_url' => "/api/users/{$user->id}/avatar",
+                'profile_photo_url' => '/api/users/' . User::encryptId((int) $user->id) . '/avatar',
             ]);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);

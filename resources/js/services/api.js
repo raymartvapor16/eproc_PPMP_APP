@@ -264,9 +264,31 @@ export const userService = {
     rejectPnpkiRenewal: (id, reason = '') => api.post(`/users/${id}/pnpki-renewal/reject`, { reason }),
     toggleStatus: (id) => api.post(`/users/${id}/toggle-status`),
     delete: (id) => api.delete(`/users/${id}`),
-    getUserSignatureUrl: (id) => `/api/users/${id}/signature`,
-    getUserAvatarUrl: (id) => `/api/users/${id}/avatar`,
-    getUserAuthorizationLetterUrl: (id) => `/api/users/${id}/authorization-letter`,
+    getUserSignatureUrl: (encryptedId) => `/api/users/${encodeURIComponent(encryptedId)}/signature`,
+    getUserAvatarUrl: (encryptedId) => `/api/users/${encodeURIComponent(encryptedId)}/avatar`,
+    getUserAuthorizationLetterUrl: (encryptedId) => `/api/users/${encodeURIComponent(encryptedId)}/authorization-letter`,
+    refreshEncryptedUserToken: (encryptedId) => api.get(`/users/${encodeURIComponent(encryptedId)}/refresh-token`),
+    openSecureUserFile: async (encryptedId, endpoint, query = '') => {
+        if (!encryptedId) return;
+        const win = window.open('about:blank', '_blank', 'noopener,noreferrer');
+        try {
+            const res = await api.get(`/users/${encodeURIComponent(encryptedId)}/refresh-token`);
+            const freshId = res.data?.encrypted_id || encryptedId;
+            const url = `/api/users/${encodeURIComponent(freshId)}/${endpoint}${query ? `?${query}` : ''}`;
+            if (win) {
+                win.location.href = url;
+            } else {
+                window.open(url, '_blank', 'noopener,noreferrer');
+            }
+        } catch (_) {
+            const fallbackUrl = `/api/users/${encodeURIComponent(encryptedId)}/${endpoint}${query ? `?${query}` : ''}`;
+            if (win) {
+                win.location.href = fallbackUrl;
+            } else {
+                window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+            }
+        }
+    },
 };
 
 export const pnpkiService = {
