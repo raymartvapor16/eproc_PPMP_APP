@@ -7,6 +7,12 @@ import { useSignatureSettings, isSignatoryPnpkiActive, resolveSubmittedBySignato
 import { CommentableCell } from './CommentableCell';
 import { AttachmentUnitCombobox } from './AttachmentUnitCombobox';
 import { PrintExportDropdown } from '../UI/PrintExportDropdown';
+import {
+    RichDescriptionEditor,
+    RichDescriptionDisplay,
+    isHtmlDescription,
+    stripDescriptionHtml,
+} from '../UI/RichDescriptionEditor';
 import { exportElementsToPdf } from '../../utils/pdfExport';
 import {
     BASE_DELIVERY_PERIODS,
@@ -731,7 +737,7 @@ export const PPMPAttachmentListView = ({
 
     const handleGenerate = async () => {
 
-        const activeHasContent = activeList.rows && activeList.rows.some(r => (r.description && r.description.trim() !== '') || (r.qty && r.qty !== ''));
+        const activeHasContent = activeList.rows && activeList.rows.some(r => (stripDescriptionHtml(r.description) !== '') || (r.qty && r.qty !== ''));
         if (!activeHasContent) {
             alert('Please add at least one item description or specification to this detailed specification before saving.');
             return;
@@ -841,7 +847,7 @@ export const PPMPAttachmentListView = ({
     const renderPrintSheet = (list, listIdx) => {
         const itemCalculatedTotal = list.rows.reduce((sum, r) => sum + (parseFloat(r.totalCost) || 0), 0);
         const itemDisplayTotalBudget = itemCalculatedTotal > 0 ? itemCalculatedTotal : (parseFloat(list.totalBudget) || 0);
-        const viewRows = list.rows.filter(r => (r.unit || r.description || r.qty || r.unitCost || r.totalCost));
+        const viewRows = list.rows.filter(r => (r.unit || stripDescriptionHtml(r.description) || r.qty || r.unitCost || r.totalCost));
         const listIsPol = list.additionalCondition === 'POL Condition';
         const listItemNo = typeof list.itemNo === 'number' ? list.itemNo : (listIdx + 1);
         const displayProjectTitle = (list.projectTitle && String(list.projectTitle).trim() !== String(list.sourceDescription || '').trim())
@@ -951,10 +957,10 @@ export const PPMPAttachmentListView = ({
                                     </CommentableCell>
                                     <CommentableCell
                                         as="td"
-                                        {...getCommentProps(list.itemId, listItemNo, `att_r${rowNum}_description`, `Detailed Specifications #${listItemNo} • Row #${rowNum} Description`, row.description)}
-                                        className="border border-black px-2.5 py-1.5 font-bold text-black break-words"
+                                        {...getCommentProps(list.itemId, listItemNo, `att_r${rowNum}_description`, `Detailed Specifications #${listItemNo} • Row #${rowNum} Description`, stripDescriptionHtml(row.description))}
+                                        className={`border border-black px-2.5 py-1.5 text-black break-words align-top ${isHtmlDescription(row.description) ? 'font-normal' : 'font-bold'}`}
                                     >
-                                        {row.description}
+                                        <RichDescriptionDisplay value={row.description} />
                                     </CommentableCell>
                                     <CommentableCell
                                         as="td"
@@ -1470,8 +1476,9 @@ export const PPMPAttachmentListView = ({
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            setViewAllMode(!viewAllMode);
-                                            setPrintScope('all');
+                                            const nextViewAll = !viewAllMode;
+                                            setViewAllMode(nextViewAll);
+                                            setPrintScope(nextViewAll ? 'all' : 'current');
                                         }}
                                         className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${viewAllMode
                                             ? 'bg-emerald-600 text-white shadow-xs'
@@ -1491,7 +1498,7 @@ export const PPMPAttachmentListView = ({
                                 const itemBudget = parseFloat(item.ppmpAllocatedBudget !== undefined ? item.ppmpAllocatedBudget : item.totalBudget) || (parseFloat(ppmp?.total_budget) || 0);
                                 const itemCalculated = (item.rows || []).reduce((sum, r) => sum + (parseFloat(r.totalCost) || 0), 0);
                                 const itemOverBudget = itemBudget > 0 && itemCalculated > (itemBudget + 0.01);
-                                const hasRows = item.rows && item.rows.some(r => r.description || r.qty);
+                                const hasRows = item.rows && item.rows.some(r => stripDescriptionHtml(r.description) || r.qty);
                                 const tabItemNo = item.itemNo || idx + 1;
                                 const tabComments = (cellComments || []).filter(c =>
                                     (item.itemId && c.item_id && String(c.item_id) === String(item.itemId)) ||
@@ -1507,6 +1514,7 @@ export const PPMPAttachmentListView = ({
                                         onClick={() => {
                                             setViewAllMode(false);
                                             setActiveItemIndex(idx);
+                                            setPrintScope('current');
                                         }}
                                         className={`p-3 rounded-xl text-left transition border flex items-start gap-3 cursor-pointer ${isSelected
                                             ? itemOverBudget
@@ -1932,15 +1940,13 @@ export const PPMPAttachmentListView = ({
                                                     </CommentableCell>
                                                     <CommentableCell
                                                         as="td"
-                                                        {...getCommentProps(activeList.itemId, activeListItemNo, `att_r${rowNum}_description`, `Detailed Specifications #${activeListItemNo} • Row #${rowNum} Description`, row.description)}
-                                                        className="p-2"
+                                                        {...getCommentProps(activeList.itemId, activeListItemNo, `att_r${rowNum}_description`, `Detailed Specifications #${activeListItemNo} • Row #${rowNum} Description`, stripDescriptionHtml(row.description))}
+                                                        className="p-2 align-top"
                                                     >
-                                                        <textarea
-                                                            rows={2}
+                                                        <RichDescriptionEditor
                                                             value={row.description || ''}
-                                                            onChange={(e) => handleUpdateRow(index, 'description', e.target.value)}
+                                                            onChange={(val) => handleUpdateRow(index, 'description', val)}
                                                             placeholder="Item specifications and description..."
-                                                            className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs leading-snug resize-y"
                                                         />
                                                     </CommentableCell>
                                                     <CommentableCell
@@ -2433,17 +2439,19 @@ export const PPMPAttachmentListView = ({
 
                     <div ref={sheetsContainerRef} className="space-y-8">
                         {attachmentLists.map((list, idx) => {
+                            const isOtherSheet = idx !== activeItemIndex;
 
-                            if (!viewAllMode && printScope !== 'all' && idx !== activeItemIndex) {
+                            if (!viewAllMode && printScope !== 'all' && isOtherSheet) {
                                 return null;
                             }
 
-                            const isHiddenInPrint = printScope === 'current' && idx !== activeItemIndex;
+                            const isHiddenOnScreen = !viewAllMode && isOtherSheet;
+                            const isHiddenInPrint = printScope === 'current' && isOtherSheet;
 
                             return (
                                 <div
                                     key={list.itemKey || idx}
-                                    className={`attachment-sheet-wrapper ${isHiddenInPrint ? 'print:hidden' : ''}`}
+                                    className={`attachment-sheet-wrapper ${isHiddenOnScreen ? 'hidden print:block' : ''} ${isHiddenInPrint ? 'print:hidden' : ''}`}
                                 >
                                     {renderPrintSheet(list, idx)}
                                 </div>
