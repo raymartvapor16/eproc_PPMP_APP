@@ -279,7 +279,10 @@ export function App() {
         }
     };
 
-    const loadPpmpDetail = async (uuid, updateUrl = true) => {
+    const loadPpmpDetail = async (uuidOrObj, updateUrl = true) => {
+        const uuid = typeof uuidOrObj === 'object' && uuidOrObj !== null
+            ? (uuidOrObj.uuid || uuidOrObj.ppmp_uuid || uuidOrObj.id)
+            : uuidOrObj;
         if (!uuid) return false;
         setSelectedPpmpUuid(uuid);
         setCurrentView('detail');

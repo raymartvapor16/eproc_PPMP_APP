@@ -662,7 +662,7 @@ export const EndUserVisualAnalytics = React.memo(({
                                                     {onSelectPpmp && (
                                                         <button
                                                             type="button"
-                                                            onClick={() => onSelectPpmp({ uuid: item.ppmp_uuid, id: item.ppmp_id })}
+                                                            onClick={() => onSelectPpmp(item.ppmp_uuid || item.ppmp_id)}
                                                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold transition cursor-pointer"
                                                         >
                                                             <span>Open</span>
