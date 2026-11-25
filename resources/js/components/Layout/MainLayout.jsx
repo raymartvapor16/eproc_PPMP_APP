@@ -73,6 +73,10 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
     const prevUnreadCountRef = React.useRef(null);
 
     const loadNotifications = async (isManual = false) => {
+        if (!user) return;
+        if (!isManual && (document.hidden || (typeof navigator !== 'undefined' && navigator.onLine === false))) {
+            return;
+        }
         if (isManual) setLoadingNotifs(true);
         try {
             const res = await notificationService.getAll();
@@ -110,7 +114,10 @@ export const MainLayout = ({ user, activeTab, onNavigate, onSelectPpmp, onLogout
                 }));
             }
         } catch (e) {
-            console.error('Failed to load notifications', e);
+            const isTransient = e?.code === 'ERR_NETWORK' || e?.code === 'ERR_CANCELED' || e?.response?.status === 401;
+            if (isManual || !isTransient) {
+                console.error('Failed to load notifications', e);
+            }
         } finally {
             if (isManual) setLoadingNotifs(false);
         }

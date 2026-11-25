@@ -295,6 +295,20 @@ export function App() {
             setCurrentPpmp(ppmpObj);
             return true;
         } catch (e) {
+            const status = e.response?.status;
+            if (status === 404) {
+                setSelectedPpmpUuid(null);
+                setCurrentPpmp(null);
+                try { sessionStorage.removeItem(ROUTE_STORAGE_KEY); } catch (_) {}
+                if (updateUrl) {
+                    alert(e.response?.data?.message || 'This PPMP record no longer exists or may have been deleted.');
+                }
+                handleNavigate('ppmps', null, false);
+                return false;
+            }
+            if (status === 401 || e.code === 'ERR_CANCELED') {
+                return false;
+            }
             console.error('Failed to load PPMP details:', e);
             alert(e.response?.data?.message || 'Failed to load PPMP details.');
             handleNavigate('ppmps', null, false);

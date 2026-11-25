@@ -14,7 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class SecurityThreatController extends Controller
 {
@@ -211,7 +211,7 @@ class SecurityThreatController extends Controller
         ], 201);
     }
 
-    public function downloadScheduledBackup(Request $request, int $id): StreamedResponse|JsonResponse
+    public function downloadScheduledBackup(Request $request, int $id): BinaryFileResponse|JsonResponse
     {
         $user = $this->authorizeSuperAdmin($request);
 
@@ -261,7 +261,7 @@ class SecurityThreatController extends Controller
             'downloaded_by' => $user->email,
         ], $user->id);
 
-        return Storage::disk('local')->download($backup->storage_path, $backup->filename, [
+        return response()->download(Storage::disk('local')->path($backup->storage_path), $backup->filename, [
             'Content-Type' => 'application/sql',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0, private',
             'Pragma' => 'no-cache',

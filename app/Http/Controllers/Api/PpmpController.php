@@ -510,7 +510,18 @@ class PpmpController extends Controller
             'parent.marketScoping.activities',
             'parent.marketScoping.results',
             'children.items',
-        ])->where('uuid', $uuid)->firstOrFail();
+        ])->where(function ($q) use ($uuid) {
+            $q->where('uuid', $uuid);
+            if (ctype_digit($uuid)) {
+                $q->orWhere('id', (int) $uuid);
+            }
+        })->first();
+
+        if (!$ppmp) {
+            return response()->json([
+                'message' => 'This PPMP record no longer exists or may have been deleted.',
+            ], 404);
+        }
 
         if (!$user->isAdmin()) {
             if ($user->isEndUser() && $ppmp->created_by !== $user->id && $ppmp->office_id !== $user->office_id) {
