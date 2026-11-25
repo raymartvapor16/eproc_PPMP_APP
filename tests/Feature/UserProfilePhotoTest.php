@@ -88,7 +88,7 @@ class UserProfilePhotoTest extends TestCase
 
         $otherUser = User::factory()->create(['is_active' => true, 'approval_status' => 'approved']);
 
-        $response = $this->actingAs($otherUser)->get("/api/users/{$this->user->id}/avatar");
+        $response = $this->actingAs($otherUser)->get('/api/users/' . User::encryptId($this->user->id) . '/avatar');
         $response->assertStatus(200);
         $response->assertHeader('Content-Type', 'image/png');
         $response->assertHeader('X-Content-Type-Options', 'nosniff');
@@ -98,7 +98,7 @@ class UserProfilePhotoTest extends TestCase
     {
         $otherUser = User::factory()->create(['is_active' => true, 'approval_status' => 'approved']);
 
-        $response = $this->actingAs($otherUser)->get("/api/users/{$otherUser->id}/avatar");
+        $response = $this->actingAs($otherUser)->get('/api/users/' . User::encryptId($otherUser->id) . '/avatar');
         $response->assertStatus(404);
     }
 

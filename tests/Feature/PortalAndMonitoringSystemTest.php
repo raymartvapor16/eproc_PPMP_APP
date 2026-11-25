@@ -239,7 +239,7 @@ class PortalAndMonitoringSystemTest extends TestCase
         $this->assertTrue(Storage::disk('local')->exists($user->pnpkiSignature->proof_pdf_path));
 
         $this->actingAs($this->superAdmin);
-        $pdfRes = $this->get("/api/users/{$user->id}/pnpki-proof");
+        $pdfRes = $this->get('/api/users/' . User::encryptId($user->id) . '/pnpki-proof');
         $pdfRes->assertOk();
 
         $this->actingAs($this->endUser);

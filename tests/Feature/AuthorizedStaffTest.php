@@ -240,7 +240,7 @@ class AuthorizedStaffTest extends TestCase
             'role' => 'admin',
         ]);
 
-        $response = $this->actingAs($admin)->get("/api/users/{$staff->id}/authorization-letter");
+        $response = $this->actingAs($admin)->get('/api/users/' . User::encryptId($staff->id) . '/authorization-letter');
         $response->assertStatus(200);
         $response->assertHeader('Content-Type', 'application/pdf');
     }
@@ -293,7 +293,7 @@ class AuthorizedStaffTest extends TestCase
 
         $admin = User::factory()->create(['role' => 'admin']);
 
-        $response = $this->actingAs($admin)->get("/api/users/{$staff->id}/signature");
+        $response = $this->actingAs($admin)->get('/api/users/' . User::encryptId($staff->id) . '/signature');
         $response->assertStatus(200);
         $response->assertHeader('Content-Type', 'image/png');
     }

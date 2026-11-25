@@ -231,7 +231,7 @@ class SuperAdminAndAdminRoleTest extends TestCase
         $response->assertOk();
         $this->assertStringStartsWith('signatures/', $response->json('user.signature_path'));
 
-        $sigResponse = $this->getJson("/api/users/{$this->endUser->id}/signature");
+        $sigResponse = $this->getJson('/api/users/' . User::encryptId($this->endUser->id) . '/signature');
         $sigResponse->assertOk();
         $this->assertEquals('image/png', $sigResponse->headers->get('content-type'));
 
