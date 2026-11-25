@@ -1010,7 +1010,7 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                             </div>
 
                                             <div className="mt-auto pt-3.5 border-t border-slate-800/80 flex items-center justify-between text-xs text-amber-400/90 font-mono">
-                                                <span className="text-[11px] font-semibold text-amber-300/80">Executive Leadership</span>
+                                                <span className="text-[11px] font-semibold text-amber-300/80"></span>
                                                 <ShieldCheck className="w-4 h-4 text-amber-400" />
                                             </div>
                                         </div>
