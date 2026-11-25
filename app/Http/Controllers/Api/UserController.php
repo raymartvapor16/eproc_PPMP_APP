@@ -806,7 +806,9 @@ class UserController extends Controller
 
         return response()->file($fullPath, [
             'Content-Type' => 'image/png',
-            'Cache-Control' => 'private, max-age=3600',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0, private',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
             'X-Content-Type-Options' => 'nosniff',
         ]);
     }
@@ -834,7 +836,9 @@ class UserController extends Controller
         return response()->file($fullPath, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="Authorization_Letter_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $targetUser->name) . '.pdf"',
-            'Cache-Control' => 'private, max-age=3600',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0, private',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
             'X-Content-Type-Options' => 'nosniff',
         ]);
     }
@@ -897,7 +901,9 @@ class UserController extends Controller
 
         return response()->file($fullPath, [
             'Content-Type' => $mime,
-            'Cache-Control' => 'private, max-age=86400',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0, private',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
             'X-Content-Type-Options' => 'nosniff',
         ]);
     }
@@ -941,7 +947,9 @@ class UserController extends Controller
         return response()->file($fullPath, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="' . $safeFilename . '"',
-            'Cache-Control' => 'private, max-age=3600',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0, private',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
             'X-Content-Type-Options' => 'nosniff',
         ]);
     }

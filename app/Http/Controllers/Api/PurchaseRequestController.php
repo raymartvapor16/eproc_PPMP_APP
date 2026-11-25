@@ -599,6 +599,10 @@ class PurchaseRequestController extends Controller
         return response()->file(Storage::disk('local')->path($attachment->storage_path), [
             'Content-Type' => $attachment->mime_type ?: 'application/pdf',
             'Content-Disposition' => 'inline; filename="' . addslashes($attachment->original_filename) . '"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0, private',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 

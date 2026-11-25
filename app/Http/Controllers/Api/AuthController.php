@@ -1065,7 +1065,9 @@ class AuthController extends Controller
 
         return response()->file($fullPath, [
             'Content-Type' => $mime,
-            'Cache-Control' => 'private, max-age=86400',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0, private',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
             'X-Content-Type-Options' => 'nosniff',
         ]);
     }
@@ -1082,7 +1084,10 @@ class AuthController extends Controller
 
         return response()->file($fullPath, [
             'Content-Type' => 'image/png',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0, private',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 }

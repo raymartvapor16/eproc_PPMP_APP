@@ -625,9 +625,9 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
     };
 
     return (
-        <div className="min-h-screen w-full flex flex-col lg:flex-row bg-slate-950 text-slate-800 antialiased overflow-x-hidden">
+        <div className="min-h-screen w-full flex flex-col-reverse lg:flex-row bg-slate-950 text-slate-800 antialiased overflow-x-hidden">
 
-            <div className="w-full lg:w-[55%] xl:w-[58%] 2xl:w-[60%] relative flex flex-col justify-between overflow-hidden bg-blue-950 border-b lg:border-b-0 lg:border-r border-blue-900/40 min-h-[480px] sm:min-h-[520px] lg:h-screen lg:max-h-screen">
+            <div className="w-full lg:w-[52%] xl:w-[55%] 2xl:w-[58%] relative flex flex-col justify-between overflow-hidden bg-blue-950 border-t lg:border-t-0 lg:border-r border-blue-900/40 lg:h-screen lg:max-h-screen">
 
                 <div
                     className="absolute inset-0 bg-cover bg-center animate-slow-zoom"
@@ -644,43 +644,43 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                 <div className="absolute -bottom-16 -left-16 w-[500px] h-[500px] bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
                 <div className="absolute top-10 right-10 w-96 h-96 bg-amber-400/15 rounded-full blur-3xl pointer-events-none" />
 
-                <div className="landing-fade-top relative z-10 px-4 sm:px-6 xl:px-8 py-3 xl:py-4 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-950/70 backdrop-blur-xl border border-white/20 text-white shadow-xl">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                            <span className="text-[11px] xl:text-xs font-bold tracking-wider uppercase text-blue-100">OPPMO - BAC</span>
+                <div className="landing-fade-top relative z-10 px-4 sm:px-6 xl:px-8 py-3 flex items-center justify-between gap-2 flex-nowrap">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-950/70 backdrop-blur-xl border border-white/20 text-white shadow-md whitespace-nowrap shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                            <span className="text-[9.5px] xl:text-[10px] font-bold tracking-wider uppercase text-blue-100">OPPMO - BAC</span>
                         </div>
-                        <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/20 backdrop-blur-xl border border-amber-400/40 text-amber-200 text-[10px] xl:text-[11px] font-bold tracking-wider uppercase shadow-md font-mono">
+                        <div className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full bg-amber-500/20 backdrop-blur-xl border border-amber-400/40 text-amber-200 text-[9px] xl:text-[9.5px] font-bold tracking-wider uppercase shadow-sm font-mono whitespace-nowrap shrink-0">
                             <span>MULTI-SYSTEM GATEWAY</span>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                        <div className="text-right hidden sm:block">
-                            <p className="text-xs xl:text-sm font-extrabold text-white uppercase tracking-wider drop-shadow-md">
+                    <div className="flex items-center gap-2 min-w-0 ml-auto">
+                        <div className="text-right hidden sm:block min-w-0">
+                            <p className="text-[10px] xl:text-[11px] 2xl:text-xs font-extrabold text-white uppercase tracking-wide leading-tight drop-shadow-md truncate">
                                 Office of the Provincial Procurement Management Officer
                             </p>
-                            <p className="text-[10px] xl:text-[11px] text-amber-300 font-semibold tracking-wide uppercase drop-shadow-sm">
+                            <p className="text-[9px] xl:text-[10px] text-amber-300 font-semibold tracking-wide uppercase leading-tight mt-0.5 drop-shadow-sm truncate">
                                 (OPPMO) • Bids and Awards Committee
                             </p>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 shrink-0">
                             <img
                                 src="/images/logo.png"
                                 alt="Davao del Sur Official Seal"
-                                className="w-8 h-8 xl:w-9 xl:h-9 object-contain drop-shadow-lg"
+                                className="w-7 h-7 xl:w-8 xl:h-8 object-contain drop-shadow-lg"
                             />
                             <img
                                 src="/images/pmo.jpeg"
                                 alt="OPPMO Seal"
-                                className="w-8 h-8 xl:w-9 xl:h-9 object-contain rounded-full border border-white/30 shadow-md drop-shadow-lg"
+                                className="w-7 h-7 xl:w-8 xl:h-8 object-contain rounded-full border border-white/30 shadow-md drop-shadow-lg"
                             />
                         </div>
                     </div>
                 </div>
 
-                <div className="relative z-10 px-4 sm:px-6 xl:px-10 py-2 sm:py-3 xl:py-4 max-w-4xl my-auto w-full">
-                    <div className="landing-hero-title inline-flex items-center gap-2 px-3 py-1 bg-amber-500/25 border border-amber-300/40 rounded-lg text-amber-200 text-[11px] xl:text-xs font-mono font-bold tracking-wider uppercase mb-2 backdrop-blur-md shadow-sm soft-glow-badge">
+                <div className="relative z-10 px-4 sm:px-6 xl:px-10 py-5 sm:py-6 lg:py-4 max-w-4xl my-auto w-full">
+                    <div className="landing-hero-title inline-flex items-center gap-2 px-3 py-1 bg-amber-500/25 border border-amber-300/40 rounded-lg text-amber-200 text-[10px] sm:text-[11px] xl:text-xs font-mono font-bold tracking-wider uppercase mb-2 backdrop-blur-md shadow-sm soft-glow-badge">
                         <span>Province of Davao Del Sur • Unified Digital Gateway</span>
                     </div>
 
@@ -692,12 +692,12 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                         Centralized single sign-on authentication and unified governance across Davao del Sur's digital procurement infrastructure, automated PPMP/APP workflows, real-time project implementation monitoring, and provincial supplier evaluations.
                     </p>
 
-                    <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-900/50 border border-blue-400/35 text-blue-200 text-[11px] font-semibold backdrop-blur-md shadow-sm">
+                    <div className="mt-2.5 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-900/50 border border-blue-400/35 text-blue-200 text-[10.5px] sm:text-[11px] font-semibold backdrop-blur-md shadow-sm">
                         <Lock className="w-3 h-3 text-amber-400 shrink-0" />
-                        <span>Unified SSO Credentials • One Account for All 3 Integrated Systems</span>
+                        <span>Unified SSO Credentials • One Account for All Integrated Systems</span>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 xl:gap-4 mt-3.5 sm:mt-4 xl:mt-5 perspective-[1000px] w-full">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3 gap-3 xl:gap-4 mt-4 xl:mt-5 perspective-[1000px] w-full">
 
                         <div className="intro-card-1 relative p-3 sm:p-4 xl:p-5 rounded-2xl bg-gradient-to-b from-blue-950/85 via-slate-900/85 to-slate-950/90 backdrop-blur-xl border border-amber-400/35 hover:border-amber-400 hover:shadow-2xl hover:shadow-amber-500/25 hover:-translate-y-1.5 transition-all duration-300 group overflow-hidden flex flex-col justify-between">
                             <div className="absolute -top-10 -right-10 w-24 h-24 bg-amber-400/15 rounded-full blur-xl group-hover:bg-amber-400/30 transition-colors pointer-events-none" />
@@ -793,13 +793,13 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                 </div>
             </div>
 
-            <div className="w-full lg:w-[45%] xl:w-[42%] 2xl:w-[40%] min-h-screen lg:h-screen flex flex-col justify-between bg-slate-50/95 relative z-20 shadow-2xl overflow-y-auto custom-scrollbar border-t lg:border-t-0 lg:border-l border-slate-200/80">
+            <div className="w-full lg:w-[48%] xl:w-[45%] 2xl:w-[42%] lg:h-screen flex flex-col bg-slate-50/95 relative z-20 shadow-2xl lg:overflow-y-auto custom-scrollbar border-b lg:border-b-0 lg:border-l border-slate-200/80">
 
                 <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-blue-600 to-indigo-600" />
 
-                <div className="w-full max-w-lg 2xl:max-w-xl mx-auto px-4 sm:px-6 lg:px-7 py-4 sm:py-6 flex-1 flex flex-col justify-center">
+                <div className={`w-full max-w-xl mx-auto px-3.5 sm:px-6 lg:px-6 xl:px-8 py-5 sm:py-7 flex-1 flex flex-col ${mode === 'login' ? 'justify-center' : 'justify-start'}`}>
 
-                    <div className="landing-auth-card bg-white rounded-2xl p-5 sm:p-7 shadow-lg shadow-slate-200/50 border border-slate-200/80 w-full my-auto">
+                    <div className={`landing-auth-card bg-white rounded-2xl p-4 sm:p-6 lg:p-6 xl:p-7 shadow-lg shadow-slate-200/50 border border-slate-200/80 w-full ${mode === 'login' ? 'my-auto' : ''}`}>
 
                         {onBackToLanding && (
                             <button
@@ -1264,16 +1264,16 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                     </div>
 
                                     <div className="relative" ref={systemsDropdownRef}>
-                                        <div className="flex items-center justify-between mb-1">
+                                        <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
                                             <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
                                                 Requested Digital Systems Access <span className="text-rose-500">*</span>
                                             </label>
                                             {selectedSystems.length > 0 ? (
-                                                <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                                                <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 whitespace-nowrap shrink-0">
                                                     {selectedSystems.length} {selectedSystems.length === 1 ? 'system' : 'systems'} selected
                                                 </span>
                                             ) : (
-                                                <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                                                <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200 whitespace-nowrap shrink-0">
                                                     0 systems selected
                                                 </span>
                                             )}
@@ -1415,16 +1415,16 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                         )}
                                     </div>
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
                                         <div ref={rolesDropdownRef} className="relative">
-                                            <div className="flex items-center justify-between mb-1">
+                                            <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
                                                 <label
                                                     htmlFor="register-role-btn"
                                                     className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider"
                                                 >
                                                     System Role(s) <span className="text-rose-500">*</span>
                                                 </label>
-                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap shrink-0">
                                                     {selectedRoles.length} {selectedRoles.length === 1 ? 'role' : 'roles'} selected
                                                 </span>
                                             </div>
@@ -1611,7 +1611,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
 
                                     {selectedRoles.includes('authorized_staff') && (
                                         <div className="p-3.5 bg-blue-50/70 border-2 border-blue-300 rounded-xl space-y-2.5 shadow-sm animate-fade-in-up">
-                                            <div className="flex items-center justify-between">
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
                                                 <div className="flex items-center gap-1.5">
                                                     <FileText className="w-3.5 h-3.5 text-blue-700" />
                                                     <span className="block text-[11px] font-bold text-blue-950 uppercase tracking-wider">
@@ -1734,7 +1734,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                     )}
 
                                     <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5 shadow-sm">
-                                        <div className="flex items-center justify-between">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
                                             <div className="flex items-center gap-1.5">
                                                 <PenTool className="w-3.5 h-3.5 text-blue-600" />
                                                 <span className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">

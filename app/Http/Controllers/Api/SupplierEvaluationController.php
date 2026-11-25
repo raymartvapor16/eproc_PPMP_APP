@@ -1235,9 +1235,14 @@ class SupplierEvaluationController extends Controller
 
     public function viewPurchaseOrderPdf(Request $request, int $id): BinaryFileResponse|JsonResponse
     {
-        $this->authorizeSupplierEvaluation($request);
+        $user = $this->authorizeSupplierEvaluation($request);
+        $role = $this->getEffectiveRole($user);
+        $isGlobalScope = in_array($role, ['administrator', 'pgso'], true);
 
         $po = SupplierPurchaseOrder::findOrFail($id);
+        if (!$isGlobalScope && $user->office_id && $po->office_id && (int) $po->office_id !== (int) $user->office_id) {
+            return response()->json(['message' => 'Unauthorized. You do not have permission to view this Purchase Order PDF.'], 403);
+        }
         if (!$po->pdf_po) {
             return response()->json(['message' => 'No PDF uploaded for this Purchase Order.'], 404);
         }
@@ -1269,6 +1274,10 @@ class SupplierEvaluationController extends Controller
         return response()->file($resolvedPath, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="' . basename($resolvedPath) . '"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0, private',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 
@@ -1786,9 +1795,18 @@ class SupplierEvaluationController extends Controller
 
     public function viewAuthorizePdfFile(Request $request, int $id): BinaryFileResponse|JsonResponse
     {
-        $this->authorizeSupplierEvaluation($request);
+        $user = $this->authorizeSupplierEvaluation($request);
+        $role = $this->getEffectiveRole($user);
+        $isGlobalScope = in_array($role, ['administrator', 'pgso'], true);
 
-        $pdf = SupplierPdf::findOrFail($id);
+        $pdf = SupplierPdf::with('user')->findOrFail($id);
+        if (!$isGlobalScope) {
+            $isOwner = (int) $pdf->user_id === (int) $user->id;
+            $isSameOfficeHead = $user->isHead() && $user->office_id && $pdf->user && (int) $pdf->user->office_id === (int) $user->office_id;
+            if (!$isOwner && !$isSameOfficeHead) {
+                return response()->json(['message' => 'Unauthorized. You do not have permission to view this Authorization PDF.'], 403);
+            }
+        }
         if (!$pdf->pdf_file) {
             return response()->json(['message' => 'No PDF file.'], 404);
         }
@@ -1802,7 +1820,13 @@ class SupplierEvaluationController extends Controller
 
         foreach ($candidates as $path) {
             if (file_exists($path) && is_file($path)) {
-                return response()->file($path, ['Content-Type' => 'application/pdf']);
+                return response()->file($path, [
+                    'Content-Type' => 'application/pdf',
+                    'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0, private',
+                    'Pragma' => 'no-cache',
+                    'Expires' => '0',
+                    'X-Content-Type-Options' => 'nosniff',
+                ]);
             }
         }
 

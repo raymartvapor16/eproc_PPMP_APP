@@ -305,6 +305,9 @@ class PpmpAttachmentController extends Controller
 
         return response()->download($fullPath, $safeFilename, [
             'Content-Type' => $attachment->mime_type ?: 'application/octet-stream',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0, private',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
             'X-Content-Type-Options' => 'nosniff',
         ]);
     }
@@ -355,6 +358,9 @@ class PpmpAttachmentController extends Controller
         return response()->file($fullPath, [
             'Content-Type' => $attachment->mime_type ?: 'application/octet-stream',
             'Content-Disposition' => 'inline; filename="' . $safeFilename . '"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0, private',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
             'X-Content-Type-Options' => 'nosniff',
         ]);
     }

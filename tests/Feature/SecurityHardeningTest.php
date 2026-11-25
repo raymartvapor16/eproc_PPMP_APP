@@ -265,4 +265,32 @@ class SecurityHardeningTest extends TestCase
             'approval_status' => 'pending',
         ]);
     }
+
+    public function test_private_user_files_require_authentication_and_disable_caching(): void
+    {
+        \Illuminate\Support\Facades\Storage::disk('local')->put('authorization_letter/test_auth.pdf', '%PDF-1.4 test');
+        $target = User::factory()->create([
+            'office_id' => $this->officeB->id,
+            'role' => 'authorized_staff',
+            'authorization_letter_path' => 'authorization_letter/test_auth.pdf',
+            'is_active' => true,
+            'approval_status' => 'approved',
+        ]);
+
+        $this->get("/api/users/{$target->id}/authorization-letter")->assertStatus(401);
+        $this->get("/api/users/{$target->id}/signature")->assertStatus(401);
+        $this->get("/api/users/{$target->id}/avatar")->assertStatus(401);
+        $this->get("/api/users/{$target->id}/pnpki-proof")->assertStatus(401);
+
+        $this->actingAs($this->endUserA)
+            ->get("/api/users/{$target->id}/authorization-letter")
+            ->assertStatus(403);
+
+        $ok = $this->actingAs($this->adminUser)
+            ->get("/api/users/{$target->id}/authorization-letter");
+        $ok->assertStatus(200);
+        $this->assertStringContainsString('no-store', (string) $ok->headers->get('Cache-Control'));
+
+        \Illuminate\Support\Facades\Storage::disk('local')->delete('authorization_letter/test_auth.pdf');
+    }
 }
