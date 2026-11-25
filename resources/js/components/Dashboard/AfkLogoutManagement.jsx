@@ -173,7 +173,10 @@ export const AfkLogoutManagement = () => {
 
                         <div className={`space-y-4 transition ${enabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
                             <div>
-                                <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                                <label
+                                    htmlFor="afk-timeout-minutes"
+                                    className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5 flex items-center gap-1.5"
+                                >
                                     <Clock className="w-3.5 h-3.5 text-blue-600" />
                                     <span>Inactivity Timeout Duration (AFK Minutes)</span>
                                 </label>
@@ -201,6 +204,8 @@ export const AfkLogoutManagement = () => {
                                 <div className="max-w-xs">
                                     <div className="relative rounded-lg shadow-2xs">
                                         <input
+                                            id="afk-timeout-minutes"
+                                            name="afk_timeout_minutes"
                                             type="number"
                                             min="1"
                                             max="480"
@@ -218,7 +223,10 @@ export const AfkLogoutManagement = () => {
                             </div>
 
                             <div className="pt-2">
-                                <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                                <label
+                                    htmlFor="afk-warning-seconds"
+                                    className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5 flex items-center gap-1.5"
+                                >
                                     <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
                                     <span>Pre-Logout Warning Countdown Window</span>
                                 </label>
@@ -228,6 +236,8 @@ export const AfkLogoutManagement = () => {
 
                                 <div className="max-w-xs">
                                     <select
+                                        id="afk-warning-seconds"
+                                        name="afk_warning_seconds"
                                         value={warningSeconds}
                                         onChange={(e) => setWarningSeconds(Number(e.target.value))}
                                         className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg text-slate-800 font-semibold focus:ring-2 focus:ring-blue-500"

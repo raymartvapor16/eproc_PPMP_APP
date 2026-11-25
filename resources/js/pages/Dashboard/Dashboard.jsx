@@ -915,7 +915,10 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                             <div className="relative w-full sm:w-64">
                                                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                                 <input
+                                                    id="super-admin-user-search"
+                                                    name="user_search"
                                                     type="text"
+                                                    aria-label="Search users by name, email, office, or phone"
                                                     placeholder="Search name, email, office, phone..."
                                                     value={userSearch}
                                                     onChange={(e) => { setUserSearch(e.target.value); setUserPage(1); }}
@@ -1278,7 +1281,10 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                             <div className="relative w-full sm:w-56">
                                                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                                 <input
+                                                    id="super-admin-office-search"
+                                                    name="office_search"
                                                     type="text"
+                                                    aria-label="Search offices by name or code"
                                                     placeholder="Search office / code..."
                                                     value={officeSearch}
                                                     onChange={(e) => { setOfficeSearch(e.target.value); setOfficePage(1); }}

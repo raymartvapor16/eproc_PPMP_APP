@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 export const getPaginationPages = (currentPage, totalPages) => {
@@ -29,6 +29,7 @@ export const PaginationControl = ({
     theme = 'orange',
     perPageOptions = [10, 25, 50, 100],
 }) => {
+    const perPageSelectId = useId();
     if (totalEntries === 0) return null;
 
     const pages = getPaginationPages(currentPage, totalPages);
@@ -46,8 +47,10 @@ export const PaginationControl = ({
 
                 {onPerPageChange && (
                     <div className="flex items-center gap-1.5 ml-2">
-                        <span>Show:</span>
+                        <label htmlFor={perPageSelectId}>Show:</label>
                         <select
+                            id={perPageSelectId}
+                            name="per_page"
                             value={perPage}
                             onChange={(e) => {
                                 onPerPageChange(Number(e.target.value));
