@@ -275,6 +275,9 @@ export function App() {
             const res = await dashboardService.getDashboard();
             setDashboardData(res.data);
         } catch (e) {
+            if (e?.response?.status === 401 || e?.code === 'ERR_CANCELED') {
+                return;
+            }
             console.error(e);
         }
     };
