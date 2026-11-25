@@ -270,20 +270,23 @@ export const userService = {
     refreshEncryptedUserToken: (encryptedId) => api.get(`/users/${encodeURIComponent(encryptedId)}/refresh-token`),
     openSecureUserFile: async (encryptedId, endpoint, query = '') => {
         if (!encryptedId) return;
-        const win = window.open('about:blank', '_blank', 'noopener,noreferrer');
+        const win = window.open('about:blank', '_blank');
+        if (win) {
+            win.opener = null;
+        }
         try {
             const res = await api.get(`/users/${encodeURIComponent(encryptedId)}/refresh-token`);
             const freshId = res.data?.encrypted_id || encryptedId;
             const url = `/api/users/${encodeURIComponent(freshId)}/${endpoint}${query ? `?${query}` : ''}`;
-            if (win) {
-                win.location.href = url;
+            if (win && !win.closed) {
+                win.location.replace(url);
             } else {
                 window.open(url, '_blank', 'noopener,noreferrer');
             }
         } catch (_) {
             const fallbackUrl = `/api/users/${encodeURIComponent(encryptedId)}/${endpoint}${query ? `?${query}` : ''}`;
-            if (win) {
-                win.location.href = fallbackUrl;
+            if (win && !win.closed) {
+                win.location.replace(fallbackUrl);
             } else {
                 window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
             }
