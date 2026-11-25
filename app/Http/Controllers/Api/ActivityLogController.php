@@ -20,6 +20,7 @@ class ActivityLogController extends Controller
                 $sub->where('action', 'like', $q)
                     ->orWhere('entity_type', 'like', $q)
                     ->orWhere('ip_address', 'like', $q)
+                    ->orWhere('new_values', 'like', $q)
                     ->orWhereHas('user', function ($u) use ($q) {
                         $u->where('name', 'like', $q)
                           ->orWhere('email', 'like', $q);

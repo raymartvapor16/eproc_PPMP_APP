@@ -36,15 +36,20 @@ class AuditLog extends Model
     {
         $actor = $this->user?->name ?? 'System';
         $entity = $this->entity_type === 'ppmps' ? 'PPMP #' . ($this->entity_id ?? '') : ($this->entity_type ?? 'record');
+        $systemName = is_array($this->new_values) ? ($this->new_values['system_name'] ?? null) : null;
 
         $map = [
 
-            'USER_LOGIN'               => "{$actor} logged in",
-            'USER_LOGOUT'              => "{$actor} logged out",
+            'USER_LOGIN'               => $systemName ? "{$actor} logged in to {$systemName}" : "{$actor} logged in",
+            'USER_LOGOUT'              => $systemName ? "{$actor} logged out from {$systemName}" : "{$actor} logged out",
             'USER_LOGIN_FAILED'        => "Failed login attempt",
             'LOGIN_THROTTLED'          => "Login throttled (too many attempts)",
             'USER_REGISTERED_PENDING'  => "{$actor} registered (pending approval)",
             'USER_PROFILE_UPDATED'     => "{$actor} updated their profile",
+            'SUPER_ADMIN_MFA_SENT'     => "Super Admin MFA verification code sent",
+            'SUPER_ADMIN_MFA_RESENT'   => "Super Admin MFA verification code resent",
+            'SUPER_ADMIN_MFA_VERIFIED' => "{$actor} verified Super Admin MFA code",
+            'SUPER_ADMIN_MFA_FAILED'   => "Failed Super Admin MFA verification attempt",
 
             'USER_APPROVED'            => "Admin approved user account",
             'USER_REJECTED'            => "Admin rejected user account",
@@ -105,7 +110,11 @@ class AuditLog extends Model
     {
         $action = $this->action ?? '';
 
-        if (str_starts_with($action, 'USER_LOGIN') || in_array($action, ['USER_LOGOUT', 'LOGIN_THROTTLED', 'USER_REGISTERED_PENDING'])) {
+        if (
+            str_starts_with($action, 'USER_LOGIN') ||
+            str_starts_with($action, 'SUPER_ADMIN_MFA_') ||
+            in_array($action, ['USER_LOGOUT', 'LOGIN_THROTTLED', 'USER_REGISTERED_PENDING'])
+        ) {
             return 'auth';
         }
         if (str_starts_with($action, 'WORKFLOW_')) {

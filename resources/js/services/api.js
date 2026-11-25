@@ -102,9 +102,9 @@ export const authService = {
         return api.post('/register', data);
     },
     getPublicOffices: () => api.get('/public-offices'),
-    logout: async () => {
+    logout: async (payload = {}) => {
         try {
-            const res = await api.post('/logout');
+            const res = await api.post('/logout', payload);
             if (res.data && res.data.csrf_token) {
                 setCsrfToken(res.data.csrf_token);
             }

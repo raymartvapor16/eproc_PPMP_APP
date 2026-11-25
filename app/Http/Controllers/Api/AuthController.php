@@ -44,7 +44,59 @@ class AuthController extends Controller
         return substr($local, 0, 3) . str_repeat('*', max(3, $len - 5)) . substr($local, -2) . '@' . $domain;
     }
 
-    protected function initiateSuperAdminMfa(Request $request, User $user, bool $multiRoleSelected = false): JsonResponse
+    protected function resolveSystemInfo(?string $rawSystem, ?User $user = null): array
+    {
+        $raw = strtolower(trim((string) $rawSystem));
+
+        $mapToInfo = function (string $key): array {
+            return match ($key) {
+                '/supplierevaluation' => [
+                    'system_key' => '/supplierevaluation',
+                    'system_name' => 'Supplier Evaluation System',
+                ],
+                '/monitoringsystem' => [
+                    'system_key' => '/monitoringsystem',
+                    'system_name' => 'OPPMO Real-Time Monitoring System',
+                ],
+                '/pims' => [
+                    'system_key' => '/pims',
+                    'system_name' => 'Procurement Information Management System (PIMS)',
+                ],
+                default => [
+                    'system_key' => '/eprocrementppmpapp',
+                    'system_name' => 'E-Procurement PPMP & APP System',
+                ],
+            };
+        };
+
+        if (str_contains($raw, 'supplier')) {
+            return $mapToInfo('/supplierevaluation');
+        }
+        if (str_contains($raw, 'monitor')) {
+            return $mapToInfo('/monitoringsystem');
+        }
+        if ($raw === 'pims' || str_starts_with($raw, '/pims')) {
+            return $mapToInfo('/pims');
+        }
+
+        if ($user && ($raw === '' || $raw === 'dashboard' || $raw === 'login' || $raw === 'landing')) {
+            if (!$user->canAccessSystem('/eprocrementppmpapp')) {
+                if ($user->canAccessSystem('/monitoringsystem')) {
+                    return $mapToInfo('/monitoringsystem');
+                }
+                if ($user->canAccessSystem('/supplierevaluation')) {
+                    return $mapToInfo('/supplierevaluation');
+                }
+                if ($user->canAccessSystem('/pims')) {
+                    return $mapToInfo('/pims');
+                }
+            }
+        }
+
+        return $mapToInfo('/eprocrementppmpapp');
+    }
+
+    protected function initiateSuperAdminMfa(Request $request, User $user, bool $multiRoleSelected = false, ?array $systemInfo = null): JsonResponse
     {
         $sendThrottleKey = 'super_admin_mfa_send|' . $user->id . '|' . $request->ip();
         if (RateLimiter::tooManyAttempts($sendThrottleKey, 5)) {
@@ -84,6 +136,8 @@ class AuthController extends Controller
 
         RateLimiter::hit($sendThrottleKey, 600);
 
+        $resolvedSystem = $systemInfo ?: $this->resolveSystemInfo($request->input('target_system'), $user);
+
         \Illuminate\Support\Facades\Cache::put(
             "super_admin_mfa:{$mfaToken}",
             [
@@ -96,6 +150,7 @@ class AuthController extends Controller
                 'last_sent_at' => $nowTs,
                 'expires_at' => $nowTs + self::MFA_TTL_SECONDS,
                 'multi_role_selected' => $multiRoleSelected,
+                'system_info' => $resolvedSystem,
             ],
             now()->addSeconds(self::MFA_TTL_SECONDS)
         );
@@ -209,20 +264,30 @@ class AuthController extends Controller
 
         \Illuminate\Support\Facades\Cache::forget($cacheKey);
 
+        $sysInfo = is_array($cached['system_info'] ?? null)
+            ? $cached['system_info']
+            : $this->resolveSystemInfo(null, $user);
+
         Auth::login($user);
         $request->session()->regenerate();
         $request->session()->put('_client_fingerprint', $currentUaHash);
         $request->session()->put('_client_user_agent_preview', Str::limit((string) $request->userAgent(), 150));
+        $request->session()->put('_active_system', $sysInfo['system_key']);
 
         AuditLog::log('SUPER_ADMIN_MFA_VERIFIED', 'users', $user->id, null, [
             'email' => $user->email,
             'mfa_recipient' => $this->getSuperAdminMfaRecipient(),
+            'system_key' => $sysInfo['system_key'],
+            'system_name' => $sysInfo['system_name'],
             'ip' => $request->ip(),
         ], $user->id);
 
         AuditLog::log('USER_LOGIN', 'users', $user->id, null, [
             'email' => $user->email,
             'role' => $user->role,
+            'system_key' => $sysInfo['system_key'],
+            'system_name' => $sysInfo['system_name'],
+            'logged_in_at' => now()->timezone('Asia/Manila')->format('M d, Y, h:i:s A'),
             'mfa_verified' => true,
             'multi_role_selected' => !empty($cached['multi_role_selected']),
         ], $user->id);
@@ -429,18 +494,24 @@ class AuthController extends Controller
                 $user->save();
             }
 
+            $sysInfo = $this->resolveSystemInfo($request->input('target_system') ?? ($cached['target_system'] ?? null), $user);
+
             if ($user->isSuperAdmin()) {
-                return $this->initiateSuperAdminMfa($request, $user, true);
+                return $this->initiateSuperAdminMfa($request, $user, true, $sysInfo);
             }
 
             Auth::login($user);
             $request->session()->regenerate();
             $request->session()->put('_client_fingerprint', hash('sha256', (string) $request->userAgent()));
             $request->session()->put('_client_user_agent_preview', Str::limit((string) $request->userAgent(), 150));
+            $request->session()->put('_active_system', $sysInfo['system_key']);
 
             AuditLog::log('USER_LOGIN', 'users', $user->id, null, [
                 'email' => $user->email,
                 'role' => $user->role,
+                'system_key' => $sysInfo['system_key'],
+                'system_name' => $sysInfo['system_name'],
+                'logged_in_at' => now()->timezone('Asia/Manila')->format('M d, Y, h:i:s A'),
                 'multi_role_selected' => true,
             ], $user->id);
 
@@ -534,7 +605,7 @@ class AuthController extends Controller
                 $selectionToken = Str::random(48);
                 \Illuminate\Support\Facades\Cache::put(
                     "role_select:{$selectionToken}",
-                    ['user_id' => $user->id, 'ip' => $request->ip()],
+                    ['user_id' => $user->id, 'ip' => $request->ip(), 'target_system' => $request->input('target_system')],
                     now()->addMinutes(5)
                 );
 
@@ -564,8 +635,10 @@ class AuthController extends Controller
             }
         }
 
+        $sysInfo = $this->resolveSystemInfo($request->input('target_system'), $user);
+
         if ($user->isSuperAdmin()) {
-            return $this->initiateSuperAdminMfa($request, $user, false);
+            return $this->initiateSuperAdminMfa($request, $user, false, $sysInfo);
         }
 
         Auth::login($user);
@@ -573,8 +646,15 @@ class AuthController extends Controller
 
         $request->session()->put('_client_fingerprint', hash('sha256', (string) $request->userAgent()));
         $request->session()->put('_client_user_agent_preview', Str::limit((string) $request->userAgent(), 150));
+        $request->session()->put('_active_system', $sysInfo['system_key']);
 
-        AuditLog::log('USER_LOGIN', 'users', $user->id, null, ['email' => $user->email, 'role' => $user->role], $user->id);
+        AuditLog::log('USER_LOGIN', 'users', $user->id, null, [
+            'email' => $user->email,
+            'role' => $user->role,
+            'system_key' => $sysInfo['system_key'],
+            'system_name' => $sysInfo['system_name'],
+            'logged_in_at' => now()->timezone('Asia/Manila')->format('M d, Y, h:i:s A'),
+        ], $user->id);
 
         return response()->json([
             'message' => 'Login successful.',
@@ -912,7 +992,15 @@ class AuthController extends Controller
         $user = Auth::user();
 
         if ($user) {
-            AuditLog::log('USER_LOGOUT', 'users', $user->id, null, null, $user->id);
+            $logoutSystemRaw = $request->input('system') ?: $request->session()->get('_active_system');
+            $sysInfo = $this->resolveSystemInfo($logoutSystemRaw, $user);
+            AuditLog::log('USER_LOGOUT', 'users', $user->id, null, [
+                'email' => $user->email,
+                'role' => $user->role,
+                'system_key' => $sysInfo['system_key'],
+                'system_name' => $sysInfo['system_name'],
+                'logged_out_at' => now()->timezone('Asia/Manila')->format('M d, Y, h:i:s A'),
+            ], $user->id);
         }
 
         Auth::guard('web')->logout();

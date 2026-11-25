@@ -525,6 +525,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
             const res = await authService.login({
                 email,
                 password,
+                target_system: targetSystem || 'dashboard',
                 cf_turnstile_response: loginTurnstileToken,
             });
             if (res.data?.requires_mfa && res.data?.mfa_token) {
@@ -564,6 +565,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
             const res = await authService.login({
                 role_selection_token: roleSelectionModal.token,
                 selected_role: roleToUse,
+                target_system: targetSystem || 'dashboard',
             });
             setRoleSelectionModal(null);
             setChosenLoginRole('');

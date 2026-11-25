@@ -616,7 +616,7 @@ export function App() {
     const handleLogout = async () => {
         const activeSystem = currentView;
         try {
-            await authService.logout();
+            await authService.logout({ system: activeSystem || 'dashboard' });
         } catch (e) {
             console.error(e);
         } finally {
