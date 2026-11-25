@@ -30,6 +30,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('api')->group(function () {
     Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:30,1');
+    Route::post('/login/mfa/verify', [AuthController::class, 'verifySuperAdminMfa'])->middleware('throttle:15,1');
+    Route::post('/login/mfa/resend', [AuthController::class, 'resendSuperAdminMfa'])->middleware('throttle:5,1');
     Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:30,1');
     Route::get('/public-offices', [OfficeController::class, 'index'])->middleware('throttle:240,1');
     Route::get('/public-account-codes', [AccountCodeController::class, 'publicDropdown'])->middleware('throttle:240,1');

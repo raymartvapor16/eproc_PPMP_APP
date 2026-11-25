@@ -85,6 +85,14 @@ export const authService = {
         }
         return res;
     },
+    verifyMfa: async (payload) => {
+        const res = await api.post('/login/mfa/verify', payload);
+        if (res.data && res.data.csrf_token) {
+            setCsrfToken(res.data.csrf_token);
+        }
+        return res;
+    },
+    resendMfa: (payload) => api.post('/login/mfa/resend', payload),
     register: (data) => {
         if (data instanceof FormData) {
             return api.post('/register', data, {

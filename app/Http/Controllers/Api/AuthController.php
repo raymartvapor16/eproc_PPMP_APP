@@ -19,6 +19,316 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    public const SUPER_ADMIN_MFA_EMAIL = 'system.administrator16@gmail.com';
+    public const MFA_TTL_SECONDS = 300;
+    public const MFA_RESEND_COOLDOWN_SECONDS = 60;
+    public const MFA_MAX_ATTEMPTS = 5;
+    public const MFA_MAX_RESENDS = 3;
+
+    protected function getSuperAdminMfaRecipient(): string
+    {
+        return self::SUPER_ADMIN_MFA_EMAIL;
+    }
+
+    protected function maskEmailAddress(string $email): string
+    {
+        $parts = explode('@', $email);
+        if (count($parts) !== 2) {
+            return '***';
+        }
+        [$local, $domain] = $parts;
+        $len = strlen($local);
+        if ($len <= 4) {
+            return substr($local, 0, 1) . '***@' . $domain;
+        }
+        return substr($local, 0, 3) . str_repeat('*', max(3, $len - 5)) . substr($local, -2) . '@' . $domain;
+    }
+
+    protected function initiateSuperAdminMfa(Request $request, User $user, bool $multiRoleSelected = false): JsonResponse
+    {
+        $sendThrottleKey = 'super_admin_mfa_send|' . $user->id . '|' . $request->ip();
+        if (RateLimiter::tooManyAttempts($sendThrottleKey, 5)) {
+            $seconds = RateLimiter::availableIn($sendThrottleKey);
+            return response()->json([
+                'message' => "Too many MFA verification code requests. Please wait {$seconds} seconds before trying again.",
+                'retry_after' => $seconds,
+            ], 429);
+        }
+
+        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $mfaToken = Str::random(64);
+        $recipient = $this->getSuperAdminMfaRecipient();
+        $nowTs = time();
+
+        try {
+            \Illuminate\Support\Facades\Mail::to($recipient)->send(
+                new \App\Mail\SuperAdminMfaCodeMail(
+                    $code,
+                    $user->email,
+                    $user->name,
+                    (string) $request->ip(),
+                    (int) ceil(self::MFA_TTL_SECONDS / 60)
+                )
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Super Admin MFA email delivery failed', [
+                'user_id' => $user->id,
+                'recipient' => $recipient,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Unable to send the Super Admin MFA verification code via email. Please verify your SMTP mail settings and try again.',
+            ], 503);
+        }
+
+        RateLimiter::hit($sendThrottleKey, 600);
+
+        \Illuminate\Support\Facades\Cache::put(
+            "super_admin_mfa:{$mfaToken}",
+            [
+                'user_id' => $user->id,
+                'code_hash' => Hash::make($code),
+                'ip' => (string) $request->ip(),
+                'ua_hash' => hash('sha256', (string) $request->userAgent()),
+                'attempts' => 0,
+                'resend_count' => 0,
+                'last_sent_at' => $nowTs,
+                'expires_at' => $nowTs + self::MFA_TTL_SECONDS,
+                'multi_role_selected' => $multiRoleSelected,
+            ],
+            now()->addSeconds(self::MFA_TTL_SECONDS)
+        );
+
+        AuditLog::log('SUPER_ADMIN_MFA_SENT', 'users', $user->id, null, [
+            'account_email' => $user->email,
+            'mfa_recipient' => $recipient,
+            'ip' => $request->ip(),
+        ], $user->id);
+
+        return response()->json([
+            'requires_mfa' => true,
+            'mfa_token' => $mfaToken,
+            'masked_email' => $this->maskEmailAddress($recipient),
+            'expires_in' => self::MFA_TTL_SECONDS,
+            'resend_cooldown' => self::MFA_RESEND_COOLDOWN_SECONDS,
+            'message' => 'A 6-digit security verification code has been sent to the designated Super Admin email.',
+        ]);
+    }
+
+    public function verifySuperAdminMfa(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'mfa_token' => ['required', 'string', 'min:32', 'max:128'],
+            'code' => ['required', 'string', 'regex:/^\d{6}$/'],
+        ], [
+            'code.regex' => 'Please enter a valid 6-digit numeric verification code.',
+        ]);
+
+        $token = $validated['mfa_token'];
+        $cacheKey = "super_admin_mfa:{$token}";
+        $cached = \Illuminate\Support\Facades\Cache::get($cacheKey);
+
+        if (!$cached || empty($cached['user_id']) || time() > (int) ($cached['expires_at'] ?? 0)) {
+            \Illuminate\Support\Facades\Cache::forget($cacheKey);
+            return response()->json([
+                'message' => 'Your MFA verification session has expired. Please sign in again to request a new code.',
+            ], 422);
+        }
+
+        $currentUaHash = hash('sha256', (string) $request->userAgent());
+        if (!hash_equals((string) ($cached['ua_hash'] ?? ''), $currentUaHash)) {
+            \Illuminate\Support\Facades\Cache::forget($cacheKey);
+            \App\Services\SecurityThreatService::recordThreat(
+                $request,
+                'SESSION_HIJACK',
+                'critical',
+                'Super Admin MFA token device/browser mismatch detected and invalidated.',
+                ['is_red_alert' => true, 'status_code' => 403]
+            );
+            return response()->json([
+                'message' => 'Security mismatch detected. Your MFA session has been invalidated. Please sign in again.',
+            ], 403);
+        }
+
+        $attempts = (int) ($cached['attempts'] ?? 0);
+        if ($attempts >= self::MFA_MAX_ATTEMPTS) {
+            \Illuminate\Support\Facades\Cache::forget($cacheKey);
+            return response()->json([
+                'message' => 'Maximum verification attempts exceeded. Please sign in again to receive a new code.',
+            ], 429);
+        }
+
+        $user = User::find($cached['user_id']);
+        if (!$user || !$user->is_active || !$user->isSuperAdmin()) {
+            \Illuminate\Support\Facades\Cache::forget($cacheKey);
+            return response()->json([
+                'message' => 'Super Administrator account is unavailable or inactive.',
+            ], 403);
+        }
+
+        if (!Hash::check($validated['code'], (string) ($cached['code_hash'] ?? ''))) {
+            $attempts++;
+            $remaining = max(0, self::MFA_MAX_ATTEMPTS - $attempts);
+
+            AuditLog::log('SUPER_ADMIN_MFA_FAILED', 'users', $user->id, null, [
+                'email' => $user->email,
+                'attempts' => $attempts,
+                'ip' => $request->ip(),
+            ], $user->id);
+
+            if ($remaining <= 0) {
+                \Illuminate\Support\Facades\Cache::forget($cacheKey);
+                \App\Services\SecurityThreatService::recordThreat(
+                    $request,
+                    'BRUTE_FORCE',
+                    'critical',
+                    "Super Admin MFA verification locked after {$attempts} invalid code attempts.",
+                    [
+                        'is_red_alert' => true,
+                        'user_email' => $user->email,
+                        'status_code' => 429,
+                    ]
+                );
+                return response()->json([
+                    'message' => 'Too many incorrect verification codes. For security, this MFA session has been cancelled. Please sign in again.',
+                    'attempts_left' => 0,
+                    'expired' => true,
+                ], 429);
+            }
+
+            $cached['attempts'] = $attempts;
+            $ttlRemaining = max(1, (int) $cached['expires_at'] - time());
+            \Illuminate\Support\Facades\Cache::put($cacheKey, $cached, now()->addSeconds($ttlRemaining));
+
+            return response()->json([
+                'message' => "Invalid verification code. ({$remaining} attempt" . ($remaining === 1 ? '' : 's') . " remaining)",
+                'attempts_left' => $remaining,
+            ], 422);
+        }
+
+        \Illuminate\Support\Facades\Cache::forget($cacheKey);
+
+        Auth::login($user);
+        $request->session()->regenerate();
+        $request->session()->put('_client_fingerprint', $currentUaHash);
+        $request->session()->put('_client_user_agent_preview', Str::limit((string) $request->userAgent(), 150));
+
+        AuditLog::log('SUPER_ADMIN_MFA_VERIFIED', 'users', $user->id, null, [
+            'email' => $user->email,
+            'mfa_recipient' => $this->getSuperAdminMfaRecipient(),
+            'ip' => $request->ip(),
+        ], $user->id);
+
+        AuditLog::log('USER_LOGIN', 'users', $user->id, null, [
+            'email' => $user->email,
+            'role' => $user->role,
+            'mfa_verified' => true,
+            'multi_role_selected' => !empty($cached['multi_role_selected']),
+        ], $user->id);
+
+        return response()->json([
+            'message' => 'Super Admin MFA verified. Login successful.',
+            'user' => $user->fresh()->load(['office', 'accountCodes', 'pnpkiSignature']),
+            'csrf_token' => csrf_token(),
+        ]);
+    }
+
+    public function resendSuperAdminMfa(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'mfa_token' => ['required', 'string', 'min:32', 'max:128'],
+        ]);
+
+        $token = $validated['mfa_token'];
+        $cacheKey = "super_admin_mfa:{$token}";
+        $cached = \Illuminate\Support\Facades\Cache::get($cacheKey);
+
+        if (!$cached || empty($cached['user_id'])) {
+            return response()->json([
+                'message' => 'Your MFA session has expired. Please sign in again.',
+            ], 422);
+        }
+
+        $currentUaHash = hash('sha256', (string) $request->userAgent());
+        if (!hash_equals((string) ($cached['ua_hash'] ?? ''), $currentUaHash)) {
+            \Illuminate\Support\Facades\Cache::forget($cacheKey);
+            return response()->json([
+                'message' => 'Security mismatch detected. Please sign in again.',
+            ], 403);
+        }
+
+        $resendCount = (int) ($cached['resend_count'] ?? 0);
+        if ($resendCount >= self::MFA_MAX_RESENDS) {
+            return response()->json([
+                'message' => 'Maximum resend limit reached for this session. Please sign in again.',
+            ], 429);
+        }
+
+        $elapsed = time() - (int) ($cached['last_sent_at'] ?? 0);
+        if ($elapsed < self::MFA_RESEND_COOLDOWN_SECONDS) {
+            $wait = self::MFA_RESEND_COOLDOWN_SECONDS - $elapsed;
+            return response()->json([
+                'message' => "Please wait {$wait} seconds before requesting another verification code.",
+                'retry_after' => $wait,
+            ], 429);
+        }
+
+        $user = User::find($cached['user_id']);
+        if (!$user || !$user->is_active || !$user->isSuperAdmin()) {
+            \Illuminate\Support\Facades\Cache::forget($cacheKey);
+            return response()->json([
+                'message' => 'Super Administrator account is unavailable or inactive.',
+            ], 403);
+        }
+
+        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $recipient = $this->getSuperAdminMfaRecipient();
+        $nowTs = time();
+
+        try {
+            \Illuminate\Support\Facades\Mail::to($recipient)->send(
+                new \App\Mail\SuperAdminMfaCodeMail(
+                    $code,
+                    $user->email,
+                    $user->name,
+                    (string) $request->ip(),
+                    (int) ceil(self::MFA_TTL_SECONDS / 60)
+                )
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Super Admin MFA resend failed', [
+                'user_id' => $user->id,
+                'recipient' => $recipient,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'message' => 'Unable to resend the verification code via email. Please try again shortly.',
+            ], 503);
+        }
+
+        $cached['code_hash'] = Hash::make($code);
+        $cached['attempts'] = 0;
+        $cached['resend_count'] = $resendCount + 1;
+        $cached['last_sent_at'] = $nowTs;
+        $cached['expires_at'] = $nowTs + self::MFA_TTL_SECONDS;
+
+        \Illuminate\Support\Facades\Cache::put($cacheKey, $cached, now()->addSeconds(self::MFA_TTL_SECONDS));
+
+        AuditLog::log('SUPER_ADMIN_MFA_RESENT', 'users', $user->id, null, [
+            'account_email' => $user->email,
+            'mfa_recipient' => $recipient,
+            'resend_count' => $cached['resend_count'],
+            'ip' => $request->ip(),
+        ], $user->id);
+
+        return response()->json([
+            'message' => 'A new 6-digit verification code has been sent.',
+            'masked_email' => $this->maskEmailAddress($recipient),
+            'expires_in' => self::MFA_TTL_SECONDS,
+            'resend_cooldown' => self::MFA_RESEND_COOLDOWN_SECONDS,
+        ]);
+    }
 
     protected function verifyTurnstile(Request $request): ?JsonResponse
     {
@@ -117,6 +427,10 @@ class AuthController extends Controller
             if ($user->role !== $selectedRole) {
                 $user->role = $selectedRole;
                 $user->save();
+            }
+
+            if ($user->isSuperAdmin()) {
+                return $this->initiateSuperAdminMfa($request, $user, true);
             }
 
             Auth::login($user);
@@ -248,6 +562,10 @@ class AuthController extends Controller
                 $user->role = $requestedRole;
                 $user->save();
             }
+        }
+
+        if ($user->isSuperAdmin()) {
+            return $this->initiateSuperAdminMfa($request, $user, false);
         }
 
         Auth::login($user);

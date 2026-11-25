@@ -157,6 +157,154 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
     const [chosenLoginRole, setChosenLoginRole] = useState('');
     const [selectingRoleLoading, setSelectingRoleLoading] = useState(false);
 
+    const [mfaModal, setMfaModal] = useState(null);
+    const [mfaDigits, setMfaDigits] = useState(['', '', '', '', '', '']);
+    const [mfaLoading, setMfaLoading] = useState(false);
+    const [mfaResending, setMfaResending] = useState(false);
+    const [mfaError, setMfaError] = useState('');
+    const [mfaInfo, setMfaInfo] = useState('');
+    const [mfaExpiresLeft, setMfaExpiresLeft] = useState(0);
+    const [mfaResendCooldown, setMfaResendCooldown] = useState(0);
+    const mfaInputRefs = useRef([]);
+
+    useEffect(() => {
+        if (!mfaModal) return;
+        const timer = setInterval(() => {
+            setMfaExpiresLeft((prev) => (prev > 0 ? prev - 1 : 0));
+            setMfaResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [mfaModal]);
+
+    const openMfaChallenge = (data) => {
+        setMfaModal({
+            token: data.mfa_token,
+            maskedEmail: data.masked_email || 'sys***16@gmail.com',
+        });
+        setMfaDigits(['', '', '', '', '', '']);
+        setMfaError('');
+        setMfaInfo(data.message || 'Enter the 6-digit verification code sent to the designated Super Admin email.');
+        setMfaExpiresLeft(Number(data.expires_in || 300));
+        setMfaResendCooldown(Number(data.resend_cooldown || 60));
+        setTimeout(() => mfaInputRefs.current[0]?.focus(), 80);
+    };
+
+    const closeMfaModal = () => {
+        if (mfaLoading) return;
+        setMfaModal(null);
+        setMfaDigits(['', '', '', '', '', '']);
+        setMfaError('');
+        setMfaInfo('');
+        setLoginTurnstileReset((prev) => prev + 1);
+    };
+
+    const handleMfaDigitChange = (idx, rawVal) => {
+        const cleaned = String(rawVal || '').replace(/\D/g, '');
+        if (!cleaned) {
+            setMfaDigits((prev) => {
+                const next = [...prev];
+                next[idx] = '';
+                return next;
+            });
+            return;
+        }
+        if (cleaned.length > 1) {
+            const chars = cleaned.slice(0, 6).split('');
+            setMfaDigits((prev) => {
+                const next = [...prev];
+                chars.forEach((ch, offset) => {
+                    if (idx + offset < 6) next[idx + offset] = ch;
+                });
+                return next;
+            });
+            const nextFocus = Math.min(5, idx + chars.length);
+            mfaInputRefs.current[nextFocus]?.focus();
+            return;
+        }
+        setMfaDigits((prev) => {
+            const next = [...prev];
+            next[idx] = cleaned;
+            return next;
+        });
+        if (idx < 5) {
+            mfaInputRefs.current[idx + 1]?.focus();
+        }
+    };
+
+    const handleMfaKeyDown = (idx, e) => {
+        if (e.key === 'Backspace' && !mfaDigits[idx] && idx > 0) {
+            mfaInputRefs.current[idx - 1]?.focus();
+        }
+    };
+
+    const handleMfaPaste = (e) => {
+        const pasted = (e.clipboardData?.getData('text') || '').replace(/\D/g, '').slice(0, 6);
+        if (!pasted) return;
+        e.preventDefault();
+        const next = ['', '', '', '', '', ''];
+        pasted.split('').forEach((ch, i) => {
+            next[i] = ch;
+        });
+        setMfaDigits(next);
+        const focusIdx = Math.min(5, pasted.length);
+        mfaInputRefs.current[focusIdx]?.focus();
+    };
+
+    const handleVerifyMfa = async (e) => {
+        e.preventDefault();
+        if (!mfaModal?.token || mfaLoading) return;
+        const code = mfaDigits.join('');
+        if (code.length !== 6) {
+            setMfaError('Please enter all 6 digits of the verification code.');
+            return;
+        }
+        setMfaLoading(true);
+        setMfaError('');
+        try {
+            const res = await authService.verifyMfa({
+                mfa_token: mfaModal.token,
+                code,
+            });
+            setMfaModal(null);
+            setMfaDigits(['', '', '', '', '', '']);
+            onLoginSuccess(res.data.user);
+        } catch (err) {
+            const msg = err.response?.data?.message || 'Invalid or expired verification code.';
+            setMfaError(msg);
+            setMfaDigits(['', '', '', '', '', '']);
+            setTimeout(() => mfaInputRefs.current[0]?.focus(), 50);
+            if (err.response?.data?.expired || err.response?.status === 429 || err.response?.status === 403) {
+                setError(msg);
+                setMfaModal(null);
+                setLoginTurnstileReset((prev) => prev + 1);
+            }
+        } finally {
+            setMfaLoading(false);
+        }
+    };
+
+    const handleResendMfa = async () => {
+        if (!mfaModal?.token || mfaResending || mfaResendCooldown > 0) return;
+        setMfaResending(true);
+        setMfaError('');
+        try {
+            const res = await authService.resendMfa({ mfa_token: mfaModal.token });
+            setMfaInfo(res.data?.message || 'A new 6-digit verification code has been sent.');
+            setMfaDigits(['', '', '', '', '', '']);
+            setMfaExpiresLeft(Number(res.data?.expires_in || 300));
+            setMfaResendCooldown(Number(res.data?.resend_cooldown || 60));
+            setTimeout(() => mfaInputRefs.current[0]?.focus(), 50);
+        } catch (err) {
+            const msg = err.response?.data?.message || 'Unable to resend verification code.';
+            setMfaError(msg);
+            if (err.response?.data?.retry_after) {
+                setMfaResendCooldown(Number(err.response.data.retry_after));
+            }
+        } finally {
+            setMfaResending(false);
+        }
+    };
+
     useEffect(() => {
         if (!isRolesDropdownOpen) return;
         const handleOutside = (e) => {
@@ -379,6 +527,10 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                 password,
                 cf_turnstile_response: loginTurnstileToken,
             });
+            if (res.data?.requires_mfa && res.data?.mfa_token) {
+                openMfaChallenge(res.data);
+                return;
+            }
             if (res.data?.requires_role_selection && Array.isArray(res.data?.available_roles)) {
                 setRoleSelectionModal({
                     token: res.data.role_selection_token,
@@ -415,6 +567,10 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
             });
             setRoleSelectionModal(null);
             setChosenLoginRole('');
+            if (res.data?.requires_mfa && res.data?.mfa_token) {
+                openMfaChallenge(res.data);
+                return;
+            }
             onLoginSuccess(res.data.user);
         } catch (err) {
             const serverMsg = err.response?.data?.message || 'Unable to sign in with the selected role. Please sign in again.';
@@ -2165,6 +2321,133 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                 )}
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {mfaModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4">
+                    <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                        <div className="bg-gradient-to-r from-slate-950 via-blue-950 to-indigo-950 px-5 py-4 text-white flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
+                                    <ShieldCheck className="w-5 h-5 text-amber-300" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-black tracking-tight uppercase">
+                                        Super Admin MFA Verification
+                                    </h3>
+                                    <p className="text-[11px] text-blue-200 mt-0.5">
+                                        Code sent to <span className="font-mono font-bold text-white">{mfaModal.maskedEmail}</span>
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={closeMfaModal}
+                                disabled={mfaLoading}
+                                className="p-1 text-slate-300 hover:text-white cursor-pointer"
+                                aria-label="Close MFA modal"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleVerifyMfa} className="p-5 space-y-4">
+                            {mfaInfo && !mfaError && (
+                                <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-xs font-medium leading-relaxed">
+                                    {mfaInfo}
+                                </div>
+                            )}
+
+                            {mfaError && (
+                                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-start gap-2">
+                                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                                    <span>{mfaError}</span>
+                                </div>
+                            )}
+
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label
+                                        htmlFor="super-admin-mfa-digit-0"
+                                        className="text-[11px] font-bold uppercase tracking-wider text-slate-700"
+                                    >
+                                        6-Digit Verification Code
+                                    </label>
+                                    <span className={`text-[11px] font-mono font-bold ${mfaExpiresLeft <= 60 ? 'text-rose-600' : 'text-slate-500'}`}>
+                                        {mfaExpiresLeft > 0
+                                            ? `Expires in ${Math.floor(mfaExpiresLeft / 60)}:${String(mfaExpiresLeft % 60).padStart(2, '0')}`
+                                            : 'Code Expired'}
+                                    </span>
+                                </div>
+
+                                <div className="grid grid-cols-6 gap-2" onPaste={handleMfaPaste}>
+                                    {mfaDigits.map((digit, idx) => (
+                                        <input
+                                            key={idx}
+                                            ref={(el) => { mfaInputRefs.current[idx] = el; }}
+                                            id={`super-admin-mfa-digit-${idx}`}
+                                            name={`mfa_digit_${idx}`}
+                                            type="text"
+                                            inputMode="numeric"
+                                            autoComplete={idx === 0 ? 'one-time-code' : 'off'}
+                                            maxLength={6}
+                                            value={digit}
+                                            disabled={mfaLoading || mfaExpiresLeft === 0}
+                                            onChange={(e) => handleMfaDigitChange(idx, e.target.value)}
+                                            onKeyDown={(e) => handleMfaKeyDown(idx, e)}
+                                            aria-label={`Verification code digit ${idx + 1}`}
+                                            className="w-full h-12 text-center text-lg font-mono font-black text-slate-900 bg-slate-50 focus:bg-white border-2 border-slate-300 focus:border-blue-600 rounded-xl focus:ring-2 focus:ring-blue-600/20 outline-none transition disabled:opacity-50"
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-between text-xs pt-1">
+                                <span className="text-slate-500">Didn&apos;t receive the email?</span>
+                                <button
+                                    type="button"
+                                    onClick={handleResendMfa}
+                                    disabled={mfaResending || mfaResendCooldown > 0 || mfaLoading}
+                                    className="font-bold text-blue-600 hover:text-blue-800 disabled:text-slate-400 cursor-pointer disabled:cursor-not-allowed transition"
+                                >
+                                    {mfaResending
+                                        ? 'Sending...'
+                                        : mfaResendCooldown > 0
+                                            ? `Resend in ${mfaResendCooldown}s`
+                                            : 'Resend Code'}
+                                </button>
+                            </div>
+
+                            <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={closeMfaModal}
+                                    disabled={mfaLoading}
+                                    className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={mfaLoading || mfaExpiresLeft === 0 || mfaDigits.join('').length !== 6}
+                                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold uppercase tracking-wider shadow-md transition cursor-pointer disabled:opacity-50"
+                                >
+                                    {mfaLoading ? (
+                                        <>
+                                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                            Verifying...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <ShieldCheck className="w-4 h-4" />
+                                            <span>Verify &amp; Enter Dashboard</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}
