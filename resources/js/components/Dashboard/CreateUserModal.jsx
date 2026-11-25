@@ -36,13 +36,8 @@ export const CreateUserModal = ({
         signature: '',
     });
 
-    const [availableSystems, setAvailableSystems] = useState([
-        { id: 1, name: 'E-Procurement PPMP & APP System', link_url: '/eprocrementppmpapp', badge: 'Primary System', description: 'PPMP preparation, annual procurement planning, reviews, and BAC approvals.' },
-        { id: 2, name: 'OPPMO Real-Time Monitoring System', link_url: '/monitoringsystem', badge: 'Live Monitoring', description: 'Milestone tracking, and purchase request timelines.' },
-        { id: 3, name: 'Procurement Information Management System (PIMS)', link_url: '/pims', badge: 'PIMS Portal', description: 'Comprehensive procurement surveillance, PR generation & tracking.' },
-        { id: 4, name: 'Supplier Evaluation System', link_url: '/supplierevaluation', badge: 'Supplier Rating', description: 'Province-wide Supplier Performance Evaluation and Purchase Order Management.' },
-    ]);
-    const [accessibleSystems, setAccessibleSystems] = useState(['/eprocrementppmpapp', '/pims']);
+    const [availableSystems, setAvailableSystems] = useState([]);
+    const [accessibleSystems, setAccessibleSystems] = useState([]);
     const [selectedRoles, setSelectedRoles] = useState(['end_user']);
     const [assignedAccountCodeIds, setAssignedAccountCodeIds] = useState([]);
 
@@ -64,23 +59,24 @@ export const CreateUserModal = ({
         const fetchSystems = async () => {
             try {
                 const res = await portalSystemService.getPublic();
-                if (res.data && res.data.length > 0) {
-                    setAvailableSystems(prev => {
-                        const merged = [...prev];
-                        res.data.forEach((sys) => {
-                            const idx = merged.findIndex((m) => m.link_url === sys.link_url);
-                            if (idx >= 0) {
-                                merged[idx] = { ...merged[idx], ...sys };
-                            } else {
-                                merged.push(sys);
-                            }
-                        });
-                        return merged;
-                    });
-                }
-            } catch (_) {}
+                const list = Array.isArray(res.data) ? res.data : [];
+                const activeList = list.filter((sys) => !sys.status || sys.status === 'active');
+                setAvailableSystems(activeList);
+                const validUrls = new Set(activeList.map((s) => s.link_url));
+                setAccessibleSystems((prev) => {
+                    const pruned = prev.filter((url) => validUrls.has(url));
+                    if (pruned.length > 0) return pruned;
+                    return validUrls.has('/eprocrementppmpapp')
+                        ? ['/eprocrementppmpapp']
+                        : activeList.slice(0, 1).map((s) => s.link_url);
+                });
+            } catch (_) {
+                setAvailableSystems([]);
+            }
         };
         fetchSystems();
+        window.addEventListener('portal-systems:updated', fetchSystems);
+        return () => window.removeEventListener('portal-systems:updated', fetchSystems);
     }, [isOpen]);
 
     if (!isOpen) return null;

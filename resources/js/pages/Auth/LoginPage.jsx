@@ -144,36 +144,8 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
     const [offices, setOffices] = useState([]);
     const [loadingOffices, setLoadingOffices] = useState(false);
 
-    const [availableSystems, setAvailableSystems] = useState([
-        {
-            id: 1,
-            name: 'E-Procurement PPMP & APP System',
-            link_url: '/eprocrementppmpapp',
-            badge: 'Primary System',
-            description: 'Automated preparation, review lifecycle, e-signature validation, and consolidation of Project Procurement Management Plans (PPMP) and Annual Procurement Plans (APP).'
-        },
-        {
-            id: 2,
-            name: 'OPPMO Real-Time Monitoring System',
-            link_url: '/monitoringsystem',
-            badge: 'Live Monitoring',
-            description: 'Procurement implementation monitoring, milestone stage tracking, PIMS automatic publishing, and purchase request timelines across provincial offices.'
-        },
-        {
-            id: 3,
-            name: 'Procurement Information Management System (PIMS)',
-            link_url: '/pims',
-            badge: 'PIMS Portal',
-            description: 'Comprehensive procurement surveillance, Purchase Request (PR) generation, and multi-stage evaluation across provincial offices.'
-        },
-        {
-            id: 4,
-            name: 'Supplier Evaluation System',
-            link_url: '/supplierevaluation',
-            badge: 'Supplier Rating',
-            description: 'Official Supplier Performance Assessment & Rating System across Price, Quality, Customer Care, and Delivery Fulfillment with digital authorization.'
-        },
-    ]);
+    const [availableSystems, setAvailableSystems] = useState([]);
+    const [loadingSystems, setLoadingSystems] = useState(true);
     const [selectedSystems, setSelectedSystems] = useState([]);
     const [isSystemsDropdownOpen, setIsSystemsDropdownOpen] = useState(false);
     const systemsDropdownRef = useRef(null);
@@ -312,27 +284,25 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
         fetchOffices();
 
         const fetchSystems = async () => {
+            setLoadingSystems(true);
             try {
                 const res = await portalSystemService.getPublic();
-                if (res.data && res.data.length > 0) {
-                    setAvailableSystems(prev => {
-                        const merged = [...prev];
-                        res.data.forEach((sys) => {
-                            const idx = merged.findIndex((m) => m.link_url === sys.link_url);
-                            if (idx >= 0) {
-                                merged[idx] = { ...merged[idx], ...sys };
-                            } else {
-                                merged.push(sys);
-                            }
-                        });
-                        return merged;
-                    });
-                }
+                const list = Array.isArray(res.data) ? res.data : [];
+                const activeList = list.filter((sys) => !sys.status || sys.status === 'active');
+                setAvailableSystems(activeList);
+                const validUrls = new Set(activeList.map((s) => s.link_url));
+                setSelectedSystems((prev) => prev.filter((url) => validUrls.has(url)));
             } catch (err) {
-                console.warn('Using default systems on login/register', err);
+                console.error('Failed to load portal systems for registration', err);
+                setAvailableSystems([]);
+            } finally {
+                setLoadingSystems(false);
             }
         };
         fetchSystems();
+
+        window.addEventListener('portal-systems:updated', fetchSystems);
+        return () => window.removeEventListener('portal-systems:updated', fetchSystems);
     }, []);
 
     useEffect(() => {
@@ -1376,7 +1346,15 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                                                 </div>
 
                                                 <div className="max-h-56 overflow-y-auto space-y-1.5 custom-scrollbar pr-1">
-                                                    {availableSystems.map((sys) => {
+                                                    {loadingSystems ? (
+                                                        <div className="p-4 text-center text-xs text-slate-400">
+                                                            Loading available systems...
+                                                        </div>
+                                                    ) : availableSystems.length === 0 ? (
+                                                        <div className="p-4 text-center text-xs text-slate-400">
+                                                            No active digital systems available.
+                                                        </div>
+                                                    ) : availableSystems.map((sys) => {
                                                         const isChecked = selectedSystems.includes(sys.link_url);
                                                         return (
                                                             <label

@@ -193,6 +193,8 @@ export const PortalSystemsManagement = () => {
             await portalSystemService.delete(id);
             setFeedback({ type: 'success', text: `System "${name}" deleted.` });
             await fetchSystems();
+            window.dispatchEvent(new CustomEvent('portal-systems:updated'));
+            window.dispatchEvent(new CustomEvent('pims:status_changed'));
         } catch (err) {
             setFeedback({ type: 'error', text: err.response?.data?.message || 'Failed to delete system.' });
         } finally {

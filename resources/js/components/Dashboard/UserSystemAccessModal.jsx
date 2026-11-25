@@ -2,44 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { X, Layers, Check, Shield, AlertCircle, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
 import { userService, portalSystemService } from '../../services/api';
 
-const DEFAULT_SYSTEMS = [
-    {
-        id: 1,
-        name: 'E-Procurement PPMP & APP System',
-        link_url: '/eprocrementppmpapp',
-        badge: 'Primary System',
-        description: 'Automated preparation, review lifecycle, e-signature validation, and consolidation of Project Procurement Management Plans (PPMP) and Annual Procurement Plans (APP).',
-    },
-    {
-        id: 2,
-        name: 'OPPMO Real-Time Monitoring System',
-        link_url: '/monitoringsystem',
-        badge: 'Live Monitoring',
-        description: 'Procurement implementation monitoring, milestone stage tracking, PIMS automatic publishing, and purchase request timelines across provincial offices.',
-    },
-    {
-        id: 3,
-        name: 'Procurement Information Management System (PIMS)',
-        link_url: '/pims',
-        badge: 'PIMS Portal',
-        description: 'Comprehensive procurement surveillance, Purchase Request (PR) generation, and multi-stage evaluation across provincial offices.',
-    },
-    {
-        id: 4,
-        name: 'Supplier Evaluation System',
-        link_url: '/supplierevaluation',
-        badge: 'Supplier Rating',
-        description: 'Official Supplier Performance Assessment & Rating System across Price, Quality, Customer Care, and Delivery Fulfillment with digital authorization.',
-    },
-];
-
 export const UserSystemAccessModal = ({
     isOpen,
     onClose,
     targetUser,
     onSuccess,
 }) => {
-    const [systems, setSystems] = useState(DEFAULT_SYSTEMS);
+    const [systems, setSystems] = useState([]);
     const [selectedUrls, setSelectedUrls] = useState([]);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -54,28 +23,24 @@ export const UserSystemAccessModal = ({
             try {
                 const res = await portalSystemService.getPublic();
                 if (isMounted) {
-                    const merged = [...DEFAULT_SYSTEMS];
-                    if (Array.isArray(res.data) && res.data.length > 0) {
-                        res.data.forEach((sys) => {
-                            const existingIdx = merged.findIndex((m) => m.link_url === sys.link_url);
-                            if (existingIdx >= 0) {
-                                merged[existingIdx] = { ...merged[existingIdx], ...sys };
-                            } else {
-                                merged.push(sys);
-                            }
-                        });
-                    }
-                    setSystems(merged);
+                    const list = Array.isArray(res.data) ? res.data : [];
+                    const activeList = list.filter((sys) => !sys.status || sys.status === 'active');
+                    setSystems(activeList);
                 }
             } catch (err) {
-                console.warn('Failed to fetch public systems for access modal, using defaults', err);
+                console.warn('Failed to fetch public systems for access modal', err);
+                if (isMounted) setSystems([]);
             } finally {
                 if (isMounted) setLoading(false);
             }
         };
 
         fetchSystems();
-        return () => { isMounted = false; };
+        window.addEventListener('portal-systems:updated', fetchSystems);
+        return () => {
+            isMounted = false;
+            window.removeEventListener('portal-systems:updated', fetchSystems);
+        };
     }, [isOpen]);
 
     useEffect(() => {
