@@ -75,18 +75,6 @@ const DEFAULT_PORTAL_SYSTEMS = [
         sort_order: 3,
         is_external: false,
     },
-    {
-        id: 5,
-        name: 'Procurement Information Management System (PIMS)',
-        description: 'Comprehensive procurement surveillance, Purchase Request (PR) generation, and multi-stage evaluation across provincial offices.',
-        link_url: '/pims',
-        badge: 'PIMS Portal',
-        icon: 'Layers',
-        color: 'purple',
-        status: 'active',
-        sort_order: 4,
-        is_external: false,
-    },
 ];
 
 export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitoring, onOpenLogin, onOpenPrivacy, onLaunchSystem, user }) => {
