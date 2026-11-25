@@ -368,7 +368,7 @@ class AuthController extends Controller
             $signatureType = 'optional';
         }
 
-        $allowedRegistrationRoles = ['end_user', 'head', 'budget_officer', 'oppmo', 'twg', 'authorized_staff', 'pacco', 'pgso', 'presentative_staff'];
+        $allowedRegistrationRoles = ['end_user', 'head', 'budget_officer', 'oppmo', 'twg', 'authorized_staff', 'pacco', 'admin', 'pgso', 'presentative_staff'];
 
         $rawRoles = $request->input('roles');
         if (is_string($rawRoles)) {

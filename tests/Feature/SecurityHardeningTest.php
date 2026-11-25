@@ -222,12 +222,12 @@ class SecurityHardeningTest extends TestCase
         $adminRes->assertStatus(200);
     }
 
-    public function test_registration_rejects_admin_role_escalation(): void
+    public function test_registration_rejects_super_admin_role_escalation(): void
     {
         $res = $this->postJson('/api/register', [
-            'name' => 'Hacker Admin Attempt',
+            'name' => 'Hacker Super Admin Attempt',
             'email' => 'hacker@example.test',
-            'role' => 'admin',
+            'role' => 'super_admin',
             'phone_number' => '+639000000000',
             'address' => 'Unknown',
             'password' => 'password123',
@@ -239,5 +239,30 @@ class SecurityHardeningTest extends TestCase
 
         $res->assertStatus(422);
         $res->assertJsonValidationErrors(['role']);
+    }
+
+    public function test_registration_allows_admin_role_as_pending_inactive_account(): void
+    {
+        $res = $this->postJson('/api/register', [
+            'name' => 'Pending Administrator',
+            'email' => 'pending-admin@example.test',
+            'role' => 'admin',
+            'roles' => ['admin'],
+            'phone_number' => '+639000000001',
+            'address' => 'Digos City',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'office_id' => $this->officeA->id,
+            'designation' => 'Administrator',
+            'signature' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        ]);
+
+        $res->assertStatus(201);
+        $this->assertDatabaseHas('users', [
+            'email' => 'pending-admin@example.test',
+            'role' => 'admin',
+            'is_active' => false,
+            'approval_status' => 'pending',
+        ]);
     }
 }
