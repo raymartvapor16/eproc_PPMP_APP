@@ -2477,7 +2477,18 @@ export const PPMPDetailPage = ({
                             </div>
 
                             <div className={`grid grid-cols-1 ${isAttachmentOnly ? 'sm:grid-cols-1' : `sm:grid-cols-2 ${isTwgSkipped ? 'xl:grid-cols-2' : 'xl:grid-cols-3'}`} gap-2.5 text-xs`}>
+                                {(() => {
+                                    const sigs = Array.isArray(ppmp.signatures) ? ppmp.signatures : [];
+                                    const twgSigRec = sigs.find((s) => s.role === 'twg');
+                                    const budgetSigRec = sigs.find((s) => s.role === (isTrustFund ? 'pacco' : 'budget_officer')) || sigs.find((s) => s.role === 'budget_officer' || s.role === 'pacco');
+                                    const oppmoSigRec = sigs.find((s) => s.role === 'oppmo');
 
+                                    const resolvedTwgUser = ppmp.twg_reviewer || ppmp.twgReviewer || twgSigRec?.user || (twgSigRec?.signer_name ? { id: twgSigRec.user_id, name: twgSigRec.signer_name, designation: twgSigRec.signer_designation } : null);
+                                    const resolvedBudgetUser = ppmp.budget_reviewer || ppmp.budgetReviewer || budgetSigRec?.user || (budgetSigRec?.signer_name ? { id: budgetSigRec.user_id, name: budgetSigRec.signer_name, designation: budgetSigRec.signer_designation } : null);
+                                    const resolvedOppmoUser = ppmp.oppmo_reviewer || ppmp.oppmoReviewer || oppmoSigRec?.user || (oppmoSigRec?.signer_name ? { id: oppmoSigRec.user_id, name: oppmoSigRec.signer_name, designation: oppmoSigRec.signer_designation } : null);
+
+                                    return (
+                                        <>
                                 {!isTwgSkipped && (
                                 <div className={`p-3 rounded-xl border transition flex items-start gap-2.5 overflow-hidden min-w-0 ${
                                     ppmp.status === 'TWG_REVIEW'
@@ -2487,10 +2498,10 @@ export const PPMPDetailPage = ({
                                             : 'bg-slate-50/70 border-slate-200'
                                 }`}>
                                     <UserAvatar
-                                        user={ppmp.twg_reviewer || ppmp.twgReviewer}
-                                        userId={ppmp.twg_reviewer_id}
-                                        name={ppmp.twg_reviewer?.name || ppmp.twgReviewer?.name || 'TWG'}
-                                        designation={ppmp.twg_reviewer?.designation || ppmp.twgReviewer?.designation || 'BAC-TWG'}
+                                        user={resolvedTwgUser}
+                                        userId={resolvedTwgUser?.encrypted_id}
+                                        name={resolvedTwgUser?.name || 'TWG'}
+                                        designation={resolvedTwgUser?.designation || 'BAC-TWG'}
                                         role="twg"
                                         size="md"
                                         canExpand={true}
@@ -2513,12 +2524,12 @@ export const PPMPDetailPage = ({
                                             ) : null}
                                         </div>
                                         <span className="font-bold text-slate-900 truncate block">
-                                            {ppmp.twg_reviewer?.name || ppmp.twgReviewer?.name || (
-                                                <span className="text-slate-400 italic">Not yet designated</span>
+                                            {resolvedTwgUser?.name || (
+                                                <span className="text-slate-500 italic">All BAC-TWG Reviewers (Distributed)</span>
                                             )}
                                         </span>
                                         <span className="text-[10px] text-slate-500 block truncate mt-0.5">
-                                            {ppmp.twg_reviewer?.designation || ppmp.twgReviewer?.designation || 'Technical Working Group'}
+                                            {resolvedTwgUser?.designation || 'Technical Working Group'}
                                         </span>
                                     </div>
                                 </div>
@@ -2533,10 +2544,10 @@ export const PPMPDetailPage = ({
                                             : 'bg-slate-50/70 border-slate-200'
                                 }`}>
                                     <UserAvatar
-                                        user={ppmp.budget_reviewer || ppmp.budgetReviewer}
-                                        userId={ppmp.budget_reviewer_id}
-                                        name={ppmp.budget_reviewer?.name || ppmp.budgetReviewer?.name || (isTrustFund ? 'PACCO' : 'Budget')}
-                                        designation={ppmp.budget_reviewer?.designation || ppmp.budgetReviewer?.designation || (isTrustFund ? 'Provincial Accountant' : 'Provincial Budget Officer')}
+                                        user={resolvedBudgetUser}
+                                        userId={resolvedBudgetUser?.encrypted_id}
+                                        name={resolvedBudgetUser?.name || (isTrustFund ? 'PACCO' : 'Budget')}
+                                        designation={resolvedBudgetUser?.designation || (isTrustFund ? 'Provincial Accountant' : 'Provincial Budget Officer')}
                                         role={isTrustFund ? 'pacco' : 'budget_officer'}
                                         size="md"
                                         canExpand={true}
@@ -2559,12 +2570,14 @@ export const PPMPDetailPage = ({
                                             ) : null}
                                         </div>
                                         <span className="font-bold text-slate-900 truncate block">
-                                            {ppmp.budget_reviewer?.name || ppmp.budgetReviewer?.name || (
-                                                <span className="text-slate-400 italic">Not yet designated</span>
+                                            {resolvedBudgetUser?.name || (
+                                                <span className="text-slate-500 italic">
+                                                    {isTrustFund ? 'All PACCO Reviewers (Distributed)' : 'All Budget Officers (Distributed)'}
+                                                </span>
                                             )}
                                         </span>
                                         <span className="text-[10px] text-slate-500 block truncate mt-0.5">
-                                            {ppmp.budget_reviewer?.designation || ppmp.budgetReviewer?.designation || (isTrustFund ? 'Provincial Accountant' : 'Provincial Budget Officer')}
+                                            {resolvedBudgetUser?.designation || (isTrustFund ? 'Provincial Accountant' : 'Provincial Budget Officer')}
                                         </span>
                                     </div>
                                 </div>
@@ -2579,10 +2592,10 @@ export const PPMPDetailPage = ({
                                             : 'bg-slate-50/70 border-slate-200'
                                 }`}>
                                     <UserAvatar
-                                        user={ppmp.oppmo_reviewer || ppmp.oppmoReviewer}
-                                        userId={ppmp.oppmo_reviewer_id}
-                                        name={ppmp.oppmo_reviewer?.name || ppmp.oppmoReviewer?.name || 'OPPMO'}
-                                        designation={ppmp.oppmo_reviewer?.designation || ppmp.oppmoReviewer?.designation || 'OPPMO Reviewer'}
+                                        user={resolvedOppmoUser}
+                                        userId={resolvedOppmoUser?.encrypted_id}
+                                        name={resolvedOppmoUser?.name || 'OPPMO'}
+                                        designation={resolvedOppmoUser?.designation || 'OPPMO Reviewer'}
                                         role="oppmo"
                                         size="md"
                                         canExpand={true}
@@ -2605,16 +2618,19 @@ export const PPMPDetailPage = ({
                                             ) : null}
                                         </div>
                                         <span className="font-bold text-slate-900 truncate block">
-                                            {ppmp.oppmo_reviewer?.name || ppmp.oppmoReviewer?.name || (
-                                                <span className="text-slate-400 italic">Not yet designated</span>
+                                            {resolvedOppmoUser?.name || (
+                                                <span className="text-slate-500 italic">All OPPMO Reviewers (Distributed)</span>
                                             )}
                                         </span>
                                         <span className="text-[10px] text-slate-500 block truncate mt-0.5">
-                                            {ppmp.oppmo_reviewer?.designation || ppmp.oppmoReviewer?.designation || 'OPPMO Reviewer'}
+                                            {resolvedOppmoUser?.designation || 'OPPMO Reviewer'}
                                         </span>
                                     </div>
                                 </div>
                                 )}
+                                        </>
+                                    );
+                                })()}
                             </div>
                         </div>
                     </div>

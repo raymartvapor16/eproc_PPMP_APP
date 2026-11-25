@@ -467,31 +467,37 @@ class PpmpWorkflowController extends Controller
             }
         }
 
-        if ($newTwgId && $newTwgId != $oldTwgId) {
+        if ($newTwgId != $oldTwgId) {
             if ($ppmp->twg_approved_at || in_array($ppmp->status, ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW', 'OPPMO_REVIEW', 'READY_TO_PRINT', 'HEAD_APPROVED'])) {
                 return response()->json(['message' => 'Cannot reassign BAC-TWG reviewer because BAC-TWG technical review has already been approved.'], 422);
             }
-            $targetTwg = User::find($newTwgId);
-            if (!$targetTwg || !$targetTwg->hasAssignedRole('twg')) {
-                return response()->json(['message' => 'Selected TWG reviewer must have the BAC-TWG Reviewer role.'], 422);
+            if ($newTwgId) {
+                $targetTwg = User::find($newTwgId);
+                if (!$targetTwg || !$targetTwg->hasAssignedRole('twg')) {
+                    return response()->json(['message' => 'Selected TWG reviewer must have the BAC-TWG Reviewer role.'], 422);
+                }
             }
         }
-        if ($newBudgetId && $newBudgetId != $oldBudgetId) {
+        if ($newBudgetId != $oldBudgetId) {
             if ($ppmp->budget_approved_at || $ppmp->pacco_approved_at || in_array($ppmp->status, ['OPPMO_REVIEW', 'READY_TO_PRINT', 'HEAD_APPROVED'])) {
                 return response()->json(['message' => 'Cannot reassign Budget/PACCO reviewer because budget certification has already been approved.'], 422);
             }
-            $targetBudget = User::find($newBudgetId);
-            if (!$targetBudget || !$targetBudget->hasAnyAssignedRole(['budget_officer', 'pacco'])) {
-                return response()->json(['message' => 'Selected Budget reviewer must have the Budget Officer or PACCO role.'], 422);
+            if ($newBudgetId) {
+                $targetBudget = User::find($newBudgetId);
+                if (!$targetBudget || !$targetBudget->hasAnyAssignedRole(['budget_officer', 'pacco'])) {
+                    return response()->json(['message' => 'Selected Budget reviewer must have the Budget Officer or PACCO role.'], 422);
+                }
             }
         }
-        if ($newOppmoId && $newOppmoId != $oldOppmoId) {
+        if ($newOppmoId != $oldOppmoId) {
             if ($ppmp->oppmo_approved_at || in_array($ppmp->status, ['READY_TO_PRINT', 'HEAD_APPROVED'])) {
                 return response()->json(['message' => 'Cannot reassign OPPMO reviewer because OPPMO review has already been approved.'], 422);
             }
-            $targetOppmo = User::find($newOppmoId);
-            if (!$targetOppmo || !$targetOppmo->hasAssignedRole('oppmo')) {
-                return response()->json(['message' => 'Selected OPPMO reviewer must have the OPPMO Reviewer role.'], 422);
+            if ($newOppmoId) {
+                $targetOppmo = User::find($newOppmoId);
+                if (!$targetOppmo || !$targetOppmo->hasAssignedRole('oppmo')) {
+                    return response()->json(['message' => 'Selected OPPMO reviewer must have the OPPMO Reviewer role.'], 422);
+                }
             }
         }
 
@@ -502,8 +508,9 @@ class PpmpWorkflowController extends Controller
 
         if ($newTwgId != $oldTwgId) {
             $ppmp->twg_reviewer_id = $newTwgId;
-            $newTwg = User::find($newTwgId);
-            $changes[] = 'TWG: ' . ($newTwg ? $newTwg->name : 'Unassigned');
+            $newTwg = $newTwgId ? User::find($newTwgId) : null;
+            $twgLabel = $newTwg ? $newTwg->name : 'All BAC-TWG Reviewers (Distributed)';
+            $changes[] = 'TWG: ' . $twgLabel;
 
             if ($ppmp->status === 'TWG_REVIEW') {
                 $ppmp->twg_received_at = null;
@@ -524,7 +531,7 @@ class PpmpWorkflowController extends Controller
                     'to_role' => 'twg',
                     'action' => 'REASSIGNED',
                     'status' => 'TWG_REVIEW',
-                    'remarks' => "PPMP reassigned to BAC-TWG reviewer {$newTwg->name} by {$user->name}." . ($reason ? " Reason: {$reason}" : ''),
+                    'remarks' => "PPMP reassigned to {$twgLabel} by {$user->name}." . ($reason ? " Reason: {$reason}" : ''),
                     'submitted_at' => $now,
                     'received_at' => null,
                 ]);
@@ -537,14 +544,25 @@ class PpmpWorkflowController extends Controller
                         $ppmp->id,
                         'info'
                     );
+                } else {
+                    foreach (User::withRole('twg')->where('is_active', true)->get() as $twgUser) {
+                        SystemNotification::notify(
+                            $twgUser->id,
+                            'PPMP Distributed for Technical Review',
+                            "PPMP {$idLabel} ({$ppmp->title}) was distributed to all BAC-TWG reviewers by {$user->name}{$reasonSuffix}. Any BAC-TWG reviewer may receive and review this document.",
+                            $ppmp->id,
+                            'info'
+                        );
+                    }
                 }
             }
         }
 
         if ($newBudgetId != $oldBudgetId) {
             $ppmp->budget_reviewer_id = $newBudgetId;
-            $newBudget = User::find($newBudgetId);
-            $changes[] = 'Budget/PACCO: ' . ($newBudget ? $newBudget->name : 'Unassigned');
+            $newBudget = $newBudgetId ? User::find($newBudgetId) : null;
+            $budgetLabel = $newBudget ? $newBudget->name : ($ppmp->isTrustFund() ? 'All PACCO Reviewers (Distributed)' : 'All Budget Officers (Distributed)');
+            $changes[] = 'Budget/PACCO: ' . $budgetLabel;
 
             if (in_array($ppmp->status, ['BUDGET_OFFICER_REVIEW', 'PACCO_REVIEW'])) {
                 $targetRole = $ppmp->status === 'PACCO_REVIEW' ? 'pacco' : 'budget_officer';
@@ -571,7 +589,7 @@ class PpmpWorkflowController extends Controller
                     'to_role' => $targetRole,
                     'action' => 'REASSIGNED',
                     'status' => $ppmp->status,
-                    'remarks' => "PPMP reassigned to {$newBudget->name} by {$user->name}." . ($reason ? " Reason: {$reason}" : ''),
+                    'remarks' => "PPMP reassigned to {$budgetLabel} by {$user->name}." . ($reason ? " Reason: {$reason}" : ''),
                     'submitted_at' => $now,
                     'received_at' => null,
                 ]);
@@ -584,14 +602,25 @@ class PpmpWorkflowController extends Controller
                         $ppmp->id,
                         'info'
                     );
+                } else {
+                    foreach (User::withRole($targetRole)->where('is_active', true)->get() as $budgetUser) {
+                        SystemNotification::notify(
+                            $budgetUser->id,
+                            'PPMP Distributed for Review',
+                            "PPMP {$idLabel} ({$ppmp->title}) was distributed to all " . ($targetRole === 'pacco' ? 'PACCO' : 'Budget Officer') . " reviewers by {$user->name}{$reasonSuffix}.",
+                            $ppmp->id,
+                            'info'
+                        );
+                    }
                 }
             }
         }
 
         if ($newOppmoId != $oldOppmoId) {
             $ppmp->oppmo_reviewer_id = $newOppmoId;
-            $newOppmo = User::find($newOppmoId);
-            $changes[] = 'OPPMO: ' . ($newOppmo ? $newOppmo->name : 'Unassigned');
+            $newOppmo = $newOppmoId ? User::find($newOppmoId) : null;
+            $oppmoLabel = $newOppmo ? $newOppmo->name : 'All OPPMO Reviewers (Distributed)';
+            $changes[] = 'OPPMO: ' . $oppmoLabel;
 
             if ($ppmp->status === 'OPPMO_REVIEW') {
                 $ppmp->oppmo_received_at = null;
@@ -612,7 +641,7 @@ class PpmpWorkflowController extends Controller
                     'to_role' => 'oppmo',
                     'action' => 'REASSIGNED',
                     'status' => 'OPPMO_REVIEW',
-                    'remarks' => "PPMP reassigned to OPPMO reviewer {$newOppmo->name} by {$user->name}." . ($reason ? " Reason: {$reason}" : ''),
+                    'remarks' => "PPMP reassigned to {$oppmoLabel} by {$user->name}." . ($reason ? " Reason: {$reason}" : ''),
                     'submitted_at' => $now,
                     'received_at' => null,
                 ]);
@@ -625,6 +654,16 @@ class PpmpWorkflowController extends Controller
                         $ppmp->id,
                         'info'
                     );
+                } else {
+                    foreach (User::withRole('oppmo')->where('is_active', true)->get() as $oppmoUser) {
+                        SystemNotification::notify(
+                            $oppmoUser->id,
+                            'PPMP Distributed for Review',
+                            "PPMP {$idLabel} ({$ppmp->title}) was distributed to all OPPMO reviewers by {$user->name}{$reasonSuffix}. Any OPPMO reviewer may receive and review this document.",
+                            $ppmp->id,
+                            'info'
+                        );
+                    }
                 }
             }
         }
@@ -968,12 +1007,16 @@ class PpmpWorkflowController extends Controller
             $now = now();
             $receivedAt = $ppmp->budget_received_at ?? $now;
 
-            $ppmp->update([
+            $budgetUpdate = [
                 'status' => 'OPPMO_REVIEW',
                 'budget_approved_at' => $now,
                 'budget_received_at' => $receivedAt,
                 'oppmo_received_at' => null,
-            ]);
+            ];
+            if (!$ppmp->budget_reviewer_id) {
+                $budgetUpdate['budget_reviewer_id'] = $user->id;
+            }
+            $ppmp->update($budgetUpdate);
 
             $this->markLatestPendingRouteReceived($ppmp->id, $receivedAt);
 
@@ -1389,12 +1432,16 @@ class PpmpWorkflowController extends Controller
             $now = now();
             $receivedAt = $ppmp->pacco_received_at ?? $now;
 
-            $ppmp->update([
+            $paccoUpdate = [
                 'status' => 'OPPMO_REVIEW',
                 'pacco_approved_at' => $now,
                 'pacco_received_at' => $receivedAt,
                 'oppmo_received_at' => null,
-            ]);
+            ];
+            if (!$ppmp->budget_reviewer_id) {
+                $paccoUpdate['budget_reviewer_id'] = $user->id;
+            }
+            $ppmp->update($paccoUpdate);
 
             $this->markLatestPendingRouteReceived($ppmp->id, $receivedAt);
 
@@ -1528,6 +1575,9 @@ class PpmpWorkflowController extends Controller
                 'oppmo_app_approved_at' => $now,
                 'oppmo_received_at' => $receivedAt,
             ];
+            if (!$ppmp->oppmo_reviewer_id) {
+                $updateData['oppmo_reviewer_id'] = $user->id;
+            }
 
             if ($nextStatus === 'BUDGET_HEAD_REVIEW') {
                 $updateData['budget_head_received_at'] = null;
@@ -1895,6 +1945,9 @@ class PpmpWorkflowController extends Controller
                 'twg_approved_at' => $now,
                 'twg_received_at' => $receivedAt,
             ];
+            if (!$ppmp->twg_reviewer_id) {
+                $updateData['twg_reviewer_id'] = $user->id;
+            }
             if ($isAttachOnly) {
                 if ($requiresEndUserHead) {
                     $updateData['head_submitted_at'] = $now;

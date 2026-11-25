@@ -715,7 +715,7 @@ export const ReviewerAssignmentModal = ({
         e.preventDefault();
         setErrorMessage('');
 
-        if (!isPpmpAppOnly && !selectedTwgId) {
+        if (mode !== 'reassign' && !isPpmpAppOnly && !selectedTwgId) {
             setErrorMessage('Please select the 1st Pick: BAC-TWG Reviewer.');
             return;
         }
