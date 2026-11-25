@@ -213,15 +213,60 @@ class SecurityThreatController extends Controller
 
     public function downloadScheduledBackup(Request $request, int $id): StreamedResponse|JsonResponse
     {
-        $this->authorizeSuperAdmin($request);
+        $user = $this->authorizeSuperAdmin($request);
+
+        if (!$request->isMethod('post')) {
+            return response()->json([
+                'message' => 'Super Admin password verification is required to download database backups.',
+            ], 422);
+        }
+
+        $backupHash = \App\Models\SystemSetting::get('database_backup_password_hash');
+        $hasBackupKey = !empty($backupHash);
+
+        $rules = [
+            'account_password' => ['required', 'string'],
+        ];
+        if ($hasBackupKey) {
+            $rules['backup_password'] = ['required', 'string'];
+        }
+
+        $validated = $request->validate($rules, [
+            'account_password.required' => 'Please enter your Super Admin account password to authorize this download.',
+            'backup_password.required' => 'Please enter the Manual Backup Security Master Key to authorize this download.',
+        ]);
+
+        if (!\Illuminate\Support\Facades\Hash::check($validated['account_password'], $user->password)) {
+            return response()->json([
+                'message' => 'Incorrect Super Admin account password. Download denied.',
+                'errors' => ['account_password' => ['Incorrect Super Admin account password.']],
+            ], 422);
+        }
+
+        if ($hasBackupKey && !\Illuminate\Support\Facades\Hash::check($validated['backup_password'], $backupHash)) {
+            return response()->json([
+                'message' => 'Incorrect Manual Backup Security Master Key. Download denied.',
+                'errors' => ['backup_password' => ['Incorrect Manual Backup Security Master Key.']],
+            ], 422);
+        }
+
         $backup = ScheduledDatabaseBackup::findOrFail($id);
 
         if (!Storage::disk('local')->exists($backup->storage_path)) {
             return response()->json(['message' => 'Backup file not found in secure storage.'], 404);
         }
 
+        \App\Models\AuditLog::log('SCHEDULED_BACKUP_DOWNLOADED', 'scheduled_database_backups', $backup->id, null, [
+            'filename' => $backup->filename,
+            'downloaded_by' => $user->email,
+        ], $user->id);
+
         return Storage::disk('local')->download($backup->storage_path, $backup->filename, [
             'Content-Type' => 'application/sql',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0, private',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 }

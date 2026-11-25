@@ -15,14 +15,16 @@ import {
     Search,
     RefreshCw,
     Eye,
+    EyeOff,
     X,
     CalendarClock,
     Trash2,
     Loader2,
     ShieldCheck,
 } from 'lucide-react';
-import { securityThreatService } from '../../services/api';
+import { securityThreatService, databaseBackupService } from '../../services/api';
 import { showConfirm } from '../../utils/modalAlert';
+import { DatabaseBackupManagement } from './DatabaseBackupManagement';
 
 const THREAT_TYPES = [
     { value: 'ALL', label: 'All Attack Vectors' },
@@ -59,10 +61,99 @@ const formatDateTime = (val) => {
     }
 };
 
-export const SuperAdminSecurityLogsView = () => {
-    const [activeTab, setActiveTab] = useState('threats');
+export const SuperAdminSecurityLogsView = ({ initialTab = 'threats' }) => {
+    const [activeTab, setActiveTab] = useState(initialTab);
     const [loading, setLoading] = useState(true);
     const [feedback, setFeedback] = useState(null);
+
+    const [downloadTargetBackup, setDownloadTargetBackup] = useState(null);
+    const [downloadAccountPassword, setDownloadAccountPassword] = useState('');
+    const [downloadBackupPassword, setDownloadBackupPassword] = useState('');
+    const [showDownloadAccountPwd, setShowDownloadAccountPwd] = useState(false);
+    const [showDownloadBackupPwd, setShowDownloadBackupPwd] = useState(false);
+    const [hasManualBackupKey, setHasManualBackupKey] = useState(false);
+    const [downloadingSnapshot, setDownloadingSnapshot] = useState(false);
+    const [downloadAuthError, setDownloadAuthError] = useState('');
+
+    useEffect(() => {
+        if (initialTab) {
+            setActiveTab(initialTab);
+        }
+    }, [initialTab]);
+
+    const openBackupDownloadGate = async (backup) => {
+        setDownloadTargetBackup(backup);
+        setDownloadAccountPassword('');
+        setDownloadBackupPassword('');
+        setShowDownloadAccountPwd(false);
+        setShowDownloadBackupPwd(false);
+        setDownloadAuthError('');
+        try {
+            const statusRes = await databaseBackupService.getStatus();
+            setHasManualBackupKey(Boolean(statusRes.data?.has_password));
+        } catch (_) {
+            setHasManualBackupKey(false);
+        }
+    };
+
+    const closeBackupDownloadGate = () => {
+        if (downloadingSnapshot) return;
+        setDownloadTargetBackup(null);
+        setDownloadAccountPassword('');
+        setDownloadBackupPassword('');
+        setDownloadAuthError('');
+    };
+
+    const handleAuthorizedSnapshotDownload = async (e) => {
+        e.preventDefault();
+        if (!downloadTargetBackup || downloadingSnapshot) return;
+        if (!downloadAccountPassword.trim()) {
+            setDownloadAuthError('Please enter your Super Admin account password.');
+            return;
+        }
+        if (hasManualBackupKey && !downloadBackupPassword.trim()) {
+            setDownloadAuthError('Please enter the Manual Backup Security Master Key.');
+            return;
+        }
+
+        setDownloadingSnapshot(true);
+        setDownloadAuthError('');
+        try {
+            const payload = {
+                account_password: downloadAccountPassword,
+                ...(hasManualBackupKey ? { backup_password: downloadBackupPassword } : {}),
+            };
+            const res = await securityThreatService.downloadScheduledBackup(downloadTargetBackup.id, payload);
+            const blob = new Blob([res.data], { type: 'application/sql' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = downloadTargetBackup.filename || `backup_${downloadTargetBackup.id}.sql`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+
+            setFeedback({ type: 'success', text: `Authorized download started for "${downloadTargetBackup.filename}".` });
+            setDownloadTargetBackup(null);
+            setDownloadAccountPassword('');
+            setDownloadBackupPassword('');
+        } catch (err) {
+            let msg = 'Authorization failed. Please verify your password and try again.';
+            if (err.response?.data instanceof Blob) {
+                try {
+                    const txt = await err.response.data.text();
+                    const parsed = JSON.parse(txt);
+                    if (parsed?.message) msg = parsed.message;
+                } catch (_) {}
+            } else if (err.response?.data?.message) {
+                msg = err.response.data.message;
+            }
+            setDownloadAuthError(msg);
+        } finally {
+            setDownloadingSnapshot(false);
+        }
+    };
 
     const [logs, setLogs] = useState([]);
     const [summary, setSummary] = useState({});
@@ -305,6 +396,19 @@ export const SuperAdminSecurityLogsView = () => {
                 >
                     <CalendarClock className="w-4 h-4" />
                     <span>15-Day Auto DB Backups</span>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => setActiveTab('manual_backup')}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider transition cursor-pointer ${
+                        activeTab === 'manual_backup'
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                >
+                    <Database className="w-4 h-4" />
+                    <span>Database Backup (SQL Dump)</span>
                 </button>
             </div>
 
@@ -656,13 +760,15 @@ export const SuperAdminSecurityLogsView = () => {
                                                 {formatDateTime(sb.created_at)}
                                             </td>
                                             <td className="py-2.5 px-4 text-right">
-                                                <a
-                                                    href={securityThreatService.getBackupDownloadUrl(sb.id)}
-                                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-indigo-600 text-white text-[11px] font-bold transition"
+                                                <button
+                                                    type="button"
+                                                    onClick={() => openBackupDownloadGate(sb)}
+                                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-indigo-600 text-white text-[11px] font-bold transition cursor-pointer"
                                                 >
+                                                    <Lock className="w-3 h-3" />
                                                     <Download className="w-3.5 h-3.5" />
                                                     Download SQL
-                                                </a>
+                                                </button>
                                             </td>
                                         </tr>
                                     ))}
@@ -670,6 +776,132 @@ export const SuperAdminSecurityLogsView = () => {
                             </table>
                         </div>
                     )}
+                </div>
+            )}
+
+            {activeTab === 'manual_backup' && (
+                <DatabaseBackupManagement />
+            )}
+
+            {downloadTargetBackup && (
+                <div
+                    className="fixed inset-0 z-[9999] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4"
+                    onClick={closeBackupDownloadGate}
+                >
+                    <div
+                        className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950 text-white px-5 py-4 flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center">
+                                    <ShieldCheck className="w-4 h-4 text-indigo-300" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-black uppercase tracking-wide">
+                                        Dual-Factor Authorization Gate
+                                    </h3>
+                                    <p className="text-[11px] text-slate-300">
+                                        Verify credentials to download <span className="font-mono text-white">{downloadTargetBackup.filename}</span>
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={closeBackupDownloadGate}
+                                className="p-1 text-slate-400 hover:text-white cursor-pointer"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleAuthorizedSnapshotDownload} className="p-5 space-y-4">
+                            {downloadAuthError && (
+                                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-start gap-2">
+                                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+                                    <span>{downloadAuthError}</span>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                                    1. Super Admin Account Password <span className="text-rose-500">*</span>
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type={showDownloadAccountPwd ? 'text' : 'password'}
+                                        required
+                                        autoFocus
+                                        value={downloadAccountPassword}
+                                        onChange={(e) => setDownloadAccountPassword(e.target.value)}
+                                        placeholder="Confirm your active login password"
+                                        className="w-full px-3.5 py-2.5 pr-10 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowDownloadAccountPwd((p) => !p)}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                                    >
+                                        {showDownloadAccountPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                    </button>
+                                </div>
+                                <p className="text-[10.5px] text-slate-500 mt-1">
+                                    Required on every database backup download to protect sensitive records.
+                                </p>
+                            </div>
+
+                            {hasManualBackupKey && (
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                                        2. Manual Backup Security Master Key <span className="text-rose-500">*</span>
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            type={showDownloadBackupPwd ? 'text' : 'password'}
+                                            required
+                                            value={downloadBackupPassword}
+                                            onChange={(e) => setDownloadBackupPassword(e.target.value)}
+                                            placeholder="Enter the secret manual backup key"
+                                            className="w-full px-3.5 py-2.5 pr-10 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowDownloadBackupPwd((p) => !p)}
+                                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                                        >
+                                            {showDownloadBackupPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                        </button>
+                                    </div>
+                                    <p className="text-[10.5px] text-slate-500 mt-1">
+                                        The separate manual backup security password you configured.
+                                    </p>
+                                </div>
+                            )}
+
+                            <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={closeBackupDownloadGate}
+                                    disabled={downloadingSnapshot}
+                                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={downloadingSnapshot}
+                                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold uppercase tracking-wider shadow-sm transition cursor-pointer disabled:opacity-50"
+                                >
+                                    {downloadingSnapshot ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                        <Download className="w-3.5 h-3.5" />
+                                    )}
+                                    <span>{downloadingSnapshot ? 'Verifying...' : 'Authorize & Download'}</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             )}
 

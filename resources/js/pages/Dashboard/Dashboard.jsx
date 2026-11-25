@@ -788,7 +788,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 return <AfkLogoutManagement />;
             }
             if (adminSection === 'database_backup') {
-                return <DatabaseBackupManagement />;
+                return <SuperAdminSecurityLogsView initialTab="manual_backup" />;
             }
             if (adminSection === 'monitoring_viewers') {
                 return <MonitoringAuthorizeViewersPanel />;
@@ -896,8 +896,6 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                             {adminSection === 'overview' && <SystemSettingsManagement />}
 
                             {adminSection === 'overview' && <AfkLogoutManagement />}
-
-                            {adminSection === 'overview' && <DatabaseBackupManagement />}
 
                             {adminSection === 'overview' && SignatoriesPanel}
 

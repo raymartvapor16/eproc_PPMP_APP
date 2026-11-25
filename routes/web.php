@@ -183,7 +183,7 @@ Route::prefix('api')->group(function () {
         Route::post('/super-admin/deleted-backups/{id}/restore', [\App\Http\Controllers\Api\SecurityThreatController::class, 'restoreDeletedBackup']);
         Route::get('/super-admin/scheduled-backups', [\App\Http\Controllers\Api\SecurityThreatController::class, 'scheduledBackups']);
         Route::post('/super-admin/scheduled-backups/run-now', [\App\Http\Controllers\Api\SecurityThreatController::class, 'runBackupNow']);
-        Route::get('/super-admin/scheduled-backups/{id}/download', [\App\Http\Controllers\Api\SecurityThreatController::class, 'downloadScheduledBackup']);
+        Route::match(['get', 'post'], '/super-admin/scheduled-backups/{id}/download', [\App\Http\Controllers\Api\SecurityThreatController::class, 'downloadScheduledBackup']);
 
         Route::post('/ppmps/{uuid}/attachments', [PpmpAttachmentController::class, 'store']);
         Route::post('/ppmps/{uuid}/attachments/link', [PpmpAttachmentController::class, 'storeLink']);

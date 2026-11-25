@@ -691,6 +691,8 @@ export const securityThreatService = {
     getScheduledBackups: () => api.get('/super-admin/scheduled-backups'),
     runBackupNow: () => api.post('/super-admin/scheduled-backups/run-now'),
     getBackupDownloadUrl: (id) => `/api/super-admin/scheduled-backups/${id}/download`,
+    downloadScheduledBackup: (id, payload) =>
+        api.post(`/super-admin/scheduled-backups/${id}/download`, payload, { responseType: 'blob' }),
 };
 
 export default api;

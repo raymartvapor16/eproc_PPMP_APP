@@ -148,20 +148,12 @@ export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingU
             description: 'Inactivity & Auto-Logout',
         },
         {
-            id: 'database_backup',
-            label: 'Database Backup',
-            icon: Database,
-            badge: 'SQL Dump',
-            badgeColor: 'bg-indigo-100 text-indigo-800 font-bold',
-            description: 'Manual Dump & Backup Key',
-        },
-        {
             id: 'security_threats',
             label: 'Threat & Intrusion Logs',
             icon: ShieldAlert,
-            badge: 'IDS / Auto',
+            badge: 'IDS / Backup',
             badgeColor: 'bg-rose-100 text-rose-800 font-bold',
-            description: 'IP, Hijack, CLI & 15-Day Backup',
+            description: 'IDS, Manual & 15-Day Backup',
         },
         {
             id: 'logs',
