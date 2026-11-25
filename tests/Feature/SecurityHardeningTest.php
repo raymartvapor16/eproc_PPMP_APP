@@ -281,6 +281,11 @@ class SecurityHardeningTest extends TestCase
         $this->get("/api/users/{$target->id}/signature")->assertStatus(401);
         $this->get("/api/users/{$target->id}/avatar")->assertStatus(401);
         $this->get("/api/users/{$target->id}/pnpki-proof")->assertStatus(401);
+        $this->get('/api/profile/photo')->assertStatus(401);
+        $this->get('/api/profile/signature')->assertStatus(401);
+        $this->get('/api/supplier-evaluation/purchase-orders/1/pdf')->assertStatus(401);
+        $this->get('/api/supplier-evaluation/pdfs/1/file')->assertStatus(401);
+        $this->get('/api/super-admin/scheduled-backups/1/download')->assertStatus(401);
 
         $this->actingAs($this->endUserA)
             ->get("/api/users/{$target->id}/authorization-letter")
@@ -290,6 +295,10 @@ class SecurityHardeningTest extends TestCase
             ->get("/api/users/{$target->id}/authorization-letter");
         $ok->assertStatus(200);
         $this->assertStringContainsString('no-store', (string) $ok->headers->get('Cache-Control'));
+
+        $logoutRes = $this->actingAs($this->adminUser)->postJson('/api/logout');
+        $logoutRes->assertStatus(200);
+        $this->assertSame('"cache"', $logoutRes->headers->get('Clear-Site-Data'));
 
         \Illuminate\Support\Facades\Storage::disk('local')->delete('authorization_letter/test_auth.pdf');
     }

@@ -604,7 +604,7 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Logged out successfully.',
             'csrf_token' => csrf_token(),
-        ]);
+        ])->header('Clear-Site-Data', '"cache"');
     }
 
     public function csrfToken(Request $request): JsonResponse
