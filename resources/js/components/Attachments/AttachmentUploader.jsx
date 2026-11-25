@@ -655,7 +655,10 @@ export const AttachmentUploader = ({
                 <div className="mt-4 pt-3 border-t border-slate-200">
                     <div className="space-y-1.5 mb-3">
                         <div className="flex items-center justify-between gap-2">
-                            <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <label
+                                htmlFor="attachment-document-category"
+                                className="text-xs font-bold text-slate-700 flex items-center gap-1.5"
+                            >
                                 <span>Document Category:</span>
                             </label>
                             {uploadType === 'MARKET_SCOPING' && (
@@ -670,6 +673,8 @@ export const AttachmentUploader = ({
                             )}
                         </div>
                         <select
+                            id="attachment-document-category"
+                            name="attachment_document_category"
                             value={uploadType}
                             onChange={(e) => {
                                 setUploadType(e.target.value);
@@ -704,10 +709,15 @@ export const AttachmentUploader = ({
                             )}
 
                             <div>
-                                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                                <label
+                                    htmlFor="attachment-cloud-link-title"
+                                    className="block text-[11px] font-bold text-slate-700 mb-1"
+                                >
                                     Document Title / Specification <span className="text-rose-500">*</span>
                                 </label>
                                 <input
+                                    id="attachment-cloud-link-title"
+                                    name="attachment_cloud_link_title"
                                     type="text"
                                     value={linkTitle}
                                     onChange={(e) => setLinkTitle(e.target.value)}
@@ -718,7 +728,10 @@ export const AttachmentUploader = ({
                             </div>
 
                             <div>
-                                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                                <label
+                                    htmlFor="attachment-cloud-link-url"
+                                    className="block text-[11px] font-bold text-slate-700 mb-1"
+                                >
                                     Cloud Storage URL (HTTPS only) <span className="text-rose-500">*</span>
                                 </label>
                                 <div className="relative">
@@ -726,6 +739,8 @@ export const AttachmentUploader = ({
                                         <LinkIcon className="w-3.5 h-3.5" />
                                     </div>
                                     <input
+                                        id="attachment-cloud-link-url"
+                                        name="attachment_cloud_link_url"
                                         type="url"
                                         value={linkUrl}
                                         onChange={(e) => setLinkUrl(e.target.value)}
@@ -737,10 +752,15 @@ export const AttachmentUploader = ({
                             </div>
 
                             <div>
-                                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                                <label
+                                    htmlFor="attachment-cloud-link-description"
+                                    className="block text-[11px] font-bold text-slate-700 mb-1"
+                                >
                                     Scope Description / Notes <span className="text-slate-400 font-normal">(Optional)</span>
                                 </label>
                                 <textarea
+                                    id="attachment-cloud-link-description"
+                                    name="attachment_cloud_link_description"
                                     rows={2}
                                     value={linkDescription}
                                     onChange={(e) => setLinkDescription(e.target.value)}
