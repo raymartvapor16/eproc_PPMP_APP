@@ -237,9 +237,19 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
         return trackerStr || existingStr;
     };
 
+    const buildProjectTitle = (item) => {
+        const desc = (item?.description || '').trim();
+        const fallbackRetention = item?.is_retention
+            ? `${item.retention_percentage ? `${item.retention_percentage}% ` : ''}Retention`
+            : '';
+        const label = desc || fallbackRetention;
+        if (ppmp?.account_code && label) return `${ppmp.account_code}\n${label}`;
+        return label || ppmp?.account_code || '';
+    };
+
     const [rows, setRows] = useState(() => {
         const items = ppmp?.items || [];
-        const nonHeaderItems = items.filter(i => !i.is_header && !i.is_retention);
+        const nonHeaderItems = items.filter(i => !i.is_header);
 
         const defaultEndUser = resolveEndUser(ppmp);
 
@@ -291,7 +301,7 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
         if (nonHeaderItems.length > 0) {
             return nonHeaderItems.map((item, idx) => ({
                 id: item.id || idx + 1,
-                projectTitle: ppmp?.account_code ? `${ppmp.account_code}\n${item.description}` : item.description,
+                projectTitle: buildProjectTitle(item),
                 endUser: defaultEndUser,
                 generalDescription: resolveProjectType(item, ppmp),
                 modeOfProcurement: item.procurement_mode || 'Public Bidding',
@@ -302,6 +312,8 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                 sourceOfFund: item.source_of_fund || 'General Fund',
                 estimatedBudget: item.estimated_budget || 0,
                 procurementStrategy: buildRemarksWithTracker(item.remarks),
+                isRetention: Boolean(item.is_retention),
+                retentionPercentage: item.retention_percentage ?? null,
             }));
         }
 
@@ -325,13 +337,13 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
 
     const reloadRowsFromPpmp = () => {
         const items = ppmp?.items || [];
-        const nonHeaderItems = items.filter(i => !i.is_header && !i.is_retention);
+        const nonHeaderItems = items.filter(i => !i.is_header);
         const defaultEndUser = resolveEndUser(ppmp);
 
         if (nonHeaderItems.length > 0) {
             const freshRows = nonHeaderItems.map((item, idx) => ({
                 id: item.id || idx + 1,
-                projectTitle: ppmp?.account_code ? `${ppmp.account_code}\n${item.description}` : item.description,
+                projectTitle: buildProjectTitle(item),
                 endUser: defaultEndUser,
                 generalDescription: resolveProjectType(item, ppmp),
                 modeOfProcurement: item.procurement_mode || 'Public Bidding',
@@ -342,6 +354,8 @@ export const APPPrintView = ({ ppmp, user, canEdit = true, onBack, onGenerated }
                 sourceOfFund: item.source_of_fund || 'General Fund',
                 estimatedBudget: item.estimated_budget || 0,
                 procurementStrategy: buildRemarksWithTracker(item.remarks),
+                isRetention: Boolean(item.is_retention),
+                retentionPercentage: item.retention_percentage ?? null,
             }));
             setRows(freshRows);
         }
