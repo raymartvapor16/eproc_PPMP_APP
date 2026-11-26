@@ -1,10 +1,63 @@
+@php
+    $siteUrl = rtrim(config('app.url') ?: url('/'), '/');
+    $currentPath = '/' . ltrim(request()->path(), '/');
+    $isPublicIndexable = in_array($currentPath, ['/', '/privacy-policy'], true);
+    $canonicalUrl = $currentPath === '/' ? $siteUrl . '/' : $siteUrl . $currentPath;
+    $pageTitle = $currentPath === '/privacy-policy'
+        ? 'Privacy Policy | PMO eProc — E-Procurement System (Davao del Sur)'
+        : 'PMO eProc — E-Procurement System | Province of Davao del Sur (OPPMO)';
+    $pageDescription = 'Official Electronic Procurement System (PMO eProc) of the Office of the Provincial Procurement Management Officer (OPPMO), Provincial Government of Davao del Sur. Access PPMP, APP, PIMS, Project Monitoring, and Supplier Evaluation services.';
+@endphp
 <!DOCTYPE html>
 <html lang="en" class="h-full bg-slate-50">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>E-PROCUREMENT SYSTEM</title>
+    <title>{{ $pageTitle }}</title>
+    <meta name="description" content="{{ $pageDescription }}">
+    <meta name="keywords" content="pmoeproc, pmoeproc.cloud, PMO eProc, E-Procurement System, OPPMO, Provincial Government of Davao del Sur, PPMP, APP, PIMS, Supplier Evaluation">
+    <meta name="author" content="Office of the Provincial Procurement Management Officer — Province of Davao del Sur">
+    <meta name="robots" content="{{ $isPublicIndexable ? 'index, follow' : 'noindex, nofollow' }}">
+    <link rel="canonical" href="{{ $canonicalUrl }}">
+
+    {{-- Open Graph / Social Sharing --}}
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="PMO eProc — E-Procurement System">
+    <meta property="og:title" content="{{ $pageTitle }}">
+    <meta property="og:description" content="{{ $pageDescription }}">
+    <meta property="og:url" content="{{ $canonicalUrl }}">
+    <meta property="og:image" content="{{ $siteUrl }}/images/pmo.jpeg">
+    <meta property="og:locale" content="en_PH">
+
+    {{-- Twitter / X Card --}}
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ $pageTitle }}">
+    <meta name="twitter:description" content="{{ $pageDescription }}">
+    <meta name="twitter:image" content="{{ $siteUrl }}/images/pmo.jpeg">
+
+    {{-- Structured Data (JSON-LD) for Google Search --}}
+    <script type="application/ld+json">
+        {
+            "@context": "https://schema.org",
+            "@graph": [
+                {
+                    "@type": "WebSite",
+                    "name": "PMO eProc — E-Procurement System",
+                    "alternateName": ["pmoeproc", "pmoeproc.cloud", "PMO eProc", "OPPMO Davao del Sur"],
+                    "url": "{{ $siteUrl }}/",
+                    "description": "{{ $pageDescription }}"
+                },
+                {
+                    "@type": "GovernmentOrganization",
+                    "name": "Office of the Provincial Procurement Management Officer (OPPMO) — Province of Davao del Sur",
+                    "alternateName": "PMO eProc",
+                    "url": "{{ $siteUrl }}/",
+                    "logo": "{{ $siteUrl }}/images/pmo.jpeg"
+                }
+            ]
+        }
+    </script>
 
     <link id="dynamic-favicon" rel="icon" type="image/jpeg" href="/images/pmo.jpeg">
     <link rel="apple-touch-icon" href="/images/pmo.jpeg">

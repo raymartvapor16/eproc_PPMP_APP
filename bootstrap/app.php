@@ -21,13 +21,28 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             \App\Http\Middleware\SecurityHeadersMiddleware::class,
             \App\Http\Middleware\VerifySessionFingerprint::class,
+            \App\Http\Middleware\FormatBrowserAuthErrorResponse::class,
         ]);
 
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, \Illuminate\Http\Request $request) {
+            if (\App\Http\Middleware\FormatBrowserAuthErrorResponse::wantsHtmlErrorPage($request)) {
+                return \App\Http\Middleware\FormatBrowserAuthErrorResponse::makeHtmlResponse($request, 401);
+            }
+
             if ($request->is('api/*') || $request->expectsJson()) {
                 return response()->json(['message' => 'Unauthenticated.'], 401);
+            }
+        });
+
+        $exceptions->render(function (\Illuminate\Auth\Access\AuthorizationException $e, \Illuminate\Http\Request $request) {
+            if (\App\Http\Middleware\FormatBrowserAuthErrorResponse::wantsHtmlErrorPage($request)) {
+                return \App\Http\Middleware\FormatBrowserAuthErrorResponse::makeHtmlResponse($request, 403, $e->getMessage());
+            }
+
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return response()->json(['message' => $e->getMessage() ?: 'Forbidden.'], 403);
             }
         });
     })->create();
