@@ -104,6 +104,7 @@ export function SupplierEvaluationDashboard({
     const [showAddModal, setShowAddModal] = useState(false);
     const [showPoModal, setShowPoModal] = useState(false);
     const [showRequestsModal, setShowRequestsModal] = useState(false);
+    const [preselectedRequestEval, setPreselectedRequestEval] = useState(null);
     const [showImportModal, setShowImportModal] = useState(false);
     const [showRecycleModal, setShowRecycleModal] = useState(false);
     const [showLogsModal, setShowLogsModal] = useState(false);
@@ -541,7 +542,10 @@ export function SupplierEvaluationDashboard({
                             {effectiveRole !== 'head' && (
                                 <button
                                     type="button"
-                                    onClick={() => setShowRequestsModal(true)}
+                                    onClick={() => {
+                                    setPreselectedRequestEval(null);
+                                    setShowRequestsModal(true);
+                                }}
                                     className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border border-slate-700"
                                 >
                                     <FileText className="w-3.5 h-3.5 text-blue-400" />
@@ -1139,6 +1143,7 @@ export function SupplierEvaluationDashboard({
                                                                                         type="button"
                                                                                         onClick={() => {
                                                                                             setOpenActionDropdownId(null);
+                                                                                            setPreselectedRequestEval(ev);
                                                                                             setShowRequestsModal(true);
                                                                                         }}
                                                                                         className="w-full px-3 py-2 rounded-xl text-xs font-semibold text-amber-700 hover:bg-amber-50 flex items-center gap-2.5 transition cursor-pointer text-left"
@@ -1913,7 +1918,11 @@ export function SupplierEvaluationDashboard({
             {showRequestsModal && (
                 <RequestsModal
                     effectiveRole={effectiveRole}
-                    onClose={() => setShowRequestsModal(false)}
+                    initialEvaluation={preselectedRequestEval}
+                    onClose={() => {
+                        setShowRequestsModal(false);
+                        setPreselectedRequestEval(null);
+                    }}
                     onUpdated={() => refreshAll()}
                 />
             )}
