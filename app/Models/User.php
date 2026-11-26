@@ -11,6 +11,11 @@ class User extends Authenticatable
 {
     use HasFactory, Notifiable;
 
+    public function getConnectionName(): ?string
+    {
+        return $this->connection ?? config('database.default');
+    }
+
     protected $fillable = [
         'name',
         'email',

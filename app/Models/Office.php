@@ -9,6 +9,11 @@ class Office extends Model
 {
     use HasFactory;
 
+    public function getConnectionName(): ?string
+    {
+        return $this->connection ?? config('database.default');
+    }
+
     protected $fillable = [
         'name',
         'code',

@@ -230,7 +230,8 @@ class SupplierEvaluationController extends Controller
         $approvedPdfs = SupplierPdf::with('user.office')
             ->where('status', 'approved')
             ->when(!$isGlobalScope && $user->office_id, function ($q) use ($user) {
-                $q->whereHas('user', fn ($u) => $u->where('office_id', $user->office_id));
+                $officeUserIds = User::where('office_id', $user->office_id)->pluck('id');
+                $q->whereIn('user_id', $officeUserIds);
             })
             ->latest()
             ->get();
@@ -285,9 +286,8 @@ class SupplierEvaluationController extends Controller
 
         if ($request->filled('department') && $request->input('department') !== 'all') {
             $dept = trim($request->input('department'));
-            $query->whereHas('office', function ($q) use ($dept) {
-                $q->where('name', $dept)->orWhere('code', $dept);
-            });
+            $matchingOfficeIds = Office::where('name', $dept)->orWhere('code', $dept)->pluck('id');
+            $query->whereIn('office_id', $matchingOfficeIds);
         }
 
         if ($request->filled('year') && $request->input('year') !== 'all') {
@@ -300,14 +300,14 @@ class SupplierEvaluationController extends Controller
 
         if ($request->filled('search')) {
             $search = trim($request->input('search'));
-            $query->where(function ($q) use ($search) {
+            $matchingOfficeIds = Office::where('name', 'like', "%{$search}%")
+                ->orWhere('code', 'like', "%{$search}%")
+                ->pluck('id');
+            $query->where(function ($q) use ($search, $matchingOfficeIds) {
                 $q->where('po_no', 'like', "%{$search}%")
                     ->orWhere('supplier_name', 'like', "%{$search}%")
                     ->orWhere('covered_period', 'like', "%{$search}%")
-                    ->orWhereHas('office', function ($oq) use ($search) {
-                        $oq->where('name', 'like', "%{$search}%")
-                            ->orWhere('code', 'like', "%{$search}%");
-                    });
+                    ->when($matchingOfficeIds->isNotEmpty(), fn ($sq) => $sq->orWhereIn('office_id', $matchingOfficeIds));
             });
         }
 
@@ -475,7 +475,7 @@ class SupplierEvaluationController extends Controller
             ], 422);
         }
 
-        $eval = DB::transaction(function () use ($validated, $officeId, $periodYear) {
+        $eval = DB::connection(SupplierEvaluation::supplierEvalConnectionName())->transaction(function () use ($validated, $officeId, $periodYear) {
             $evaluation = SupplierEvaluation::create([
                 'supplier_name' => trim($validated['supplier_name']),
                 'po_no' => trim($validated['po_no']),
@@ -534,7 +534,7 @@ class SupplierEvaluationController extends Controller
         $ratings = $request->input('rating', []);
         $remarks = $request->input('remarks', []);
 
-        DB::transaction(function () use ($request, $user, $role, $eval, $ratings, $remarks) {
+        DB::connection(SupplierEvaluation::supplierEvalConnectionName())->transaction(function () use ($request, $user, $role, $eval, $ratings, $remarks) {
 
             if ($request->filled('supplier_name')) {
                 $eval->supplier_name = trim($request->input('supplier_name'));
@@ -782,16 +782,17 @@ class SupplierEvaluationController extends Controller
         $user = $this->authorizeSupplierEvaluation($request);
         $role = $this->getEffectiveRole($user);
 
+        $supplierConn = SupplierEvaluation::supplierEvalConnectionName();
         $validated = $request->validate([
             'evaluations' => 'required|array|min:1',
-            'evaluations.*.id' => 'required|integer|exists:supplier_evaluations,id',
+            'evaluations.*.id' => "required|integer|exists:{$supplierConn}.supplier_evaluations,id",
             'evaluations.*.ratings' => 'nullable|array',
             'evaluations.*.remarks' => 'nullable|array',
         ]);
 
         $count = 0;
 
-        DB::transaction(function () use ($validated, $user, $role, &$count) {
+        DB::connection($supplierConn)->transaction(function () use ($validated, $user, $role, &$count) {
             foreach ($validated['evaluations'] as $item) {
                 $eval = SupplierEvaluation::find($item['id']);
                 if (!$eval) {
@@ -1485,9 +1486,10 @@ class SupplierEvaluationController extends Controller
     {
         $user = $this->authorizeSupplierEvaluation($request);
 
+        $supplierConn = SupplierPurchaseOrder::supplierEvalConnectionName();
         $validated = $request->validate([
             'po_ids' => 'required|array|min:1',
-            'po_ids.*' => 'integer|exists:supplier_purchase_orders,id',
+            'po_ids.*' => "integer|exists:{$supplierConn}.supplier_purchase_orders,id",
             'covered_period' => 'nullable|string|max:255',
         ]);
 
@@ -1499,7 +1501,7 @@ class SupplierEvaluationController extends Controller
 
         $createdCount = 0;
 
-        DB::transaction(function () use ($validated, $user, $request, $defaultPeriod, $periodYear, &$createdCount) {
+        DB::connection($supplierConn)->transaction(function () use ($validated, $user, $request, $defaultPeriod, $periodYear, &$createdCount) {
             $pos = SupplierPurchaseOrder::whereIn('id', $validated['po_ids'])->get();
             foreach ($pos as $po) {
                 $exists = SupplierEvaluation::where('po_no', $po->po_no)
@@ -1594,8 +1596,9 @@ class SupplierEvaluationController extends Controller
     {
         $user = $this->authorizeSupplierEvaluation($request);
 
+        $supplierConn = SupplierEvaluation::supplierEvalConnectionName();
         $validated = $request->validate([
-            'evaluation_id' => 'required|integer|exists:supplier_evaluations,id',
+            'evaluation_id' => "required|integer|exists:{$supplierConn}.supplier_evaluations,id",
             'request_type' => 'required|string|in:update,delete',
             'reason' => 'required|string|max:1000',
         ]);
@@ -1852,9 +1855,8 @@ class SupplierEvaluationController extends Controller
         if (!$isGlobalScope && $user->office_id) {
             $query->where('office_id', $user->office_id);
         } elseif ($department && $department !== 'all') {
-            $query->whereHas('office', function ($q) use ($department) {
-                $q->where('name', $department)->orWhere('code', $department);
-            });
+            $matchingOfficeIds = Office::where('name', $department)->orWhere('code', $department)->pluck('id');
+            $query->whereIn('office_id', $matchingOfficeIds);
         }
 
         if ($year && $year !== 'all') {
@@ -2050,11 +2052,14 @@ class SupplierEvaluationController extends Controller
         }
         if ($request->filled('search')) {
             $s = trim($request->input('search'));
-            $query->where(function ($q) use ($s) {
+            $matchingUserIds = User::where('name', 'like', "%{$s}%")
+                ->orWhere('email', 'like', "%{$s}%")
+                ->pluck('id');
+            $query->where(function ($q) use ($s, $matchingUserIds) {
                 $q->where('activity', 'like', "%{$s}%")
                     ->orWhere('description', 'like', "%{$s}%")
                     ->orWhere('ip_address', 'like', "%{$s}%")
-                    ->orWhereHas('user', fn ($u) => $u->where('name', 'like', "%{$s}%")->orWhere('email', 'like', "%{$s}%"));
+                    ->when($matchingUserIds->isNotEmpty(), fn ($sq) => $sq->orWhereIn('user_id', $matchingUserIds));
             });
         }
 
