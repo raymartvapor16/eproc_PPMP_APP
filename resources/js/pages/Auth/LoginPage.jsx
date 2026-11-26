@@ -783,9 +783,9 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
     };
 
     return (
-        <div className="min-h-screen w-full flex flex-col-reverse lg:flex-row bg-slate-950 text-slate-800 antialiased overflow-x-hidden">
+        <div className="min-h-screen w-full flex flex-col lg:flex-row bg-slate-950 text-slate-800 antialiased overflow-x-hidden">
 
-            <div className="w-full lg:w-[52%] xl:w-[55%] 2xl:w-[58%] relative flex flex-col justify-between overflow-hidden bg-blue-950 border-t lg:border-t-0 lg:border-r border-blue-900/40 lg:h-screen lg:max-h-screen">
+            <div className="hidden lg:flex w-full lg:w-[52%] xl:w-[55%] 2xl:w-[58%] relative flex-col justify-between overflow-hidden bg-blue-950 lg:border-r border-blue-900/40 lg:h-screen lg:max-h-screen">
 
                 <div
                     className="absolute inset-0 bg-cover bg-center animate-slow-zoom"
@@ -951,7 +951,7 @@ export const LoginPage = ({ onLoginSuccess, onOpenPrivacy, onBackToLanding, init
                 </div>
             </div>
 
-            <div className="w-full lg:w-[48%] xl:w-[45%] 2xl:w-[42%] lg:h-screen flex flex-col bg-slate-50/95 relative z-20 shadow-2xl lg:overflow-y-auto custom-scrollbar border-b lg:border-b-0 lg:border-l border-slate-200/80">
+            <div className="w-full min-h-screen lg:min-h-0 lg:w-[48%] xl:w-[45%] 2xl:w-[42%] lg:h-screen flex flex-col bg-slate-50/95 relative z-20 shadow-2xl lg:overflow-y-auto custom-scrollbar lg:border-l border-slate-200/80">
 
                 <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-blue-600 to-indigo-600" />
 
