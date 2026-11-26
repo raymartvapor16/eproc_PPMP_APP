@@ -338,10 +338,10 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                         : 'bg-gradient-to-b from-slate-950/90 to-transparent py-4'
                 }`}
             >
-                <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 flex items-center justify-between">
+                <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 flex items-center justify-between gap-3 xl:grid xl:grid-cols-[1fr_auto_1fr]">
 
                     <div
-                        className="flex items-center gap-2 sm:gap-3 cursor-pointer group transition-all duration-300 hover:opacity-95 shrink-0"
+                        className="flex items-center gap-2 sm:gap-3 cursor-pointer group transition-all duration-300 hover:opacity-95 shrink-0 xl:justify-self-start"
                         onClick={() => scrollTo('home')}
                     >
                         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
@@ -371,70 +371,72 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                         </div>
                     </div>
 
-                    <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5 p-1 rounded-2xl bg-slate-900/85 border border-slate-800/90 backdrop-blur-xl shadow-inner">
+                    <nav className="hidden xl:flex items-center justify-center gap-1 2xl:gap-1.5 p-1 rounded-2xl bg-slate-900/85 border border-slate-800/90 backdrop-blur-xl shadow-inner justify-self-center">
                         {navTabs.map((tab) => {
                             const isActive = activeSection === tab.id;
                             return (
                                 <button
                                     key={tab.id}
                                     onClick={() => scrollTo(tab.id)}
-                                    className={`relative px-2.5 xl:px-4 py-1.5 rounded-xl text-[11px] xl:text-xs font-bold transition-all duration-300 flex items-center gap-1.5 xl:gap-2 group cursor-pointer ${
+                                    className={`relative px-3 2xl:px-4 py-1.5 rounded-xl text-[11px] 2xl:text-xs font-bold transition-all duration-300 flex items-center gap-1.5 whitespace-nowrap shrink-0 group cursor-pointer ${
                                         isActive
                                             ? 'bg-gradient-to-r from-amber-500/25 via-blue-500/15 to-amber-500/25 text-amber-300 border border-amber-400/40 shadow-md shadow-amber-500/15'
                                             : 'text-slate-300 hover:text-white hover:bg-slate-800/60 border border-transparent'
                                     }`}
                                 >
-                                    <span className="tracking-wide uppercase font-semibold">{tab.label}</span>
+                                    <span className="tracking-wide uppercase font-semibold whitespace-nowrap">{tab.label}</span>
 
                                     {isActive && (
-                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_8px_#f59e0b]" />
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_8px_#f59e0b] shrink-0" />
                                     )}
                                 </button>
                             );
                         })}
                     </nav>
 
-                    <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                    <div className="flex items-center gap-2 sm:gap-3 shrink-0 xl:justify-self-end">
                         {user ? (
                             <button
                                 onClick={onLaunchDashboard || onLaunchEproc}
-                                className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-[11px] sm:text-xs uppercase tracking-wider shadow-lg shadow-blue-500/25 border border-blue-400/30 transition-all duration-300 hover:scale-105 active:scale-95"
+                                className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-[11px] sm:text-xs uppercase tracking-wider shadow-lg shadow-blue-500/25 border border-blue-400/30 transition-all duration-300 hover:scale-105 active:scale-95 whitespace-nowrap"
                             >
                                 <span>Dashboard</span>
-                                <ArrowRight className="w-3.5 h-3.5" />
+                                <ArrowRight className="w-3.5 h-3.5 shrink-0" />
                             </button>
                         ) : (
                             <button
                                 onClick={() => scrollTo('systems')}
-                                className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-[11px] sm:text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 border border-amber-300/40 transition-all duration-300 hover:scale-105 active:scale-95"
+                                className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-[11px] sm:text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 border border-amber-300/40 transition-all duration-300 hover:scale-105 active:scale-95 whitespace-nowrap"
                             >
-                                <Lock className="w-3.5 h-3.5" />
+                                <Lock className="w-3.5 h-3.5 shrink-0" />
                                 <span><span className="hidden sm:inline">Sign In / </span>Portal Access</span>
                             </button>
                         )}
                     </div>
                 </div>
 
-                <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto no-scrollbar py-2 px-4 bg-slate-950/95 border-t border-slate-900">
-                    {navTabs.map((tab) => {
-                        const isActive = activeSection === tab.id;
-                        return (
-                            <button
-                                key={tab.id}
-                                onClick={() => scrollTo(tab.id)}
-                                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                                    isActive
-                                        ? 'bg-amber-400 text-slate-950 shadow-xs'
-                                        : 'bg-slate-900 text-slate-400 border border-slate-800'
-                                }`}
-                            >
-                                <span className="uppercase">{tab.label}</span>
-                                {isActive && (
-                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-950" />
-                                )}
-                            </button>
-                        );
-                    })}
+                <div className="xl:hidden w-full overflow-x-auto no-scrollbar py-2 px-3 sm:px-4 bg-slate-950/95 border-t border-slate-900">
+                    <div className="flex items-center justify-center gap-1.5 sm:gap-2 mx-auto w-max">
+                        {navTabs.map((tab) => {
+                            const isActive = activeSection === tab.id;
+                            return (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => scrollTo(tab.id)}
+                                    className={`shrink-0 px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center gap-1.5 whitespace-nowrap transition-all cursor-pointer ${
+                                        isActive
+                                            ? 'bg-amber-400 text-slate-950 shadow-xs'
+                                            : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800'
+                                    }`}
+                                >
+                                    <span className="uppercase whitespace-nowrap">{tab.label}</span>
+                                    {isActive && (
+                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-950 shrink-0" />
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
             </header>
 
