@@ -88,4 +88,15 @@ class AuthErrorPageDesignTest extends TestCase
         $response->assertStatus(403)
             ->assertJsonStructure(['message']);
     }
+
+    public function test_public_homepage_renders_200_with_valid_seo_and_json_ld(): void
+    {
+        $response = $this->get('/');
+
+        $response->assertStatus(200);
+        $response->assertSee('PMO eProc — E-Procurement System | Province of Davao del Sur (OPPMO)', false);
+        $response->assertSee('<meta name="robots" content="index, follow">', false);
+        $response->assertSee('"@context":"https://schema.org"', false);
+        $response->assertSee('"alternateName":["pmoeproc","pmoeproc.cloud"', false);
+    }
 }

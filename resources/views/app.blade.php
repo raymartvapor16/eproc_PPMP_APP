@@ -7,6 +7,25 @@
         ? 'Privacy Policy | PMO eProc — E-Procurement System (Davao del Sur)'
         : 'PMO eProc — E-Procurement System | Province of Davao del Sur (OPPMO)';
     $pageDescription = 'Official Electronic Procurement System (PMO eProc) of the Office of the Provincial Procurement Management Officer (OPPMO), Provincial Government of Davao del Sur. Access PPMP, APP, PIMS, Project Monitoring, and Supplier Evaluation services.';
+    $structuredData = [
+        '@context' => 'https://schema.org',
+        '@graph' => [
+            [
+                '@type' => 'WebSite',
+                'name' => 'PMO eProc — E-Procurement System',
+                'alternateName' => ['pmoeproc', 'pmoeproc.cloud', 'PMO eProc', 'OPPMO Davao del Sur'],
+                'url' => $siteUrl . '/',
+                'description' => $pageDescription,
+            ],
+            [
+                '@type' => 'GovernmentOrganization',
+                'name' => 'Office of the Provincial Procurement Management Officer (OPPMO) — Province of Davao del Sur',
+                'alternateName' => 'PMO eProc',
+                'url' => $siteUrl . '/',
+                'logo' => $siteUrl . '/images/pmo.jpeg',
+            ],
+        ],
+    ];
 @endphp
 <!DOCTYPE html>
 <html lang="en" class="h-full bg-slate-50">
@@ -37,27 +56,7 @@
     <meta name="twitter:image" content="{{ $siteUrl }}/images/pmo.jpeg">
 
     {{-- Structured Data (JSON-LD) for Google Search --}}
-    <script type="application/ld+json">
-        {
-            "@context": "https://schema.org",
-            "@graph": [
-                {
-                    "@type": "WebSite",
-                    "name": "PMO eProc — E-Procurement System",
-                    "alternateName": ["pmoeproc", "pmoeproc.cloud", "PMO eProc", "OPPMO Davao del Sur"],
-                    "url": "{{ $siteUrl }}/",
-                    "description": "{{ $pageDescription }}"
-                },
-                {
-                    "@type": "GovernmentOrganization",
-                    "name": "Office of the Provincial Procurement Management Officer (OPPMO) — Province of Davao del Sur",
-                    "alternateName": "PMO eProc",
-                    "url": "{{ $siteUrl }}/",
-                    "logo": "{{ $siteUrl }}/images/pmo.jpeg"
-                }
-            ]
-        }
-    </script>
+    <script type="application/ld+json">{!! json_encode($structuredData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!}</script>
 
     <link id="dynamic-favicon" rel="icon" type="image/jpeg" href="/images/pmo.jpeg">
     <link rel="apple-touch-icon" href="/images/pmo.jpeg">
