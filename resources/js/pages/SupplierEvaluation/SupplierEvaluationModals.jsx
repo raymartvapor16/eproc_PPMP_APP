@@ -265,11 +265,12 @@ export function EvaluateOrViewModal({
                                     type="text"
                                     value={coveredPeriod}
                                     onChange={(e) => setCoveredPeriod(e.target.value)}
-                                    readOnly={isReadOnly}
+                                    readOnly={!canEditHeader}
+                                    disabled={!canEditHeader}
                                     className={`w-full rounded-xl border px-3 py-2 ${
-                                        !isReadOnly
+                                        canEditHeader
                                             ? 'bg-white border-orange-300'
-                                            : 'bg-slate-100 border-slate-200 text-slate-700'
+                                            : 'bg-slate-100 border-slate-200 text-slate-700 cursor-not-allowed'
                                     }`}
                                 />
                             </div>
@@ -279,11 +280,12 @@ export function EvaluateOrViewModal({
                                     type="date"
                                     value={dateEvaluation}
                                     onChange={(e) => setDateEvaluation(e.target.value)}
-                                    readOnly={isReadOnly}
+                                    readOnly={!canEditHeader}
+                                    disabled={!canEditHeader}
                                     className={`w-full rounded-xl border px-3 py-2 ${
-                                        !isReadOnly
+                                        canEditHeader
                                             ? 'bg-white border-orange-300'
-                                            : 'bg-slate-100 border-slate-200 text-slate-700'
+                                            : 'bg-slate-100 border-slate-200 text-slate-700 cursor-not-allowed'
                                     }`}
                                 />
                             </div>
@@ -1726,7 +1728,7 @@ export function RequestsModal({ effectiveRole, initialEvaluation = null, onClose
 
     const isAdminOrPgso = effectiveRole === 'administrator' || effectiveRole === 'pgso';
 
-    const loadData = async () => {
+    const loadData = async (applyInitial = false) => {
         setLoading(true);
         try {
             const res = await supplierEvaluationService.getRequests();
@@ -1737,7 +1739,7 @@ export function RequestsModal({ effectiveRole, initialEvaluation = null, onClose
             } else {
                 setEvalDropdown(fetchedList);
             }
-            if (initialEvaluation?.id) {
+            if (applyInitial && initialEvaluation?.id) {
                 const matched = fetchedList.find((item) => String(item.id) === String(initialEvaluation.id)) || initialEvaluation;
                 setEvaluationId(String(matched.id));
                 setEvalSearch(formatEvalOptionLabel(matched));
@@ -1750,7 +1752,7 @@ export function RequestsModal({ effectiveRole, initialEvaluation = null, onClose
     };
 
     useEffect(() => {
-        loadData();
+        loadData(true);
     }, []);
 
     useEffect(() => {
@@ -1772,6 +1774,16 @@ export function RequestsModal({ effectiveRole, initialEvaluation = null, onClose
         };
     }, []);
 
+    const activeRequestByEvalId = requests.reduce((acc, req) => {
+        const statusLower = String(req.status || '').toLowerCase();
+        if (['pending', 'approved'].includes(statusLower) && req.evaluation_id) {
+            acc[String(req.evaluation_id)] = req;
+        }
+        return acc;
+    }, {});
+
+    const existingActiveRequest = evaluationId ? activeRequestByEvalId[String(evaluationId)] || null : null;
+
     const selectedEvalRecord = evalDropdown.find((ev) => String(ev.id) === String(evaluationId)) || null;
     const filteredEvalOptions = evalDropdown.filter((ev) => {
         const q = evalSearch.trim().toLowerCase();
@@ -1792,6 +1804,12 @@ export function RequestsModal({ effectiveRole, initialEvaluation = null, onClose
             setEvalDropdownOpen(true);
             return;
         }
+        if (existingActiveRequest) {
+            setEvalSelectionError(
+                `This evaluation already has a ${String(existingActiveRequest.status).toUpperCase()} ${String(existingActiveRequest.request_type).toUpperCase()} request.`
+            );
+            return;
+        }
         if (!reason.trim()) return;
         setEvalSelectionError('');
         setSubmitting(true);
@@ -1804,7 +1822,7 @@ export function RequestsModal({ effectiveRole, initialEvaluation = null, onClose
             setEvaluationId('');
             setEvalSearch('');
             setReason('');
-            loadData();
+            loadData(false);
             if (onUpdated) onUpdated();
         } catch (err) {
             alert(err.response?.data?.message || 'Failed to submit request.');
@@ -1921,6 +1939,7 @@ export function RequestsModal({ effectiveRole, initialEvaluation = null, onClose
                                             ) : (
                                                 filteredEvalOptions.map((ev) => {
                                                     const isSelected = String(ev.id) === String(evaluationId);
+                                                    const hasActiveReq = Boolean(activeRequestByEvalId[String(ev.id)]);
                                                     return (
                                                         <button
                                                             key={ev.id}
@@ -1943,6 +1962,11 @@ export function RequestsModal({ effectiveRole, initialEvaluation = null, onClose
                                                                 </div>
                                                             </div>
                                                             <div className="flex items-center gap-1.5 shrink-0">
+                                                                {hasActiveReq && (
+                                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-300">
+                                                                        Already Requested
+                                                                    </span>
+                                                                )}
                                                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-200">
                                                                     {ev.status}
                                                                 </span>
@@ -1978,13 +2002,21 @@ export function RequestsModal({ effectiveRole, initialEvaluation = null, onClose
                                     className="w-full rounded-xl border border-slate-300 bg-white p-2.5"
                                 />
                             </div>
+                            {existingActiveRequest && (
+                                <div className="flex items-start gap-2 rounded-xl bg-amber-100/90 border border-amber-300 px-3 py-2.5 text-amber-900 text-xs font-semibold">
+                                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                    <span>
+                                        This evaluation already has a <strong>{String(existingActiveRequest.status).toUpperCase()} {String(existingActiveRequest.request_type).toUpperCase()}</strong> request. Please wait for Administrator review or cancel the existing request below before submitting a new one.
+                                    </span>
+                                </div>
+                            )}
                             <div className="flex justify-end">
                                 <button
                                     type="submit"
-                                    disabled={submitting}
-                                    className="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold cursor-pointer"
+                                    disabled={submitting || Boolean(existingActiveRequest)}
+                                    className="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold cursor-pointer transition"
                                 >
-                                    Submit Request
+                                    {existingActiveRequest ? 'Already Requested' : 'Submit Request'}
                                 </button>
                             </div>
                         </form>

@@ -132,5 +132,27 @@ class SupplierEvaluationSeparateDatabaseTest extends TestCase
             ->assertOk();
 
         $this->assertGreaterThanOrEqual(1, count($logRes->json('data') ?? []));
+
+        // Duplicate request prevention: 1st request succeeds (201), 2nd active request is blocked (422)
+        $createdEvalId = DB::connection('supplier_eval')
+            ->table('supplier_evaluations')
+            ->where('po_no', 'PO-2026-NEWDB')
+            ->value('id');
+
+        $this->actingAs($admin)
+            ->postJson('/api/supplier-evaluation/requests', [
+                'evaluation_id' => $createdEvalId,
+                'request_type' => 'update',
+                'reason' => 'Fix typo in remarks',
+            ])
+            ->assertStatus(201);
+
+        $this->actingAs($admin)
+            ->postJson('/api/supplier-evaluation/requests', [
+                'evaluation_id' => $createdEvalId,
+                'request_type' => 'update',
+                'reason' => 'Duplicate request attempt',
+            ])
+            ->assertStatus(422);
     }
 }

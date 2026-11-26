@@ -536,23 +536,27 @@ class SupplierEvaluationController extends Controller
 
         DB::connection(SupplierEvaluation::supplierEvalConnectionName())->transaction(function () use ($request, $user, $role, $eval, $ratings, $remarks) {
 
-            if ($request->filled('supplier_name')) {
-                $eval->supplier_name = trim($request->input('supplier_name'));
-            }
-            if ($request->filled('po_no')) {
-                $eval->po_no = trim($request->input('po_no'));
-            }
-            if ($request->filled('date_evaluation')) {
-                $eval->date_evaluation = $request->input('date_evaluation');
-            }
-            if ($request->filled('covered_period')) {
-                $eval->covered_period = trim($request->input('covered_period'));
-                if (preg_match('/(20\d{2})/', $eval->covered_period, $m)) {
-                    $eval->period_year = (int) $m[1];
+            $canEditEvalHeader = in_array($role, ['administrator', 'pgso'], true);
+
+            if ($canEditEvalHeader) {
+                if ($request->filled('supplier_name')) {
+                    $eval->supplier_name = trim($request->input('supplier_name'));
                 }
-            }
-            if ($request->filled('office_id')) {
-                $eval->office_id = (int) $request->input('office_id');
+                if ($request->filled('po_no')) {
+                    $eval->po_no = trim($request->input('po_no'));
+                }
+                if ($request->filled('date_evaluation')) {
+                    $eval->date_evaluation = $request->input('date_evaluation');
+                }
+                if ($request->filled('covered_period')) {
+                    $eval->covered_period = trim($request->input('covered_period'));
+                    if (preg_match('/(20\d{2})/', $eval->covered_period, $m)) {
+                        $eval->period_year = (int) $m[1];
+                    }
+                }
+                if ($request->filled('office_id')) {
+                    $eval->office_id = (int) $request->input('office_id');
+                }
             }
 
             if (is_array($ratings) && !empty($ratings)) {
@@ -1602,6 +1606,22 @@ class SupplierEvaluationController extends Controller
             'request_type' => 'required|string|in:update,delete',
             'reason' => 'required|string|max:1000',
         ]);
+
+        $existingActive = SupplierRequest::where('evaluation_id', $validated['evaluation_id'])
+            ->whereIn('status', ['pending', 'approved'])
+            ->latest('id')
+            ->first();
+
+        if ($existingActive) {
+            $typeLabel = strtoupper((string) $existingActive->request_type);
+            $msg = $existingActive->status === 'approved'
+                ? "An approved {$typeLabel} request for this evaluation is already active."
+                : "A pending {$typeLabel} request for this evaluation already exists. Please wait for Administrator review or cancel the existing request first.";
+
+            return response()->json([
+                'message' => $msg,
+            ], 422);
+        }
 
         $admin = User::withAnyRole(['super_admin', 'admin'])->first();
 
