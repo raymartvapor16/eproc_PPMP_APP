@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 
 import { isExternalLink, normalizeDestinationUrl } from '../../components/Dashboard/PortalSystemsManagement';
-import { SpiderParticlesCanvas } from '../../components/UI/SpiderParticlesCanvas';
+import { AuroraParticlesCanvas } from '../../components/UI/AuroraParticlesCanvas';
 
 const DEFAULT_PORTAL_SYSTEMS = [
     {
@@ -441,15 +441,30 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
             <section id="home" className="relative pt-32 pb-24 md:pt-44 md:pb-36 overflow-hidden">
 
                 <div
-                    className="absolute inset-0 bg-cover bg-center opacity-20"
+                    className="absolute inset-0 bg-cover bg-center opacity-60"
                     style={{ backgroundImage: `url('/images/bg.jpg')` }}
                 />
-                <div className="absolute inset-0 bg-gradient-to-b from-slate-950/70 via-slate-950/85 to-slate-950 pointer-events-none" />
+                <div className="absolute inset-0 bg-gradient-to-b from-slate-950/45 via-slate-950/60 to-slate-950 pointer-events-none" />
 
-                <SpiderParticlesCanvas className="absolute inset-0 pointer-events-none z-0" />
+                <AuroraParticlesCanvas className="absolute inset-0 w-full h-full pointer-events-none z-0" />
 
                 <div
-                    className="landing-aura-glow absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[620px] h-[360px] rounded-full pointer-events-none z-0"
+                    className="landing-ambient-orb-1 absolute -top-24 -left-24 w-[420px] h-[420px] rounded-full z-0"
+                    style={{
+                        background:
+                            'radial-gradient(circle at center, rgba(59, 130, 246, 0.24) 0%, rgba(56, 189, 248, 0.08) 50%, transparent 72%)',
+                    }}
+                />
+                <div
+                    className="landing-ambient-orb-2 absolute bottom-10 -right-24 w-[440px] h-[440px] rounded-full z-0"
+                    style={{
+                        background:
+                            'radial-gradient(circle at center, rgba(245, 158, 11, 0.20) 0%, rgba(168, 85, 247, 0.08) 50%, transparent 72%)',
+                    }}
+                />
+
+                <div
+                    className="landing-aura-glow absolute top-1/4 left-1/2 w-[620px] h-[360px] rounded-full pointer-events-none z-0"
                     style={{
                         background:
                             'radial-gradient(ellipse at center, rgba(59, 130, 246, 0.22) 0%, rgba(99, 102, 241, 0.14) 45%, rgba(245, 158, 11, 0.08) 70%, transparent 100%)',
@@ -564,7 +579,7 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                             Digital PPMP Lifecycle
                                         </div>
                                         <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                                            Paperless workflow routing from End Users to BAC & PBO approval.
+                                            Paperless workflow routing from End Users to BAC &amp; PBO approval.
                                         </p>
                                     </div>
 
@@ -645,7 +660,7 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                     </div>
 
                                     <div className="mt-5 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-purple-400/90 font-medium">
-                                        <span className="font-mono text-[10px]">COA & Statutory Compliance</span>
+                                        <span className="font-mono text-[10px]">COA &amp; Statutory Compliance</span>
                                         <Shield className="w-4 h-4 text-purple-400 transition-transform duration-300 group-hover:scale-110" />
                                     </div>
                                 </div>
@@ -1343,7 +1358,7 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
                                 onClick={() => setRestrictedModalSys(null)}
                                 className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition cursor-pointer"
                             >
-                                Understand & Close
+                                Understand &amp; Close
                             </button>
                         </div>
                     </div>

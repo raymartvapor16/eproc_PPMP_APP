@@ -213,7 +213,7 @@ html {
         transform: translate3d(0, 0, 0);
     }
     50% {
-        transform: translate3d(0, -6px, 0);
+        transform: translate3d(0, -7px, 0);
     }
 }
 
@@ -222,7 +222,7 @@ html {
         transform: translate3d(0, 0, 0);
     }
     50% {
-        transform: translate3d(0, -8px, 0);
+        transform: translate3d(0, -9px, 0);
     }
 }
 
@@ -231,7 +231,7 @@ html {
         transform: translate3d(0, 0, 0);
     }
     50% {
-        transform: translate3d(0, -5px, 0);
+        transform: translate3d(0, -6px, 0);
     }
 }
 
@@ -240,16 +240,40 @@ html {
         transform: translate3d(0, 0, 0);
     }
     50% {
-        transform: translate3d(0, -7px, 0);
+        transform: translate3d(0, -8px, 0);
     }
 }
 
 @keyframes auraBreathe {
     0%, 100% {
-        opacity: 0.35;
+        opacity: 0.36;
+        transform: translate3d(-50%, -50%, 0) scale(1);
     }
     50% {
-        opacity: 0.55;
+        opacity: 0.58;
+        transform: translate3d(-50%, -50%, 0) scale(1.08);
+    }
+}
+
+@keyframes ambientOrbDriftA {
+    0%, 100% {
+        transform: translate3d(0, 0, 0) scale(1);
+        opacity: 0.28;
+    }
+    50% {
+        transform: translate3d(28px, -20px, 0) scale(1.1);
+        opacity: 0.44;
+    }
+}
+
+@keyframes ambientOrbDriftB {
+    0%, 100% {
+        transform: translate3d(0, 0, 0) scale(1);
+        opacity: 0.22;
+    }
+    50% {
+        transform: translate3d(-26px, 18px, 0) scale(1.08);
+        opacity: 0.38;
     }
 }
 
@@ -266,23 +290,75 @@ html {
         opacity: 0;
     }
 }
-.landing-card-float-1,
-.landing-card-float-2,
-.landing-card-float-3,
+
+.landing-card-float-1 {
+    animation: landingCardFloat1 6.2s ease-in-out infinite;
+    will-change: transform;
+}
+
+.landing-card-float-2 {
+    animation: landingCardFloat2 6.8s ease-in-out 0.6s infinite;
+    will-change: transform;
+}
+
+.landing-card-float-3 {
+    animation: landingCardFloat3 6.5s ease-in-out 1.2s infinite;
+    will-change: transform;
+}
+
 .landing-card-float-4 {
-    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    animation: landingCardFloat4 7.1s ease-in-out 1.8s infinite;
+    will-change: transform;
 }
 
 .landing-card-float-1:hover,
 .landing-card-float-2:hover,
 .landing-card-float-3:hover,
 .landing-card-float-4:hover {
-    transform: translate3d(0, -5px, 0);
+    animation-play-state: paused;
 }
 
 .landing-aura-glow {
     opacity: 0.45;
     pointer-events: none;
+    animation: auraBreathe 9s ease-in-out infinite;
+    will-change: transform, opacity;
+}
+
+.landing-ambient-orb-1 {
+    animation: ambientOrbDriftA 13s ease-in-out infinite;
+    will-change: transform, opacity;
+    pointer-events: none;
+}
+
+.landing-ambient-orb-2 {
+    animation: ambientOrbDriftB 15s ease-in-out 1.5s infinite;
+    will-change: transform, opacity;
+    pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .landing-card-float-1,
+    .landing-card-float-2,
+    .landing-card-float-3,
+    .landing-card-float-4,
+    .landing-aura-glow,
+    .landing-ambient-orb-1,
+    .landing-ambient-orb-2,
+    .presentation-hero-entry,
+    .lively-hero-badge,
+    .lively-hero-title,
+    .lively-hero-subtitle,
+    .lively-hero-cta,
+    .presentation-card-1,
+    .presentation-card-2,
+    .presentation-card-3,
+    .presentation-card-4 {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+        opacity: 1 !important;
+    }
 }
 .shimmer-shine {
     position: absolute;
