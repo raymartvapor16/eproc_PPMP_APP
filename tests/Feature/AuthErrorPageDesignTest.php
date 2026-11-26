@@ -50,6 +50,7 @@ class AuthErrorPageDesignTest extends TestCase
             'code' => 'TST',
         ]);
 
+        /** @var User $endUser */
         $endUser = User::factory()->create([
             'role' => 'end_user',
             'office_id' => $office->id,
@@ -77,6 +78,7 @@ class AuthErrorPageDesignTest extends TestCase
             'code' => 'TS2',
         ]);
 
+        /** @var User $endUser */
         $endUser = User::factory()->create([
             'role' => 'end_user',
             'office_id' => $office->id,
@@ -98,5 +100,17 @@ class AuthErrorPageDesignTest extends TestCase
         $response->assertSee('<meta name="robots" content="index, follow">', false);
         $response->assertSee('"@context":"https://schema.org"', false);
         $response->assertSee('"alternateName":["pmoeproc","pmoeproc.cloud"', false);
+        $response->assertSee('/favicon-48x48.png', false);
+        $response->assertSee('/favicon-192x192.png', false);
+    }
+
+    public function test_sitemap_xml_returns_xml_with_noindex_robots_header(): void
+    {
+        $response = $this->get('/sitemap.xml');
+
+        $response->assertStatus(200);
+        $this->assertStringContainsString('application/xml', (string) $response->headers->get('Content-Type'));
+        $this->assertSame('noindex, follow', $response->headers->get('X-Robots-Tag'));
+        $response->assertSee('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">', false);
     }
 }

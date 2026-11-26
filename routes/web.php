@@ -332,6 +332,33 @@ Route::prefix('api')->group(function () {
     });
 });
 
+Route::get('/sitemap.xml', function () {
+    $siteUrl = rtrim(config('app.url') ?: url('/'), '/');
+    $lastmod = now()->toDateString();
+
+    $xml = <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+        <loc>{$siteUrl}/</loc>
+        <lastmod>{$lastmod}</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>1.0</priority>
+    </url>
+    <url>
+        <loc>{$siteUrl}/privacy-policy</loc>
+        <lastmod>{$lastmod}</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.5</priority>
+    </url>
+</urlset>
+XML;
+
+    return response($xml, 200)
+        ->header('Content-Type', 'application/xml; charset=UTF-8')
+        ->header('X-Robots-Tag', 'noindex, follow');
+});
+
 Route::get('/storage/oppmo_team/{filename}', [OppmoTeamController::class, 'getPhoto'])->where('filename', '[A-Za-z0-9_\-\.]+')->middleware('throttle:300,1');
 
 Route::get('/login', function () {

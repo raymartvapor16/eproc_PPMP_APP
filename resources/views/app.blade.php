@@ -22,7 +22,7 @@
                 'name' => 'Office of the Provincial Procurement Management Officer (OPPMO) — Province of Davao del Sur',
                 'alternateName' => 'PMO eProc',
                 'url' => $siteUrl . '/',
-                'logo' => $siteUrl . '/images/pmo.jpeg',
+                'logo' => $siteUrl . '/favicon-192x192.png',
             ],
         ],
     ];
@@ -58,8 +58,11 @@
     {{-- Structured Data (JSON-LD) for Google Search --}}
     <script type="application/ld+json">{!! json_encode($structuredData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!}</script>
 
-    <link id="dynamic-favicon" rel="icon" type="image/jpeg" href="/images/pmo.jpeg">
-    <link rel="apple-touch-icon" href="/images/pmo.jpeg">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png">
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png">
+    <link id="dynamic-favicon" rel="icon" type="image/png" sizes="192x192" href="/favicon-192x192.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
