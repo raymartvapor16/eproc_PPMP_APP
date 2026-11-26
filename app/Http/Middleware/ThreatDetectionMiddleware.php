@@ -138,13 +138,56 @@ class ThreatDetectionMiddleware
         }
 
         if ($status === 419) {
-            SecurityThreatService::recordThreat(
-                $request,
-                'SESSION_HIJACK',
-                'high',
-                "CSRF / Session Token mismatch (HTTP 419) on {$request->method()} {$path}. Possible session-riding or token forgery attempt.",
-                ['status_code' => 419]
-            );
+            $isAuthLifecyclePath = in_array($path, [
+                '/api/login',
+                '/api/logout',
+                '/api/login/mfa/verify',
+                '/api/login/mfa/resend',
+            ], true);
+
+            $sentToken = (string) ($request->header('X-CSRF-TOKEN') ?: $request->input('_token', ''));
+            $hasToken = trim($sentToken) !== '';
+
+            $appHost = strtolower((string) $request->getHost());
+            $originHost = strtolower((string) (parse_url((string) $request->header('Origin', ''), PHP_URL_HOST) ?: ''));
+            $refererHost = strtolower((string) (parse_url((string) $request->header('Referer', ''), PHP_URL_HOST) ?: ''));
+            $isCrossOrigin = ($originHost !== '' && $originHost !== $appHost)
+                || ($refererHost !== '' && $refererHost !== $appHost);
+
+            $ipHash = hash('sha256', (string) $request->ip());
+            $burstKey = "ids:csrf_419_burst:{$ipHash}";
+            $burstCount = (int) \Illuminate\Support\Facades\Cache::get($burstKey, 0) + 1;
+            \Illuminate\Support\Facades\Cache::put($burstKey, $burstCount, now()->addMinutes(5));
+
+            $isBenignStaleAuthTab = $isAuthLifecyclePath
+                && $hasToken
+                && !$isCrossOrigin
+                && $burstCount < 3;
+
+            if (!$isBenignStaleAuthTab) {
+                $reason = $isCrossOrigin
+                    ? 'Cross-origin CSRF forgery attempt'
+                    : (!$hasToken
+                        ? 'Missing CSRF token on protected request'
+                        : ($burstCount >= 3
+                            ? "Repeated CSRF / Session token mismatch burst ({$burstCount}x in 5 min)"
+                            : 'Possible session-riding or token forgery attempt'));
+
+                SecurityThreatService::recordThreat(
+                    $request,
+                    'SESSION_HIJACK',
+                    'high',
+                    "CSRF / Session Token mismatch (HTTP 419) on {$request->method()} {$path}. {$reason}.",
+                    [
+                        'status_code' => 419,
+                        'payload_summary' => [
+                            'cross_origin' => $isCrossOrigin,
+                            'has_token' => $hasToken,
+                            'burst_count_5m' => $burstCount,
+                        ],
+                    ]
+                );
+            }
         } elseif ($status === 429) {
             SecurityThreatService::recordThreat(
                 $request,

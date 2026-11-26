@@ -10,7 +10,14 @@ const api = axios.create({
     withCredentials: true,
 });
 
-export const setCsrfToken = (newToken) => {
+const CSRF_SYNC_STORAGE_KEY = 'eproc_csrf_token_sync';
+const CSRF_IDLE_REFRESH_MS = 5 * 60 * 1000;
+const CSRF_AUTH_STALE_MS = 10 * 60 * 1000;
+
+let lastCsrfSyncedAt = Date.now();
+let csrfRefreshPromise = null;
+
+export const setCsrfToken = (newToken, { broadcast = true } = {}) => {
     if (!newToken) return;
     let meta = document.head.querySelector('meta[name="csrf-token"]');
     if (!meta) {
@@ -20,11 +27,74 @@ export const setCsrfToken = (newToken) => {
     }
     meta.content = newToken;
     api.defaults.headers.common['X-CSRF-TOKEN'] = newToken;
+    lastCsrfSyncedAt = Date.now();
+
+    if (broadcast && typeof window !== 'undefined') {
+        try {
+            localStorage.setItem(CSRF_SYNC_STORAGE_KEY, JSON.stringify({
+                token: newToken,
+                ts: lastCsrfSyncedAt,
+            }));
+        } catch (_) {}
+    }
+};
+
+export const refreshCsrfToken = async ({ force = false } = {}) => {
+    if (typeof window === 'undefined') return null;
+    if (!force) {
+        if (document.hidden || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+            return null;
+        }
+        if (Date.now() - lastCsrfSyncedAt < CSRF_IDLE_REFRESH_MS) {
+            return null;
+        }
+    }
+
+    if (csrfRefreshPromise) {
+        return csrfRefreshPromise;
+    }
+
+    csrfRefreshPromise = axios
+        .get('/api/csrf-token', { withCredentials: true })
+        .then((tokenRes) => {
+            const freshToken = tokenRes?.data?.csrf_token || null;
+            if (freshToken) {
+                setCsrfToken(freshToken);
+            }
+            return freshToken;
+        })
+        .catch(() => null)
+        .finally(() => {
+            csrfRefreshPromise = null;
+        });
+
+    return csrfRefreshPromise;
 };
 
 const initialToken = document.head.querySelector('meta[name="csrf-token"]');
 if (initialToken && initialToken.content) {
-    setCsrfToken(initialToken.content);
+    setCsrfToken(initialToken.content, { broadcast: false });
+}
+
+if (typeof window !== 'undefined') {
+    const handleTabWakeup = () => {
+        if (!document.hidden && Date.now() - lastCsrfSyncedAt >= CSRF_IDLE_REFRESH_MS) {
+            refreshCsrfToken({ force: false });
+        }
+    };
+
+    document.addEventListener('visibilitychange', handleTabWakeup);
+    window.addEventListener('focus', handleTabWakeup);
+
+    window.addEventListener('storage', (event) => {
+        if (event.key !== CSRF_SYNC_STORAGE_KEY || !event.newValue) return;
+        try {
+            const parsed = JSON.parse(event.newValue);
+            if (parsed?.token) {
+                setCsrfToken(parsed.token, { broadcast: false });
+            }
+        } catch (_) {}
+    });
 }
 
 api.interceptors.request.use((config) => {
@@ -34,8 +104,6 @@ api.interceptors.request.use((config) => {
     }
     return config;
 });
-
-let isRefreshingCsrf = false;
 
 api.interceptors.response.use(
     (response) => {
@@ -48,24 +116,19 @@ api.interceptors.response.use(
     async (error) => {
         const originalRequest = error.config;
 
-        if (error.response && error.response.status === 419 && !originalRequest._retry && !isRefreshingCsrf) {
+        if (error.response && error.response.status === 419 && originalRequest && !originalRequest._retry) {
             originalRequest._retry = true;
-            isRefreshingCsrf = true;
 
             try {
-                const tokenRes = await axios.get('/api/csrf-token', { withCredentials: true });
-                if (tokenRes.data && tokenRes.data.csrf_token) {
-                    setCsrfToken(tokenRes.data.csrf_token);
-                    originalRequest.headers['X-CSRF-TOKEN'] = tokenRes.data.csrf_token;
-                    isRefreshingCsrf = false;
+                const freshToken = await refreshCsrfToken({ force: true });
+                if (freshToken) {
+                    originalRequest.headers['X-CSRF-TOKEN'] = freshToken;
                     return api(originalRequest);
                 }
             } catch (refreshErr) {
-                isRefreshingCsrf = false;
                 window.dispatchEvent(new CustomEvent('auth:unauthorized'));
                 return Promise.reject(refreshErr);
             }
-            isRefreshingCsrf = false;
         }
 
         if (error.response && error.response.status === 401) {
@@ -79,6 +142,9 @@ api.interceptors.response.use(
 
 export const authService = {
     login: async (credentials) => {
+        if (Date.now() - lastCsrfSyncedAt >= CSRF_AUTH_STALE_MS) {
+            await refreshCsrfToken({ force: true });
+        }
         const res = await api.post('/login', credentials);
         if (res.data && res.data.csrf_token) {
             setCsrfToken(res.data.csrf_token);
@@ -104,6 +170,9 @@ export const authService = {
     getPublicOffices: () => api.get('/public-offices'),
     logout: async (payload = {}) => {
         try {
+            if (Date.now() - lastCsrfSyncedAt >= CSRF_AUTH_STALE_MS) {
+                await refreshCsrfToken({ force: true });
+            }
             const res = await api.post('/logout', payload);
             if (res.data && res.data.csrf_token) {
                 setCsrfToken(res.data.csrf_token);
