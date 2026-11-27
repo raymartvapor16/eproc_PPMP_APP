@@ -71,7 +71,7 @@ class SupplierEvaluationController extends Controller
         return 'end_user';
     }
 
-    public static function computeEvaluationScore($criteriaScores): float
+    public static function computeEvaluationScore(iterable $criteriaScores): float
     {
         $total = 0.0;
         foreach ($criteriaScores as $score) {
@@ -123,7 +123,7 @@ class SupplierEvaluationController extends Controller
         return Office::first();
     }
 
-    protected function applyOfficeScopeToPoQuery($query, $user, bool $isGlobalScope)
+    protected function applyOfficeScopeToPoQuery(\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query, User $user, bool $isGlobalScope)
     {
         if ($isGlobalScope || !$user->office) {
             return $query;
@@ -369,7 +369,7 @@ class SupplierEvaluationController extends Controller
                 'item' => $po->item,
                 'pdf_po' => $po->pdf_po,
                 'has_pdf' => !empty($po->pdf_po),
-                'pdf_url' => !empty($po->pdf_po) ? "/api/supplier-evaluation/purchase-orders/{$po->id}/pdf" : null,
+                'pdf_url' => !empty($po->pdf_po) ? '/api/supplier-evaluation/purchase-orders/' . SupplierPurchaseOrder::encryptPdfId((int) $po->id) . '/pdf' : null,
                 'end_user' => $po->end_user,
                 'supplier' => $po->supplier,
                 'status' => $po->status,
@@ -420,7 +420,7 @@ class SupplierEvaluationController extends Controller
             'item' => $po->item,
             'pdf_po' => $po->pdf_po,
             'has_pdf' => !empty($po->pdf_po),
-            'pdf_url' => !empty($po->pdf_po) ? "/api/supplier-evaluation/purchase-orders/{$po->id}/pdf" : null,
+            'pdf_url' => !empty($po->pdf_po) ? '/api/supplier-evaluation/purchase-orders/' . SupplierPurchaseOrder::encryptPdfId((int) $po->id) . '/pdf' : null,
             'end_user' => $po->end_user,
             'supplier' => $po->supplier,
             'status' => $po->status,
@@ -770,7 +770,7 @@ class SupplierEvaluationController extends Controller
                 'status' => $eval->status,
                 'total_score' => self::computeEvaluationScore($eval->criteriaScores),
                 'has_pdf' => !empty($po?->pdf_po),
-                'pdf_url' => !empty($po?->pdf_po) ? "/api/supplier-evaluation/purchase-orders/{$po->id}/pdf" : null,
+                'pdf_url' => !empty($po?->pdf_po) ? '/api/supplier-evaluation/purchase-orders/' . SupplierPurchaseOrder::encryptPdfId((int) $po->id) . '/pdf' : null,
                 'scores' => $scoresMap,
                 'remarks' => $remarksMap,
             ];
@@ -1041,7 +1041,7 @@ class SupplierEvaluationController extends Controller
                 'item' => $po->item,
                 'pdf_po' => $po->pdf_po,
                 'has_pdf' => !empty($po->pdf_po),
-                'pdf_url' => !empty($po->pdf_po) ? "/api/supplier-evaluation/purchase-orders/{$po->id}/pdf" : null,
+                'pdf_url' => !empty($po->pdf_po) ? '/api/supplier-evaluation/purchase-orders/' . SupplierPurchaseOrder::encryptPdfId((int) $po->id) . '/pdf' : null,
                 'end_user' => $po->end_user,
                 'supplier' => $po->supplier,
                 'status' => $po->status ?: 'Pending',
@@ -1234,17 +1234,22 @@ class SupplierEvaluationController extends Controller
 
         return response()->json([
             'message' => "PDF uploaded for Purchase Order {$po->po_no}.",
-            'pdf_url' => "/api/supplier-evaluation/purchase-orders/{$po->id}/pdf",
+            'pdf_url' => '/api/supplier-evaluation/purchase-orders/' . SupplierPurchaseOrder::encryptPdfId((int) $po->id) . '/pdf',
         ]);
     }
 
-    public function viewPurchaseOrderPdf(Request $request, int $id): BinaryFileResponse|JsonResponse
+    public function viewPurchaseOrderPdf(Request $request, string $id): BinaryFileResponse|JsonResponse
     {
+        $resolvedId = SupplierPurchaseOrder::decryptPdfId($id);
+        if (!$resolvedId) {
+            return response()->json(['message' => 'Invalid or unencrypted purchase order reference.'], 403);
+        }
+
         $user = $this->authorizeSupplierEvaluation($request);
         $role = $this->getEffectiveRole($user);
         $isGlobalScope = in_array($role, ['administrator', 'pgso'], true);
 
-        $po = SupplierPurchaseOrder::findOrFail($id);
+        $po = SupplierPurchaseOrder::findOrFail($resolvedId);
         if (!$isGlobalScope && $user->office_id && $po->office_id && (int) $po->office_id !== (int) $user->office_id) {
             return response()->json(['message' => 'Unauthorized. You do not have permission to view this Purchase Order PDF.'], 403);
         }
@@ -1739,7 +1744,7 @@ class SupplierEvaluationController extends Controller
                 'office_name' => $p->user->office->name ?? 'N/A',
                 'role' => $p->user->role ?? '',
                 'pdf_file' => $p->pdf_file,
-                'file_url' => "/api/supplier-evaluation/pdfs/{$p->id}/file",
+                'file_url' => '/api/supplier-evaluation/pdfs/' . SupplierPdf::encryptFileId((int) $p->id) . '/file',
                 'status' => $p->status,
                 'created_at' => $p->created_at?->toDateTimeString(),
             ];
@@ -1816,13 +1821,18 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    public function viewAuthorizePdfFile(Request $request, int $id): BinaryFileResponse|JsonResponse
+    public function viewAuthorizePdfFile(Request $request, string $id): BinaryFileResponse|JsonResponse
     {
+        $resolvedId = SupplierPdf::decryptFileId($id);
+        if (!$resolvedId) {
+            return response()->json(['message' => 'Invalid or unencrypted authorization PDF reference.'], 403);
+        }
+
         $user = $this->authorizeSupplierEvaluation($request);
         $role = $this->getEffectiveRole($user);
         $isGlobalScope = in_array($role, ['administrator', 'pgso'], true);
 
-        $pdf = SupplierPdf::with('user')->findOrFail($id);
+        $pdf = SupplierPdf::with('user')->findOrFail($resolvedId);
         if (!$isGlobalScope) {
             $isOwner = (int) $pdf->user_id === (int) $user->id;
             $isSameOfficeHead = $user->isHead() && $user->office_id && $pdf->user && (int) $pdf->user->office_id === (int) $user->office_id;

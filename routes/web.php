@@ -311,7 +311,7 @@ Route::prefix('api')->group(function () {
             Route::put('/purchase-orders/{id}', [SupplierEvaluationController::class, 'updatePurchaseOrder'])->whereNumber('id');
             Route::delete('/purchase-orders/{id}', [SupplierEvaluationController::class, 'destroyPurchaseOrder'])->whereNumber('id');
             Route::post('/purchase-orders/{id}/upload-pdf', [SupplierEvaluationController::class, 'uploadPurchaseOrderPdf'])->whereNumber('id');
-            Route::get('/purchase-orders/{id}/pdf', [SupplierEvaluationController::class, 'viewPurchaseOrderPdf'])->whereNumber('id');
+            Route::get('/purchase-orders/{id}/pdf', [SupplierEvaluationController::class, 'viewPurchaseOrderPdf']);
 
             Route::get('/requests', [SupplierEvaluationController::class, 'listRequests']);
             Route::post('/requests', [SupplierEvaluationController::class, 'storeRequest']);
@@ -322,7 +322,7 @@ Route::prefix('api')->group(function () {
             Route::get('/pdfs', [SupplierEvaluationController::class, 'listAuthorizePdfs']);
             Route::post('/pdfs', [SupplierEvaluationController::class, 'uploadAuthorizePdf']);
             Route::post('/pdfs/{id}/status', [SupplierEvaluationController::class, 'updateAuthorizePdfStatus'])->whereNumber('id');
-            Route::get('/pdfs/{id}/file', [SupplierEvaluationController::class, 'viewAuthorizePdfFile'])->whereNumber('id');
+            Route::get('/pdfs/{id}/file', [SupplierEvaluationController::class, 'viewAuthorizePdfFile']);
 
             Route::get('/analytics', [SupplierEvaluationController::class, 'analytics']);
 

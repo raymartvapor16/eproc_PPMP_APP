@@ -25,9 +25,50 @@ class SupplierPurchaseOrder extends Model
 
     protected $appends = ['encrypted_id'];
 
-    public function getEncryptedIdAttribute()
+    public static function encryptPdfId(int $id): string
     {
-        return Crypt::encryptString((string) $this->id);
+        $payload = json_encode([
+            'type' => 'po_pdf',
+            'poid' => $id,
+            'n' => bin2hex(random_bytes(8)),
+            'ts' => time(),
+        ]);
+
+        return rtrim(strtr(Crypt::encryptString($payload), '+/', '-_'), '=');
+    }
+
+    public static function decryptPdfId(string $encrypted): ?int
+    {
+        $encrypted = trim($encrypted);
+        if ($encrypted === '' || ctype_digit($encrypted)) {
+            return null;
+        }
+
+        try {
+            $b64 = strtr($encrypted, '-_', '+/');
+            $b64 .= str_repeat('=', (4 - strlen($b64) % 4) % 4);
+            $decrypted = Crypt::decryptString($b64);
+            $data = json_decode($decrypted, true);
+
+            if (
+                is_array($data)
+                && ($data['type'] ?? null) === 'po_pdf'
+                && isset($data['poid'])
+                && is_numeric($data['poid'])
+                && (int) $data['poid'] > 0
+            ) {
+                return (int) $data['poid'];
+            }
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        return null;
+    }
+
+    public function getEncryptedIdAttribute(): ?string
+    {
+        return $this->id ? self::encryptPdfId((int) $this->id) : null;
     }
 
     public function evaluation()

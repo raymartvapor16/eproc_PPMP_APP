@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Office;
+use App\Models\SupplierPdf;
+use App\Models\SupplierPurchaseOrder;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -112,5 +114,63 @@ class AuthErrorPageDesignTest extends TestCase
         $this->assertStringContainsString('application/xml', (string) $response->headers->get('Content-Type'));
         $this->assertSame('noindex, follow', $response->headers->get('X-Robots-Tag'));
         $response->assertSee('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">', false);
+    }
+
+    public function test_unencrypted_or_tampered_po_pdf_and_auth_pdf_ids_return_403_access_denied(): void
+    {
+        $office = Office::create([
+            'name' => 'Procurement Office',
+            'code' => 'PMO',
+        ]);
+
+        /** @var User $admin */
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'office_id' => $office->id,
+            'is_active' => true,
+        ]);
+
+        // Raw numeric PO ID in browser -> designed 403 Access Denied HTML page
+        $browserRes = $this->actingAs($admin)
+            ->withHeaders([
+                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            ])
+            ->get('/api/supplier-evaluation/purchase-orders/8416/pdf');
+
+        $browserRes->assertStatus(403);
+        $this->assertStringContainsString('text/html', (string) $browserRes->headers->get('Content-Type'));
+        $browserRes->assertSee('Access Denied');
+        $browserRes->assertSee('Invalid or unencrypted purchase order reference.');
+        $browserRes->assertSee('/api/supplier-evaluation/purchase-orders/8416/pdf');
+
+        // Raw numeric PO ID via JSON API -> 403 JSON
+        $this->actingAs($admin)
+            ->getJson('/api/supplier-evaluation/purchase-orders/8416/pdf')
+            ->assertStatus(403)
+            ->assertExactJson(['message' => 'Invalid or unencrypted purchase order reference.']);
+
+        // Cross-type token swap (User encrypted ID passed to PO PDF route) -> 403
+        $wrongTypeToken = User::encryptId(8416);
+        $this->actingAs($admin)
+            ->getJson("/api/supplier-evaluation/purchase-orders/{$wrongTypeToken}/pdf")
+            ->assertStatus(403)
+            ->assertExactJson(['message' => 'Invalid or unencrypted purchase order reference.']);
+
+        // Raw numeric Authorization PDF ID -> 403
+        $this->actingAs($admin)
+            ->getJson('/api/supplier-evaluation/pdfs/12/file')
+            ->assertStatus(403)
+            ->assertExactJson(['message' => 'Invalid or unencrypted authorization PDF reference.']);
+
+        // Valid encrypt/decrypt round-trip
+        $poToken = SupplierPurchaseOrder::encryptPdfId(8416);
+        $this->assertNotSame('8416', $poToken);
+        $this->assertSame(8416, SupplierPurchaseOrder::decryptPdfId($poToken));
+        $this->assertNull(SupplierPdf::decryptFileId($poToken));
+
+        $authPdfToken = SupplierPdf::encryptFileId(12);
+        $this->assertNotSame('12', $authPdfToken);
+        $this->assertSame(12, SupplierPdf::decryptFileId($authPdfToken));
+        $this->assertNull(SupplierPurchaseOrder::decryptPdfId($authPdfToken));
     }
 }
