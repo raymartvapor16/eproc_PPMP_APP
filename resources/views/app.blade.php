@@ -42,7 +42,7 @@
 
     {{-- Open Graph / Social Sharing --}}
     <meta property="og:type" content="website">
-    <meta property="og:site_name" content="PMO eProc — E-Procurement System">
+    <meta property="og:site_name" content="BAC PMO — E-Procurement System">
     <meta property="og:title" content="{{ $pageTitle }}">
     <meta property="og:description" content="{{ $pageDescription }}">
     <meta property="og:url" content="{{ $canonicalUrl }}">
