@@ -1352,7 +1352,7 @@ export const LandingPage = ({ onLaunchDashboard, onLaunchEproc, onLaunchMonitori
 
                         <div className="mt-4 p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 text-[11px] text-slate-400 leading-relaxed space-y-1">
                             <span className="font-semibold text-amber-400 block">Personal Request Required (Face-to-Face):</span>
-                            Under provincial procurement security policy, requests to enable access to this system must be submitted in person (face-to-face) to the OPPMO / BAC Secretariat or your System Administrator.
+                            Provincial procurement data security mandates that any addition or modification to user system access requires submitting a duly accomplished <strong>User Access Form</strong> in person (face-to-face) to the <strong>Office of the Provincial Procurement Management Officer (OPPMO)</strong>.
                         </div>
 
                         <div className="mt-5 flex justify-end">
