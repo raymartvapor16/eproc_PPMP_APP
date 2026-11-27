@@ -12,6 +12,7 @@ import { AdminReportsView } from '../../components/Dashboard/AdminReportsView';
 import { AdminActivityLog } from '../../components/Dashboard/AdminActivityLog';
 import { SuperAdminSecurityLogsView } from '../../components/Dashboard/SuperAdminSecurityLogsView';
 import { FundSourcesManagement } from '../../components/Dashboard/FundSourcesManagement';
+import { AccountCodesManagement } from '../../components/Dashboard/AccountCodesManagement';
 import { ProcurementModesManagement } from '../../components/Dashboard/ProcurementModesManagement';
 import { ProcurementConditionsManagement } from '../../components/Dashboard/ProcurementConditionsManagement';
 import { OtherTermsManagement } from '../../components/Dashboard/OtherTermsManagement';
@@ -77,6 +78,7 @@ import {
     UserPlus,
     Layers,
     Landmark,
+    BookOpen,
     Package,
     HardHat,
 } from 'lucide-react';
@@ -1708,7 +1710,7 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                 )}
 
                 {(user?.role === 'budget_officer' || user?.role === 'pacco') && (
-                    <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200 self-start sm:self-auto">
+                    <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200 self-start sm:self-auto">
                         <button
                             type="button"
                             onClick={() => setReviewerView('queue')}
@@ -1740,6 +1742,25 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 Manage
                             </span>
                         </button>
+                        <button
+                            type="button"
+                            onClick={() => setReviewerView('account_codes')}
+                            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                reviewerView === 'account_codes'
+                                    ? 'bg-blue-600 text-white shadow-xs'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                            }`}
+                        >
+                            <BookOpen className="w-3.5 h-3.5" />
+                            <span>Account Codes</span>
+                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-black ${
+                                reviewerView === 'account_codes'
+                                    ? 'bg-blue-800 text-blue-100'
+                                    : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            }`}>
+                                Manage
+                            </span>
+                        </button>
                     </div>
                 )}
             </div>
@@ -1747,6 +1768,10 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
             {(user?.role === 'budget_officer' || user?.role === 'pacco') && reviewerView === 'fund_sources' ? (
                 <div className="space-y-6">
                     <FundSourcesManagement user={user} />
+                </div>
+            ) : (user?.role === 'budget_officer' || user?.role === 'pacco') && reviewerView === 'account_codes' ? (
+                <div className="space-y-6">
+                    <AccountCodesManagement />
                 </div>
             ) : (
                 <>
@@ -1760,26 +1785,37 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
                                 <div>
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <span className="font-extrabold text-xs tracking-tight text-white uppercase">
-                                            Sources of Fund Management &amp; Review Routing
+                                            Sources of Fund &amp; Account Codes Management
                                         </span>
                                         <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] font-black rounded-full border border-emerald-500/30">
                                             {user.role === 'pacco' ? 'PACCO Reviewer Catalog' : 'Budget Officer Catalog'}
                                         </span>
                                     </div>
                                     <p className="text-[11px] text-slate-300 mt-1 max-w-2xl leading-relaxed">
-                                        Configure official fund classifications, account codes, and review routes (General Fund, 20% DF, Special Health/Education, or Trust Funds).
+                                        Configure official fund classifications, Chart of Accounts codes, and review routes (General Fund, 20% DF, Special Health/Education, or Trust Funds).
                                     </p>
                                 </div>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => setReviewerView('fund_sources')}
-                                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer shrink-0 self-start sm:self-auto"
-                            >
-                                <Landmark className="w-3.5 h-3.5" />
-                                <span>Manage Sources of Fund</span>
-                                <ArrowRight className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex flex-wrap items-center gap-2 shrink-0 self-start sm:self-auto">
+                                <button
+                                    type="button"
+                                    onClick={() => setReviewerView('fund_sources')}
+                                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                                >
+                                    <Landmark className="w-3.5 h-3.5" />
+                                    <span>Manage Sources of Fund</span>
+                                    <ArrowRight className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setReviewerView('account_codes')}
+                                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
+                                >
+                                    <BookOpen className="w-3.5 h-3.5" />
+                                    <span>Manage Account Codes</span>
+                                    <ArrowRight className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
                         </div>
                     )}
 

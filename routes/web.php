@@ -143,13 +143,13 @@ Route::prefix('api')->group(function () {
         Route::put('/supporting-documents/{id}', [SupportingDocumentController::class, 'update'])->middleware('role:admin,super_admin');
         Route::delete('/supporting-documents/{id}', [SupportingDocumentController::class, 'destroy'])->middleware('role:admin,super_admin');
 
-        Route::get('/account-codes/stats', [AccountCodeController::class, 'stats'])->middleware('role:admin,super_admin');
+        Route::get('/account-codes/stats', [AccountCodeController::class, 'stats'])->middleware('role:admin,super_admin,budget_officer,pacco');
         Route::get('/account-codes', [AccountCodeController::class, 'index']);
-        Route::post('/account-codes', [AccountCodeController::class, 'store'])->middleware('role:admin,super_admin');
+        Route::post('/account-codes', [AccountCodeController::class, 'store'])->middleware('role:admin,super_admin,budget_officer,pacco');
         Route::get('/account-codes/{id}', [AccountCodeController::class, 'show']);
-        Route::put('/account-codes/{id}', [AccountCodeController::class, 'update'])->middleware('role:admin,super_admin');
-        Route::patch('/account-codes/{id}/toggle-status', [AccountCodeController::class, 'toggleStatus'])->middleware('role:admin,super_admin');
-        Route::delete('/account-codes/{id}', [AccountCodeController::class, 'destroy'])->middleware('role:admin,super_admin');
+        Route::put('/account-codes/{id}', [AccountCodeController::class, 'update'])->middleware('role:admin,super_admin,budget_officer,pacco');
+        Route::patch('/account-codes/{id}/toggle-status', [AccountCodeController::class, 'toggleStatus'])->middleware('role:admin,super_admin,budget_officer,pacco');
+        Route::delete('/account-codes/{id}', [AccountCodeController::class, 'destroy'])->middleware('role:admin,super_admin,budget_officer,pacco');
 
         Route::get('/program-names/stats', [ProgramNameController::class, 'stats'])->middleware('role:admin,super_admin');
         Route::get('/program-names', [ProgramNameController::class, 'index']);

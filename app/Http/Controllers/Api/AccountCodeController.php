@@ -14,6 +14,10 @@ use Illuminate\Validation\Rule;
 
 class AccountCodeController extends Controller
 {
+    protected function canManageAccountCodes(?User $user): bool
+    {
+        return (bool) ($user && ($user->isAdmin() || in_array($user->role, ['budget_officer', 'pacco'], true)));
+    }
 
     public function publicDropdown(Request $request): JsonResponse
     {
@@ -29,12 +33,12 @@ class AccountCodeController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user && $user->isAdmin();
+        $canManage = $this->canManageAccountCodes($user);
 
         $query = AccountCode::query();
 
         $status = strtolower($request->input('status', ''));
-        if ($status === 'active' || (!$isAdmin && !$request->has('status'))) {
+        if ($status === 'active' || (!$canManage && !$request->has('status'))) {
             $query->where('is_active', true);
         } elseif ($status === 'inactive') {
             $query->where('is_active', false);
@@ -90,8 +94,8 @@ class AccountCodeController extends Controller
     public function stats(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user || !$user->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
+        if (!$this->canManageAccountCodes($user)) {
+            return response()->json(['message' => 'Unauthorized. Admin, Budget Officer, or PACCO access required.'], 403);
         }
 
         $total = AccountCode::count();
@@ -124,8 +128,8 @@ class AccountCodeController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user || !$user->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
+        if (!$this->canManageAccountCodes($user)) {
+            return response()->json(['message' => 'Unauthorized. Admin, Budget Officer, or PACCO access required.'], 403);
         }
 
         $validated = $request->validate([
@@ -194,8 +198,8 @@ class AccountCodeController extends Controller
     public function update(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        if (!$user || !$user->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
+        if (!$this->canManageAccountCodes($user)) {
+            return response()->json(['message' => 'Unauthorized. Admin, Budget Officer, or PACCO access required.'], 403);
         }
 
         $accountCode = AccountCode::findOrFail($id);
@@ -264,8 +268,8 @@ class AccountCodeController extends Controller
     public function toggleStatus(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        if (!$user || !$user->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
+        if (!$this->canManageAccountCodes($user)) {
+            return response()->json(['message' => 'Unauthorized. Admin, Budget Officer, or PACCO access required.'], 403);
         }
 
         $accountCode = AccountCode::findOrFail($id);
@@ -292,8 +296,8 @@ class AccountCodeController extends Controller
     public function destroy(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        if (!$user || !$user->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
+        if (!$this->canManageAccountCodes($user)) {
+            return response()->json(['message' => 'Unauthorized. Admin, Budget Officer, or PACCO access required.'], 403);
         }
 
         $accountCode = AccountCode::withCount('ppmps')->findOrFail($id);

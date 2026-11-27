@@ -181,6 +181,48 @@ class AccountCodeManagementTest extends TestCase
             ->assertStatus(403);
     }
 
+    public function test_budget_officer_and_pacco_can_access_and_manage_account_codes(): void
+    {
+        $password = Hash::make('password123');
+
+        foreach (['budget_officer', 'pacco'] as $idx => $role) {
+            /** @var User $reviewer */
+            $reviewer = User::create([
+                'name' => strtoupper($role) . ' Reviewer',
+                'email' => "{$role}_acc_{$idx}@example.test",
+                'password' => $password,
+                'role' => $role,
+                'office_id' => $this->office->id,
+                'is_active' => true,
+            ]);
+
+            $this->actingAs($reviewer)->getJson('/api/account-codes/stats')
+                ->assertOk()
+                ->assertJsonStructure(['total', 'active', 'inactive', 'classes', 'total_ppmps_linked']);
+
+            $createRes = $this->actingAs($reviewer)->postJson('/api/account-codes', [
+                'code' => "5-02-99-0{$idx}0",
+                'name' => "Reviewer Account Code {$role}",
+                'account_class' => 'Expenses',
+                'is_active' => true,
+            ]);
+            $createRes->assertStatus(201);
+            $createdId = $createRes->json('data.id');
+
+            $this->actingAs($reviewer)->putJson("/api/account-codes/{$createdId}", [
+                'code' => "5-02-99-0{$idx}0",
+                'name' => "Updated Account Code {$role}",
+                'account_class' => 'Expenses',
+            ])->assertOk();
+
+            $this->actingAs($reviewer)->patchJson("/api/account-codes/{$createdId}/toggle-status")
+                ->assertOk();
+
+            $this->actingAs($reviewer)->deleteJson("/api/account-codes/{$createdId}")
+                ->assertOk();
+        }
+    }
+
     public function test_end_user_can_fetch_dropdown_and_ppmp_links_account_code(): void
     {
 
