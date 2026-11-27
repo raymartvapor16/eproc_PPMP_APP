@@ -265,7 +265,7 @@ export const UnauthorizedSystemAccessView = ({
                             <span>In-Person (Face-to-Face) Access Request Policy</span>
                         </div>
                         <p className="text-[11px] text-slate-400 leading-relaxed">
-                            Provincial procurement data security mandates that additions or modifications to user system access must be requested in person (face-to-face) with the <strong>Office of the Provincial Procurement Management Officer (OPPMO)</strong> or your <strong>System Administrator</strong>.
+                            Provincial procurement data security mandates that any addition or modification to user system access requires submitting a duly accomplished <strong>User Access Form</strong> in person (face-to-face) to the <strong>Office of the Provincial Procurement Management Officer (OPPMO)</strong>.
                         </p>
                     </div>
 
