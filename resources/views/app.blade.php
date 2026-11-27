@@ -4,15 +4,15 @@
     $isPublicIndexable = in_array($currentPath, ['/', '/privacy-policy'], true);
     $canonicalUrl = $currentPath === '/' ? $siteUrl . '/' : $siteUrl . $currentPath;
     $pageTitle = $currentPath === '/privacy-policy'
-        ? 'Privacy Policy | PMO eProc — E-Procurement System (Davao del Sur)'
-        : 'PMO eProc — E-Procurement System | Province of Davao del Sur (OPPMO)';
+        ? 'Privacy Policy | BAC PMO — E-Procurement System (Davao del Sur)'
+        : 'BAC PMO — E-Procurement System | Province of Davao del Sur (OPPMO)';
     $pageDescription = 'Official Electronic Procurement System (PMO eProc) of the Office of the Provincial Procurement Management Officer (OPPMO), Provincial Government of Davao del Sur. Access PPMP, APP, PIMS, Project Monitoring, and Supplier Evaluation services.';
     $structuredData = [
         '@context' => 'https://schema.org',
         '@graph' => [
             [
                 '@type' => 'WebSite',
-                'name' => 'PMO eProc — E-Procurement System',
+                'name' => 'BAC PMO — E-Procurement System',
                 'alternateName' => ['pmoeproc', 'pmoeproc.cloud', 'PMO eProc', 'OPPMO Davao del Sur'],
                 'url' => $siteUrl . '/',
                 'description' => $pageDescription,
