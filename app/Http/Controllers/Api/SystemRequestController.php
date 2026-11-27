@@ -109,7 +109,7 @@ class SystemRequestController extends Controller
             'ticket_number' => 'required|string|max:40',
             'ticket_token' => 'required|string',
             'request_type' => 'required|in:bug_fix,enhancement',
-            'system_module' => 'required|in:eproc_ppmp_app,pims,monitoring,supplier_evaluation,general',
+            'system_module' => 'required|in:eproc_ppmp_app,monitoring,supplier_evaluation,general',
             'priority' => 'required|in:low,medium,high,urgent',
             'subject' => 'required|string|min:4|max:180',
             'description' => 'required|string|min:10|max:3000',
