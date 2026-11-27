@@ -28,7 +28,6 @@ const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 const MODULE_OPTIONS = [
     { value: 'eproc_ppmp_app', label: 'E-Procurement (PPMP / APP)' },
-    { value: 'pims', label: 'PIMS (Purchase Request)' },
     { value: 'monitoring', label: 'Project Monitoring' },
     { value: 'supplier_evaluation', label: 'Supplier Evaluation' },
     { value: 'general', label: 'General / Portal' },
