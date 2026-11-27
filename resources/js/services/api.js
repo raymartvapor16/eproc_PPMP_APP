@@ -822,4 +822,40 @@ export const securityThreatService = {
         api.post(`/super-admin/scheduled-backups/${id}/download`, payload, { responseType: 'blob' }),
 };
 
+export const systemRequestService = {
+    generateTicket: () => api.post('/system-requests/generate-ticket'),
+    create: (formData) => api.post('/system-requests', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+    getMine: () => api.get('/system-requests/mine'),
+    getAll: (params) => api.get('/system-requests', { params }),
+    updateStatus: (id, data) => api.patch(`/system-requests/${id}/status`, data),
+    delete: (id) => api.delete(`/system-requests/${id}`),
+    openSecureAttachment: async (attachmentUrlOrToken) => {
+        if (!attachmentUrlOrToken) return;
+        const match = String(attachmentUrlOrToken).match(/\/system-requests\/([^/?#]+)\/attachment/i);
+        const token = match ? decodeURIComponent(match[1]) : String(attachmentUrlOrToken);
+        const win = window.open('about:blank', '_blank');
+        if (win) {
+            win.opener = null;
+        }
+        try {
+            const res = await api.get(`/system-requests/${encodeURIComponent(token)}/refresh-token`);
+            const freshUrl = res.data?.attachment_url || `/api/system-requests/${encodeURIComponent(res.data?.encrypted_id || token)}/attachment`;
+            if (win && !win.closed) {
+                win.location.replace(freshUrl);
+            } else {
+                window.open(freshUrl, '_blank', 'noopener,noreferrer');
+            }
+        } catch (_) {
+            const fallbackUrl = `/api/system-requests/${encodeURIComponent(token)}/attachment`;
+            if (win && !win.closed) {
+                win.location.replace(fallbackUrl);
+            } else {
+                window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+            }
+        }
+    },
+};
+
 export default api;

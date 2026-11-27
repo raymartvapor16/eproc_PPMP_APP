@@ -29,6 +29,7 @@ import {
 } from './components/UI/UnauthorizedSystemAccessView';
 import { AfkInactivityGuard } from './components/UI/AfkInactivityGuard';
 import { PnpkiRenewalReminderModal } from './components/UI/PnpkiRenewalReminderModal';
+import { SystemRequestFloatingWidget } from './components/UI/SystemRequestFloatingWidget';
 
 initGlobalAlertModal();
 
@@ -1067,6 +1068,9 @@ export function App() {
                 onUserUpdate={(updatedUser) => setUser(updatedUser)}
             />
             <CustomAlertModal />
+            {user && !['landing', 'login', 'privacy'].includes(currentView) && (
+                <SystemRequestFloatingWidget user={user} currentView={currentView} />
+            )}
             {renderContent()}
         </>
     );

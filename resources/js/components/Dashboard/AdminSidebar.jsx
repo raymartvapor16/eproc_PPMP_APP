@@ -22,6 +22,7 @@ import {
     Timer,
     ShieldAlert,
     Eye,
+    Ticket,
 } from 'lucide-react';
 
 export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingUsersCount }) => {
@@ -146,6 +147,14 @@ export const AdminSidebar = ({ activeSection, onSelectSection, metrics, pendingU
             badge: '15 Min',
             badgeColor: 'bg-amber-100 text-amber-800 font-bold',
             description: 'Inactivity & Auto-Logout',
+        },
+        {
+            id: 'system_requests',
+            label: 'System Requests',
+            icon: Ticket,
+            badge: 'Tickets',
+            badgeColor: 'bg-blue-100 text-blue-800 font-bold',
+            description: 'Bug Fixes & Enhancements',
         },
         {
             id: 'security_threats',

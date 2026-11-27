@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\DatabaseBackupController;
 use App\Http\Controllers\Api\SupplierEvaluationController;
 use App\Http\Controllers\Api\PurchaseRequestController;
 use App\Http\Controllers\Api\PimsDashboardController;
+use App\Http\Controllers\Api\SystemRequestController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('api')->group(function () {
@@ -186,6 +187,18 @@ Route::prefix('api')->group(function () {
         Route::get('/super-admin/scheduled-backups', [\App\Http\Controllers\Api\SecurityThreatController::class, 'scheduledBackups']);
         Route::post('/super-admin/scheduled-backups/run-now', [\App\Http\Controllers\Api\SecurityThreatController::class, 'runBackupNow']);
         Route::match(['get', 'post'], '/super-admin/scheduled-backups/{id}/download', [\App\Http\Controllers\Api\SecurityThreatController::class, 'downloadScheduledBackup']);
+
+        Route::prefix('system-requests')->group(function () {
+            Route::post('/generate-ticket', [SystemRequestController::class, 'generateTicket'])->middleware('throttle:15,1');
+            Route::post('/', [SystemRequestController::class, 'store'])->middleware('throttle:10,1');
+            Route::get('/mine', [SystemRequestController::class, 'myRequests']);
+            Route::get('/{id}/refresh-token', [SystemRequestController::class, 'refreshAttachmentToken']);
+            Route::get('/{id}/attachment', [SystemRequestController::class, 'viewAttachment']);
+
+            Route::get('/', [SystemRequestController::class, 'index'])->middleware('role:super_admin');
+            Route::patch('/{id}/status', [SystemRequestController::class, 'updateStatus'])->whereNumber('id')->middleware('role:super_admin');
+            Route::delete('/{id}', [SystemRequestController::class, 'destroy'])->whereNumber('id')->middleware('role:super_admin');
+        });
 
         Route::post('/ppmps/{uuid}/attachments', [PpmpAttachmentController::class, 'store']);
         Route::post('/ppmps/{uuid}/attachments/link', [PpmpAttachmentController::class, 'storeLink']);

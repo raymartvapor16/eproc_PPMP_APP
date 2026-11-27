@@ -11,6 +11,7 @@ import { AdminVisualAnalytics } from '../../components/Dashboard/AdminVisualAnal
 import { AdminReportsView } from '../../components/Dashboard/AdminReportsView';
 import { AdminActivityLog } from '../../components/Dashboard/AdminActivityLog';
 import { SuperAdminSecurityLogsView } from '../../components/Dashboard/SuperAdminSecurityLogsView';
+import { SystemRequestsManagement } from '../../components/Dashboard/SystemRequestsManagement';
 import { FundSourcesManagement } from '../../components/Dashboard/FundSourcesManagement';
 import { AccountCodesManagement } from '../../components/Dashboard/AccountCodesManagement';
 import { ProcurementModesManagement } from '../../components/Dashboard/ProcurementModesManagement';
@@ -755,6 +756,9 @@ export const Dashboard = ({ data, user, onSelectPpmp, onNavigate, onReload }) =>
             }
             if (adminSection === 'signatories') {
                 return <div className="space-y-6">{SignatoriesPanel}</div>;
+            }
+            if (adminSection === 'system_requests') {
+                return <SystemRequestsManagement />;
             }
             if (adminSection === 'security_threats') {
                 return <SuperAdminSecurityLogsView />;
