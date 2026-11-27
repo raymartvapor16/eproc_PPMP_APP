@@ -25,23 +25,44 @@ class SupplierPurchaseOrder extends Model
 
     protected $appends = ['encrypted_id'];
 
-    public static function encryptPdfId(int $id): string
-    {
-        $payload = json_encode([
+    public static function encryptPdfId(
+        int $id,
+        ?int $viewerId = null,
+        ?string $sessionId = null,
+        ?int $ttlSeconds = 120
+    ): string {
+        $payload = [
             'type' => 'po_pdf',
             'poid' => $id,
             'n' => bin2hex(random_bytes(8)),
             'ts' => time(),
-        ]);
+        ];
 
-        return rtrim(strtr(Crypt::encryptString($payload), '+/', '-_'), '=');
+        if ($viewerId !== null) {
+            $payload['vid'] = $viewerId;
+        }
+        if ($sessionId !== null && $sessionId !== '') {
+            $payload['sid'] = hash('sha256', $sessionId);
+        }
+        if ($ttlSeconds !== null && $ttlSeconds > 0) {
+            $payload['exp'] = time() + $ttlSeconds;
+        }
+
+        return rtrim(strtr(Crypt::encryptString(json_encode($payload)), '+/', '-_'), '=');
     }
 
-    public static function decryptPdfId(string $encrypted): ?int
-    {
+    /**
+     * @return array{id: ?int, error: ?string}
+     */
+    public static function decryptPdfToken(
+        string $encrypted,
+        ?int $viewerId = null,
+        ?string $sessionId = null,
+        bool $checkExpiry = true
+    ): array {
         $encrypted = trim($encrypted);
         if ($encrypted === '' || ctype_digit($encrypted)) {
-            return null;
+            return ['id' => null, 'error' => 'Invalid or unencrypted purchase order reference.'];
         }
 
         try {
@@ -51,19 +72,45 @@ class SupplierPurchaseOrder extends Model
             $data = json_decode($decrypted, true);
 
             if (
-                is_array($data)
-                && ($data['type'] ?? null) === 'po_pdf'
-                && isset($data['poid'])
-                && is_numeric($data['poid'])
-                && (int) $data['poid'] > 0
+                !is_array($data)
+                || ($data['type'] ?? null) !== 'po_pdf'
+                || !isset($data['poid'])
+                || !is_numeric($data['poid'])
+                || (int) $data['poid'] <= 0
             ) {
-                return (int) $data['poid'];
+                return ['id' => null, 'error' => 'Invalid or unencrypted purchase order reference.'];
             }
-        } catch (\Throwable $e) {
-            return null;
-        }
 
-        return null;
+            if (isset($data['vid']) && $viewerId !== null && (int) $data['vid'] !== $viewerId) {
+                return ['id' => null, 'error' => 'This secure document link is bound to another user and cannot be shared.'];
+            }
+
+            if (
+                isset($data['sid'])
+                && $sessionId !== null
+                && $sessionId !== ''
+                && !hash_equals((string) $data['sid'], hash('sha256', $sessionId))
+            ) {
+                return ['id' => null, 'error' => 'This secure document link is bound to another session and cannot be shared.'];
+            }
+
+            if ($checkExpiry && isset($data['exp']) && time() > (int) $data['exp']) {
+                return ['id' => null, 'error' => 'This secure document link has expired. Please reopen it from the system.'];
+            }
+
+            return ['id' => (int) $data['poid'], 'error' => null];
+        } catch (\Throwable $e) {
+            return ['id' => null, 'error' => 'Invalid or unencrypted purchase order reference.'];
+        }
+    }
+
+    public static function decryptPdfId(
+        string $encrypted,
+        ?int $viewerId = null,
+        ?string $sessionId = null,
+        bool $checkExpiry = true
+    ): ?int {
+        return self::decryptPdfToken($encrypted, $viewerId, $sessionId, $checkExpiry)['id'];
     }
 
     public function getEncryptedIdAttribute(): ?string

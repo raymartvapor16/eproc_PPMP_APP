@@ -369,7 +369,7 @@ class SupplierEvaluationController extends Controller
                 'item' => $po->item,
                 'pdf_po' => $po->pdf_po,
                 'has_pdf' => !empty($po->pdf_po),
-                'pdf_url' => !empty($po->pdf_po) ? '/api/supplier-evaluation/purchase-orders/' . SupplierPurchaseOrder::encryptPdfId((int) $po->id) . '/pdf' : null,
+                'pdf_url' => !empty($po->pdf_po) ? $this->buildPoPdfUrl($request, $user, (int) $po->id) : null,
                 'end_user' => $po->end_user,
                 'supplier' => $po->supplier,
                 'status' => $po->status,
@@ -420,7 +420,7 @@ class SupplierEvaluationController extends Controller
             'item' => $po->item,
             'pdf_po' => $po->pdf_po,
             'has_pdf' => !empty($po->pdf_po),
-            'pdf_url' => !empty($po->pdf_po) ? '/api/supplier-evaluation/purchase-orders/' . SupplierPurchaseOrder::encryptPdfId((int) $po->id) . '/pdf' : null,
+            'pdf_url' => !empty($po->pdf_po) ? $this->buildPoPdfUrl($request, $user, (int) $po->id) : null,
             'end_user' => $po->end_user,
             'supplier' => $po->supplier,
             'status' => $po->status,
@@ -749,7 +749,7 @@ class SupplierEvaluationController extends Controller
             }
         }
 
-        $data = $evaluations->map(function ($eval) use ($poMap) {
+        $data = $evaluations->map(function ($eval) use ($poMap, $request, $user) {
             $po = $poMap[$eval->po_no] ?? null;
             $scoresMap = [];
             $remarksMap = [];
@@ -770,7 +770,7 @@ class SupplierEvaluationController extends Controller
                 'status' => $eval->status,
                 'total_score' => self::computeEvaluationScore($eval->criteriaScores),
                 'has_pdf' => !empty($po?->pdf_po),
-                'pdf_url' => !empty($po?->pdf_po) ? '/api/supplier-evaluation/purchase-orders/' . SupplierPurchaseOrder::encryptPdfId((int) $po->id) . '/pdf' : null,
+                'pdf_url' => !empty($po?->pdf_po) ? $this->buildPoPdfUrl($request, $user, (int) $po->id) : null,
                 'scores' => $scoresMap,
                 'remarks' => $remarksMap,
             ];
@@ -1033,7 +1033,7 @@ class SupplierEvaluationController extends Controller
         $perPage = min(max((int) $request->input('per_page', 15), 5), 100);
         $paginated = $query->orderByDesc('id')->paginate($perPage);
 
-        $items = collect($paginated->items())->map(function ($po) {
+        $items = collect($paginated->items())->map(function ($po) use ($request, $user) {
             return [
                 'id' => $po->id,
                 'po_no' => $po->po_no,
@@ -1041,7 +1041,7 @@ class SupplierEvaluationController extends Controller
                 'item' => $po->item,
                 'pdf_po' => $po->pdf_po,
                 'has_pdf' => !empty($po->pdf_po),
-                'pdf_url' => !empty($po->pdf_po) ? '/api/supplier-evaluation/purchase-orders/' . SupplierPurchaseOrder::encryptPdfId((int) $po->id) . '/pdf' : null,
+                'pdf_url' => !empty($po->pdf_po) ? $this->buildPoPdfUrl($request, $user, (int) $po->id) : null,
                 'end_user' => $po->end_user,
                 'supplier' => $po->supplier,
                 'status' => $po->status ?: 'Pending',
@@ -1234,22 +1234,72 @@ class SupplierEvaluationController extends Controller
 
         return response()->json([
             'message' => "PDF uploaded for Purchase Order {$po->po_no}.",
-            'pdf_url' => '/api/supplier-evaluation/purchase-orders/' . SupplierPurchaseOrder::encryptPdfId((int) $po->id) . '/pdf',
+            'pdf_url' => $this->buildPoPdfUrl($request, $user, (int) $po->id),
         ]);
+    }
+
+    protected function buildPoPdfUrl(Request $request, User $user, int $poId, int $ttlSeconds = 120): string
+    {
+        $sessionId = ($request->hasSession() && $request->cookies->has(config('session.cookie')))
+            ? $request->session()->getId()
+            : null;
+        $token = SupplierPurchaseOrder::encryptPdfId($poId, (int) $user->id, $sessionId, $ttlSeconds);
+
+        return '/api/supplier-evaluation/purchase-orders/' . $token . '/pdf';
+    }
+
+    protected function buildAuthorizePdfUrl(Request $request, User $user, int $pdfId, int $ttlSeconds = 120): string
+    {
+        $sessionId = ($request->hasSession() && $request->cookies->has(config('session.cookie')))
+            ? $request->session()->getId()
+            : null;
+        $token = SupplierPdf::encryptFileId($pdfId, (int) $user->id, $sessionId, $ttlSeconds);
+
+        return '/api/supplier-evaluation/pdfs/' . $token . '/file';
+    }
+
+    public function refreshPurchaseOrderPdfToken(Request $request, string $id): JsonResponse
+    {
+        $user = $this->authorizeSupplierEvaluation($request);
+        $sessionId = ($request->hasSession() && $request->cookies->has(config('session.cookie')))
+            ? $request->session()->getId()
+            : null;
+        $tokenCheck = SupplierPurchaseOrder::decryptPdfToken($id, (int) $user->id, $sessionId, false);
+        if (!$tokenCheck['id']) {
+            return response()->json(['message' => $tokenCheck['error'] ?? 'Invalid or unencrypted purchase order reference.'], 403);
+        }
+
+        $role = $this->getEffectiveRole($user);
+        $isGlobalScope = in_array($role, ['administrator', 'pgso'], true);
+
+        $po = SupplierPurchaseOrder::findOrFail($tokenCheck['id']);
+        if (!$isGlobalScope && $user->office_id && $po->office_id && (int) $po->office_id !== (int) $user->office_id) {
+            return response()->json(['message' => 'Unauthorized. You do not have permission to view this Purchase Order PDF.'], 403);
+        }
+
+        $freshToken = SupplierPurchaseOrder::encryptPdfId((int) $po->id, (int) $user->id, $sessionId, 120);
+
+        return response()->json([
+            'encrypted_id' => $freshToken,
+            'pdf_url' => '/api/supplier-evaluation/purchase-orders/' . $freshToken . '/pdf',
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, private');
     }
 
     public function viewPurchaseOrderPdf(Request $request, string $id): BinaryFileResponse|JsonResponse
     {
-        $resolvedId = SupplierPurchaseOrder::decryptPdfId($id);
-        if (!$resolvedId) {
-            return response()->json(['message' => 'Invalid or unencrypted purchase order reference.'], 403);
+        $user = $this->authorizeSupplierEvaluation($request);
+        $sessionId = ($request->hasSession() && $request->cookies->has(config('session.cookie')))
+            ? $request->session()->getId()
+            : null;
+        $tokenCheck = SupplierPurchaseOrder::decryptPdfToken($id, (int) $user->id, $sessionId, true);
+        if (!$tokenCheck['id']) {
+            return response()->json(['message' => $tokenCheck['error'] ?? 'Invalid or unencrypted purchase order reference.'], 403);
         }
 
-        $user = $this->authorizeSupplierEvaluation($request);
         $role = $this->getEffectiveRole($user);
         $isGlobalScope = in_array($role, ['administrator', 'pgso'], true);
 
-        $po = SupplierPurchaseOrder::findOrFail($resolvedId);
+        $po = SupplierPurchaseOrder::findOrFail($tokenCheck['id']);
         if (!$isGlobalScope && $user->office_id && $po->office_id && (int) $po->office_id !== (int) $user->office_id) {
             return response()->json(['message' => 'Unauthorized. You do not have permission to view this Purchase Order PDF.'], 403);
         }
@@ -1736,7 +1786,7 @@ class SupplierEvaluationController extends Controller
             $query->where('user_id', $user->id);
         }
 
-        $pdfs = $query->get()->map(function ($p) {
+        $pdfs = $query->get()->map(function ($p) use ($request, $user) {
             return [
                 'id' => $p->id,
                 'user_id' => $p->user_id,
@@ -1744,7 +1794,7 @@ class SupplierEvaluationController extends Controller
                 'office_name' => $p->user->office->name ?? 'N/A',
                 'role' => $p->user->role ?? '',
                 'pdf_file' => $p->pdf_file,
-                'file_url' => '/api/supplier-evaluation/pdfs/' . SupplierPdf::encryptFileId((int) $p->id) . '/file',
+                'file_url' => $this->buildAuthorizePdfUrl($request, $user, (int) $p->id),
                 'status' => $p->status,
                 'created_at' => $p->created_at?->toDateTimeString(),
             ];
@@ -1821,18 +1871,52 @@ class SupplierEvaluationController extends Controller
         ]);
     }
 
-    public function viewAuthorizePdfFile(Request $request, string $id): BinaryFileResponse|JsonResponse
+    public function refreshAuthorizePdfToken(Request $request, string $id): JsonResponse
     {
-        $resolvedId = SupplierPdf::decryptFileId($id);
-        if (!$resolvedId) {
-            return response()->json(['message' => 'Invalid or unencrypted authorization PDF reference.'], 403);
+        $user = $this->authorizeSupplierEvaluation($request);
+        $sessionId = ($request->hasSession() && $request->cookies->has(config('session.cookie')))
+            ? $request->session()->getId()
+            : null;
+        $tokenCheck = SupplierPdf::decryptFileToken($id, (int) $user->id, $sessionId, false);
+        if (!$tokenCheck['id']) {
+            return response()->json(['message' => $tokenCheck['error'] ?? 'Invalid or unencrypted authorization PDF reference.'], 403);
         }
 
-        $user = $this->authorizeSupplierEvaluation($request);
         $role = $this->getEffectiveRole($user);
         $isGlobalScope = in_array($role, ['administrator', 'pgso'], true);
 
-        $pdf = SupplierPdf::with('user')->findOrFail($resolvedId);
+        $pdf = SupplierPdf::with('user')->findOrFail($tokenCheck['id']);
+        if (!$isGlobalScope) {
+            $isOwner = (int) $pdf->user_id === (int) $user->id;
+            $isSameOfficeHead = $user->isHead() && $user->office_id && $pdf->user && (int) $pdf->user->office_id === (int) $user->office_id;
+            if (!$isOwner && !$isSameOfficeHead) {
+                return response()->json(['message' => 'Unauthorized. You do not have permission to view this Authorization PDF.'], 403);
+            }
+        }
+
+        $freshToken = SupplierPdf::encryptFileId((int) $pdf->id, (int) $user->id, $sessionId, 120);
+
+        return response()->json([
+            'encrypted_id' => $freshToken,
+            'file_url' => '/api/supplier-evaluation/pdfs/' . $freshToken . '/file',
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, private');
+    }
+
+    public function viewAuthorizePdfFile(Request $request, string $id): BinaryFileResponse|JsonResponse
+    {
+        $user = $this->authorizeSupplierEvaluation($request);
+        $sessionId = ($request->hasSession() && $request->cookies->has(config('session.cookie')))
+            ? $request->session()->getId()
+            : null;
+        $tokenCheck = SupplierPdf::decryptFileToken($id, (int) $user->id, $sessionId, true);
+        if (!$tokenCheck['id']) {
+            return response()->json(['message' => $tokenCheck['error'] ?? 'Invalid or unencrypted authorization PDF reference.'], 403);
+        }
+
+        $role = $this->getEffectiveRole($user);
+        $isGlobalScope = in_array($role, ['administrator', 'pgso'], true);
+
+        $pdf = SupplierPdf::with('user')->findOrFail($tokenCheck['id']);
         if (!$isGlobalScope) {
             $isOwner = (int) $pdf->user_id === (int) $user->id;
             $isSameOfficeHead = $user->isHead() && $user->office_id && $pdf->user && (int) $pdf->user->office_id === (int) $user->office_id;

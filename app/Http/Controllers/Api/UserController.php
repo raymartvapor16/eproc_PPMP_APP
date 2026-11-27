@@ -749,15 +749,19 @@ class UserController extends Controller
 
     public function refreshToken(Request $request, string $id): JsonResponse
     {
-        $resolvedId = User::decryptId($id);
-        if (!$resolvedId) {
-            return response()->json(['message' => 'Invalid or unencrypted user reference.'], 403);
+        $viewer = $request->user();
+        $sessionId = ($request->hasSession() && $request->cookies->has(config('session.cookie')))
+            ? $request->session()->getId()
+            : null;
+        $tokenCheck = User::decryptIdToken($id, $viewer?->id, $sessionId, false);
+        if (!$tokenCheck['id']) {
+            return response()->json(['message' => $tokenCheck['error'] ?? 'Invalid or unencrypted user reference.'], 403);
         }
 
-        $targetUser = User::findOrFail($resolvedId);
+        $targetUser = User::findOrFail($tokenCheck['id']);
 
         return response()->json([
-            'encrypted_id' => User::encryptId((int) $targetUser->id),
+            'encrypted_id' => User::encryptId((int) $targetUser->id, $viewer?->id, $sessionId, 120),
         ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, private');
     }
 
@@ -834,13 +838,16 @@ class UserController extends Controller
 
     public function getAuthorizationLetter(Request $request, string $id): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
     {
-        $resolvedId = User::decryptId($id);
-        if (!$resolvedId) {
-            return response()->json(['message' => 'Invalid or unencrypted user reference.'], 403);
+        $currentUser = $request->user();
+        $sessionId = ($request->hasSession() && $request->cookies->has(config('session.cookie')))
+            ? $request->session()->getId()
+            : null;
+        $tokenCheck = User::decryptIdToken($id, $currentUser?->id, $sessionId, true);
+        if (!$tokenCheck['id']) {
+            return response()->json(['message' => $tokenCheck['error'] ?? 'Invalid or unencrypted user reference.'], 403);
         }
 
-        $currentUser = $request->user();
-        $targetUser = User::findOrFail($resolvedId);
+        $targetUser = User::findOrFail($tokenCheck['id']);
 
         $isSelf = $currentUser->id === $targetUser->id;
         $isAdmin = $currentUser->isAdmin();
@@ -939,17 +946,20 @@ class UserController extends Controller
 
     public function getPnpkiProof(Request $request, string $id): \Symfony\Component\HttpFoundation\BinaryFileResponse|JsonResponse
     {
-        $resolvedId = User::decryptId($id);
-        if (!$resolvedId) {
-            return response()->json(['message' => 'Invalid or unencrypted user reference.'], 403);
-        }
-
         $currentUser = $request->user();
-        $targetUser = User::with('pnpkiSignature')->findOrFail($resolvedId);
-
         if (!$currentUser) {
             return response()->json(['message' => 'Unauthorized.'], 401);
         }
+
+        $sessionId = ($request->hasSession() && $request->cookies->has(config('session.cookie')))
+            ? $request->session()->getId()
+            : null;
+        $tokenCheck = User::decryptIdToken($id, $currentUser->id, $sessionId, true);
+        if (!$tokenCheck['id']) {
+            return response()->json(['message' => $tokenCheck['error'] ?? 'Invalid or unencrypted user reference.'], 403);
+        }
+
+        $targetUser = User::with('pnpkiSignature')->findOrFail($tokenCheck['id']);
 
         $isSelf = $currentUser->id === $targetUser->id;
         $isAdmin = $currentUser->isAdmin();

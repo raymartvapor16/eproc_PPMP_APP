@@ -51,7 +51,7 @@ class UserProfilePhotoTest extends TestCase
         $this->assertNotNull($this->user->profile_photo_path);
 
         $this->assertEquals('profile/juandelacruz.png', $this->user->profile_photo_path);
-        Storage::disk('local')->assertExists('profile/juandelacruz.png');
+        $this->assertTrue(Storage::disk('local')->exists('profile/juandelacruz.png'));
     }
 
     public function test_user_can_upload_jpeg_profile_photo()
@@ -66,7 +66,7 @@ class UserProfilePhotoTest extends TestCase
         $response->assertStatus(200);
         $this->user->refresh();
         $this->assertEquals('profile/juandelacruz.jpg', $this->user->profile_photo_path);
-        Storage::disk('local')->assertExists('profile/juandelacruz.jpg');
+        $this->assertTrue(Storage::disk('local')->exists('profile/juandelacruz.jpg'));
     }
 
     public function test_rejects_non_jpeg_png_files()
@@ -86,6 +86,7 @@ class UserProfilePhotoTest extends TestCase
         $file = UploadedFile::fake()->image('avatar.png', 200, 200);
         $this->actingAs($this->user)->postJson('/api/profile/photo', ['profile_photo' => $file]);
 
+        /** @var User $otherUser */
         $otherUser = User::factory()->create(['is_active' => true, 'approval_status' => 'approved']);
 
         $response = $this->actingAs($otherUser)->get('/api/users/' . User::encryptId($this->user->id) . '/avatar');
@@ -96,6 +97,7 @@ class UserProfilePhotoTest extends TestCase
 
     public function test_returns_404_when_user_has_no_avatar()
     {
+        /** @var User $otherUser */
         $otherUser = User::factory()->create(['is_active' => true, 'approval_status' => 'approved']);
 
         $response = $this->actingAs($otherUser)->get('/api/users/' . User::encryptId($otherUser->id) . '/avatar');
@@ -115,6 +117,6 @@ class UserProfilePhotoTest extends TestCase
 
         $this->user->refresh();
         $this->assertNull($this->user->profile_photo_path);
-        Storage::disk('local')->assertMissing('profile/juandelacruz.png');
+        $this->assertFalse(Storage::disk('local')->exists('profile/juandelacruz.png'));
     }
 }

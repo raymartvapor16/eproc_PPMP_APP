@@ -734,6 +734,56 @@ export const supplierEvaluationService = {
     uploadPoPdf: (id, formData) => api.post(`/supplier-evaluation/purchase-orders/${id}/upload-pdf`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
     }),
+    openSecurePoPdf: async (pdfUrlOrToken) => {
+        if (!pdfUrlOrToken) return;
+        const match = String(pdfUrlOrToken).match(/\/purchase-orders\/([^/?#]+)\/pdf/i);
+        const token = match ? decodeURIComponent(match[1]) : String(pdfUrlOrToken);
+        const win = window.open('about:blank', '_blank');
+        if (win) {
+            win.opener = null;
+        }
+        try {
+            const res = await api.get(`/supplier-evaluation/purchase-orders/${encodeURIComponent(token)}/refresh-token`);
+            const freshUrl = res.data?.pdf_url || `/api/supplier-evaluation/purchase-orders/${encodeURIComponent(res.data?.encrypted_id || token)}/pdf`;
+            if (win && !win.closed) {
+                win.location.replace(freshUrl);
+            } else {
+                window.open(freshUrl, '_blank', 'noopener,noreferrer');
+            }
+        } catch (_) {
+            const fallbackUrl = `/api/supplier-evaluation/purchase-orders/${encodeURIComponent(token)}/pdf`;
+            if (win && !win.closed) {
+                win.location.replace(fallbackUrl);
+            } else {
+                window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+            }
+        }
+    },
+    openSecureAuthorizePdf: async (fileUrlOrToken) => {
+        if (!fileUrlOrToken) return;
+        const match = String(fileUrlOrToken).match(/\/pdfs\/([^/?#]+)\/file/i);
+        const token = match ? decodeURIComponent(match[1]) : String(fileUrlOrToken);
+        const win = window.open('about:blank', '_blank');
+        if (win) {
+            win.opener = null;
+        }
+        try {
+            const res = await api.get(`/supplier-evaluation/pdfs/${encodeURIComponent(token)}/refresh-token`);
+            const freshUrl = res.data?.file_url || `/api/supplier-evaluation/pdfs/${encodeURIComponent(res.data?.encrypted_id || token)}/file`;
+            if (win && !win.closed) {
+                win.location.replace(freshUrl);
+            } else {
+                window.open(freshUrl, '_blank', 'noopener,noreferrer');
+            }
+        } catch (_) {
+            const fallbackUrl = `/api/supplier-evaluation/pdfs/${encodeURIComponent(token)}/file`;
+            if (win && !win.closed) {
+                win.location.replace(fallbackUrl);
+            } else {
+                window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+            }
+        }
+    },
     importPurchaseOrders: (formData) => api.post('/supplier-evaluation/purchase-orders/import', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
     }),

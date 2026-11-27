@@ -173,4 +173,73 @@ class AuthErrorPageDesignTest extends TestCase
         $this->assertSame(12, SupplierPdf::decryptFileId($authPdfToken));
         $this->assertNull(SupplierPurchaseOrder::decryptPdfId($authPdfToken));
     }
+
+    public function test_encrypted_pdf_and_user_tokens_cannot_be_shared_across_users_or_sessions_and_auto_rotate(): void
+    {
+        $office = Office::create([
+            'name' => 'Procurement Office',
+            'code' => 'PMO',
+        ]);
+
+        /** @var User $adminA */
+        $adminA = User::factory()->create([
+            'role' => 'admin',
+            'office_id' => $office->id,
+            'is_active' => true,
+        ]);
+
+        /** @var User $adminB */
+        $adminB = User::factory()->create([
+            'role' => 'admin',
+            'office_id' => $office->id,
+            'is_active' => true,
+        ]);
+
+        $po = SupplierPurchaseOrder::create([
+            'po_no' => 'PO-2026-9999',
+            'pr_no' => 'PR-2026-9999',
+            'item' => 'Test Item',
+            'end_user' => 'PMO',
+            'supplier' => 'Test Supplier',
+            'status' => 'Pending',
+        ]);
+
+        // Token bound to adminA + sessionA
+        $tokenForA = SupplierPurchaseOrder::encryptPdfId((int) $po->id, (int) $adminA->id, 'session-A', 120);
+
+        // Copying & pasting adminA's encrypted URL as adminB -> 403 Access Denied!
+        $this->actingAs($adminB)
+            ->getJson("/api/supplier-evaluation/purchase-orders/{$tokenForA}/pdf")
+            ->assertStatus(403)
+            ->assertExactJson(['message' => 'This secure document link is bound to another user and cannot be shared.']);
+
+        // Same user, different browser session -> 403 Access Denied!
+        $sessionCheck = SupplierPurchaseOrder::decryptPdfToken($tokenForA, (int) $adminA->id, 'session-B', true);
+        $this->assertNull($sessionCheck['id']);
+        $this->assertSame('This secure document link is bound to another session and cannot be shared.', $sessionCheck['error']);
+
+        // Refresh-token endpoint rotates and issues a brand-new encrypted token each time
+        $initialToken = SupplierPurchaseOrder::encryptPdfId((int) $po->id, (int) $adminA->id, null, 120);
+        $refresh1 = $this->actingAs($adminA)
+            ->getJson("/api/supplier-evaluation/purchase-orders/{$initialToken}/refresh-token")
+            ->assertOk()
+            ->json('encrypted_id');
+
+        $refresh2 = $this->actingAs($adminA)
+            ->getJson("/api/supplier-evaluation/purchase-orders/{$refresh1}/refresh-token")
+            ->assertOk()
+            ->json('encrypted_id');
+
+        $this->assertNotEmpty($refresh1);
+        $this->assertNotEmpty($refresh2);
+        $this->assertNotSame($initialToken, $refresh1);
+        $this->assertNotSame($refresh1, $refresh2);
+
+        // Copying adminA's refreshed user token and using it as adminB -> 403!
+        $userTokenForA = User::encryptId((int) $adminA->id, (int) $adminA->id, 'session-A', 120);
+        $this->actingAs($adminB)
+            ->getJson("/api/users/{$userTokenForA}/authorization-letter")
+            ->assertStatus(403)
+            ->assertExactJson(['message' => 'This secure document link is bound to another user and cannot be shared.']);
+    }
 }

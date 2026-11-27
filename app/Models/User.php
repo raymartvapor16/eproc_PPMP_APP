@@ -51,22 +51,43 @@ class User extends Authenticatable
         'pnpkiSignature',
     ];
 
-    public static function encryptId(int $id): string
-    {
-        $payload = json_encode([
+    public static function encryptId(
+        int $id,
+        ?int $viewerId = null,
+        ?string $sessionId = null,
+        ?int $ttlSeconds = null
+    ): string {
+        $payload = [
             'uid' => $id,
             'n' => bin2hex(random_bytes(8)),
             'ts' => time(),
-        ]);
+        ];
 
-        return rtrim(strtr(\Illuminate\Support\Facades\Crypt::encryptString($payload), '+/', '-_'), '=');
+        if ($viewerId !== null) {
+            $payload['vid'] = $viewerId;
+        }
+        if ($sessionId !== null && $sessionId !== '') {
+            $payload['sid'] = hash('sha256', $sessionId);
+        }
+        if ($ttlSeconds !== null && $ttlSeconds > 0) {
+            $payload['exp'] = time() + $ttlSeconds;
+        }
+
+        return rtrim(strtr(\Illuminate\Support\Facades\Crypt::encryptString(json_encode($payload)), '+/', '-_'), '=');
     }
 
-    public static function decryptId(string $encrypted): ?int
-    {
+    /**
+     * @return array{id: ?int, error: ?string}
+     */
+    public static function decryptIdToken(
+        string $encrypted,
+        ?int $viewerId = null,
+        ?string $sessionId = null,
+        bool $checkExpiry = true
+    ): array {
         $encrypted = trim($encrypted);
         if ($encrypted === '' || ctype_digit($encrypted)) {
-            return null;
+            return ['id' => null, 'error' => 'Invalid or unencrypted user reference.'];
         }
 
         try {
@@ -76,17 +97,43 @@ class User extends Authenticatable
             $data = json_decode($decrypted, true);
 
             if (is_array($data) && isset($data['uid']) && is_numeric($data['uid'])) {
-                return (int) $data['uid'];
+                if (isset($data['vid']) && $viewerId !== null && (int) $data['vid'] !== $viewerId) {
+                    return ['id' => null, 'error' => 'This secure document link is bound to another user and cannot be shared.'];
+                }
+
+                if (
+                    isset($data['sid'])
+                    && $sessionId !== null
+                    && $sessionId !== ''
+                    && !hash_equals((string) $data['sid'], hash('sha256', $sessionId))
+                ) {
+                    return ['id' => null, 'error' => 'This secure document link is bound to another session and cannot be shared.'];
+                }
+
+                if ($checkExpiry && isset($data['exp']) && time() > (int) $data['exp']) {
+                    return ['id' => null, 'error' => 'This secure document link has expired. Please reopen it from the system.'];
+                }
+
+                return ['id' => (int) $data['uid'], 'error' => null];
             }
 
             if (ctype_digit($decrypted)) {
-                return (int) $decrypted;
+                return ['id' => (int) $decrypted, 'error' => null];
             }
         } catch (\Throwable $e) {
-            return null;
+            return ['id' => null, 'error' => 'Invalid or unencrypted user reference.'];
         }
 
-        return null;
+        return ['id' => null, 'error' => 'Invalid or unencrypted user reference.'];
+    }
+
+    public static function decryptId(
+        string $encrypted,
+        ?int $viewerId = null,
+        ?string $sessionId = null,
+        bool $checkExpiry = true
+    ): ?int {
+        return self::decryptIdToken($encrypted, $viewerId, $sessionId, $checkExpiry)['id'];
     }
 
     public function getEncryptedIdAttribute(): string
