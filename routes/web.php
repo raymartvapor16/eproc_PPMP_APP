@@ -189,8 +189,8 @@ Route::prefix('api')->group(function () {
         Route::match(['get', 'post'], '/super-admin/scheduled-backups/{id}/download', [\App\Http\Controllers\Api\SecurityThreatController::class, 'downloadScheduledBackup']);
 
         Route::prefix('system-requests')->group(function () {
-            Route::post('/generate-ticket', [SystemRequestController::class, 'generateTicket'])->middleware('throttle:15,1');
-            Route::post('/', [SystemRequestController::class, 'store'])->middleware('throttle:10,1');
+            Route::post('/generate-ticket', [SystemRequestController::class, 'generateTicket'])->middleware('throttle:30,1,sysreq_ticket');
+            Route::post('/', [SystemRequestController::class, 'store'])->middleware('throttle:20,1,sysreq_submit');
             Route::get('/mine', [SystemRequestController::class, 'myRequests']);
             Route::get('/{id}/refresh-token', [SystemRequestController::class, 'refreshAttachmentToken']);
             Route::get('/{id}/attachment', [SystemRequestController::class, 'viewAttachment']);

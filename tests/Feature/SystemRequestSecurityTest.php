@@ -73,6 +73,11 @@ class SystemRequestSecurityTest extends TestCase
 
     public function test_user_can_generate_ticket_and_submit_request_with_valid_image(): void
     {
+        // Simulate 20 normal dashboard API calls first — must NOT trigger 429 on generate-ticket
+        for ($i = 0; $i < 20; $i++) {
+            $this->actingAs($this->endUserA)->getJson('/api/system-requests/mine')->assertOk();
+        }
+
         $ticketRes = $this->actingAs($this->endUserA)
             ->postJson('/api/system-requests/generate-ticket')
             ->assertOk()
