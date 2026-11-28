@@ -12,29 +12,6 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
 
-        User::updateOrCreate(
-            ['email' => 'admin@system16.com'],
-            [
-                'name'         => 'Super Administrator',
-                'password'     => Hash::make('++sadmin@2026.davsur++'),
-                'role'         => 'super_admin',
-                'designation'  => 'Super Administrator',
-                'is_active'    => true,
-                'approval_status' => 'approved',
-            ]
-        );
-
-        User::updateOrCreate(
-            ['email' => 'administrator@system16.com'],
-            [
-                'name'         => 'System Administrator',
-                'password'     => Hash::make('++admin@2026.davsur++'),
-                'role'         => 'admin',
-                'designation'  => 'Provincial Administrator',
-                'is_active'    => true,
-                'approval_status' => 'approved',
-            ]
-        );
 
         \App\Models\PpmpSignatory::updateOrCreate(
             ['signatory_type' => 'pacco_requirement'],
